@@ -6,10 +6,10 @@ import { prisma } from '../services/prisma.service';
  */
 export const checkHealth = async (req: Request, res: Response): Promise<void> => {
   try {
-    console.log("DATABASE_URL check:", {
-      exists: !!process.env.DATABASE_URL,
-      length: process.env.DATABASE_URL ? process.env.DATABASE_URL.length : 0,
-      keys: Object.keys(process.env).filter(k => k.includes("DATA") || k.includes("URL") || k.includes("WHATSAPP") || k.includes("API"))
+    console.log("DB_URL check:", {
+      exists: !!process.env.DB_URL,
+      length: process.env.DB_URL ? process.env.DB_URL.length : 0,
+      keys: Object.keys(process.env).filter(k => k.includes("DB") || k.includes("URL") || k.includes("WHATSAPP") || k.includes("API"))
     });
 
     // التحقق من إمكانية الاتصال بقاعدة البيانات عبر استعلام بسيط
@@ -23,9 +23,9 @@ export const checkHealth = async (req: Request, res: Response): Promise<void> =>
         server: 'up'
       },
       debug: {
-        dbUrlExists: !!process.env.DATABASE_URL,
-        dbUrlLength: process.env.DATABASE_URL ? process.env.DATABASE_URL.length : 0,
-        keys: Object.keys(process.env).filter(k => k.includes("DATABASE") || k.includes("URL"))
+        dbUrlExists: !!process.env.DB_URL,
+        dbUrlLength: process.env.DB_URL ? process.env.DB_URL.length : 0,
+        keys: Object.keys(process.env).filter(k => k.includes("DB") || k.includes("URL"))
       }
     });
   } catch (error: any) {
@@ -40,9 +40,9 @@ export const checkHealth = async (req: Request, res: Response): Promise<void> =>
       },
       error: error.message,
       debug: {
-        dbUrlExists: !!process.env.DATABASE_URL,
-        dbUrlLength: process.env.DATABASE_URL ? process.env.DATABASE_URL.length : 0,
-        keys: Object.keys(process.env).filter(k => k.includes("DATABASE") || k.includes("URL"))
+        dbUrlExists: !!process.env.DB_URL,
+        dbUrlLength: process.env.DB_URL ? process.env.DB_URL.length : 0,
+        keys: Object.keys(process.env).filter(k => k.includes("DB") || k.includes("URL"))
       }
     });
   }
