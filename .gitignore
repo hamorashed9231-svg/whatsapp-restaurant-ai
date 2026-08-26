@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+*.log
+.system_generated/
+.gemini/
+/brain/
+/tasks/
+/steps/
+/scratch/
+/logs/
+*.tmp

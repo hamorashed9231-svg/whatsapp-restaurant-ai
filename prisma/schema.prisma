@@ -1,0 +1,95 @@
+// هذا هو ملف إعداد Prisma ORM لقاعدة البيانات الخاصة بك.
+// يحدد نوع الاتصال بقاعدة البيانات ومخطط الجداول (Schema).
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// نموذج المطعم (Restaurant)
+model Restaurant {
+  id                      String        @id @default(uuid())
+  name                    String
+  phone_number            String        // رقم هاتف المطعم العام
+  whatsapp_number_id      String        @unique // معرف رقم الهاتف المخصص لبيزنس واتساب لتحديد المطعم
+  whatsapp_access_token   String?       // رمز الوصول (Token) المخصص للواتساب الخاص بالمطعم
+  subscription_tier       String        // فئة الاشتراك (مثال: FREE, PREMIUM)
+  subscription_status     String        // حالة الاشتراك (مثال: ACTIVE, EXPIRED, TRIAL)
+  subscription_expires_at DateTime
+  created_at              DateTime      @default(now())
+
+  // العلاقات (Relations)
+  menu_items              MenuItem[]
+  conversations           Conversation[]
+  orders                  Order[]
+  reservations            Reservation[]
+
+  @@map("restaurants") // رسم خريطة لاسم الجدول ليكون بصيغة الجمع
+}
+
+// نموذج عناصر المنيو (MenuItem)
+model MenuItem {
+  id            String     @id @default(uuid())
+  restaurant_id String
+  name          String
+  description   String?
+  price         Decimal    @db.Decimal(10, 2)
+  category      String     // التصنيف (مثال: وجبات رئيسية، مقبلات، مشروبات)
+  is_available  Boolean    @default(true)
+
+  // العلاقات
+  restaurant    Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+
+  @@map("menu_items")
+}
+
+// نموذج سجل المحادثات (Conversation)
+model Conversation {
+  id             String     @id @default(uuid())
+  restaurant_id  String
+  customer_phone String     // رقم هاتف الزبون
+  messages_json  Json       // سجل الرسائل بصيغة JSON (يخزن مصفوفة من الرسائل)
+  status         String     // حالة المحادثة (مثال: ACTIVE, ARCHIVED)
+  created_at     DateTime   @default(now())
+  updated_at     DateTime   @updatedAt
+
+  // العلاقات
+  restaurant     Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+
+  @@map("conversations")
+}
+
+// نموذج الطلبات (Order)
+model Order {
+  id             String     @id @default(uuid())
+  restaurant_id  String
+  customer_phone String
+  items_json     Json       // تفاصيل العناصر المطلوبة والكميات والأسعار كـ JSON
+  total_price    Decimal    @db.Decimal(10, 2)
+  status         String     // حالة الطلب (مثال: PENDING, PREPARING, DELIVERED, CANCELLED)
+  created_at     DateTime   @default(now())
+
+  // العلاقات
+  restaurant     Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+
+  @@map("orders")
+}
+
+// نموذج الحجوزات (Reservation)
+model Reservation {
+  id             String     @id @default(uuid())
+  restaurant_id  String
+  customer_phone String
+  date_time      DateTime   // تاريخ ووقت الحجز
+  party_size     Int        // عدد الأفراد
+  status         String     // حالة الحجز (مثال: PENDING, CONFIRMED, COMPLETED, CANCELLED)
+
+  // العلاقات
+  restaurant     Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+
+  @@map("reservations")
+}

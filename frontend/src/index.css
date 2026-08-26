@@ -1,0 +1,208 @@
+:root {
+  /* ألوان الهوية البصرية لبراند Rivix */
+  --primary: #06122C;       /* كحلي داكن */
+  --secondary: #0066FF;     /* أزرق ملكي */
+  --accent: #00D2FF;        /* سماوي مضيء */
+  --background: #F4F7FE;    /* خلفية رمادي فاتح مائل للزرقة */
+  --white: #FFFFFF;
+  --text-main: #0F1E36;     /* نص كحلي قريب للأسود */
+  --text-muted: #5E6E85;    /* نص رمادي */
+  --success: #10B981;       /* أخضر للعمليات الناجحة */
+  --warning: #F59E0B;       /* برتقالي للحالات المعلقة */
+  --danger: #EF4444;        /* أحمر للحالات الملغاة */
+  
+  --font-family: 'Tajawal', 'Inter', sans-serif;
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  
+  --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --shadow-sm: 0 4px 12px rgba(6, 18, 44, 0.03);
+  --shadow-md: 0 8px 24px rgba(6, 18, 44, 0.05);
+  --shadow-lg: 0 16px 48px rgba(6, 18, 44, 0.08);
+}
+
+/* الوضع الداكن لبعض عناصر لوحة التحكم */
+.dark-theme {
+  --background: #050C1A;
+  --white: #0B192C;
+  --text-main: #F4F7FE;
+  --text-muted: #8E9FB8;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-family);
+  scrollbar-width: thin;
+  scrollbar-color: var(--secondary) transparent;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--text-main);
+  overflow-x: hidden;
+  line-height: 1.6;
+}
+
+/* تنسيق شريط التمرير */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--secondary);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+/* المكونات المشتركة */
+
+/* الكروت الزجاجية (Glassmorphism) */
+.glass-card {
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  transition: var(--transition);
+}
+
+.glass-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+  border-color: rgba(0, 102, 255, 0.2);
+}
+
+.glass-card-dark {
+  background: rgba(6, 18, 44, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  color: #FFFFFF;
+}
+
+/* أزرار تفاعلية مذهلة */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border-radius: var(--radius-sm);
+  border: none;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: var(--transition);
+  text-decoration: none;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--secondary) 0%, #004ecc 100%);
+  color: #FFFFFF;
+  box-shadow: 0 4px 14px rgba(0, 102, 255, 0.3);
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, #0077ff 0%, var(--secondary) 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 102, 255, 0.4);
+}
+
+.btn-accent {
+  background: linear-gradient(135deg, var(--accent) 0%, #00b0d6 100%);
+  color: var(--primary);
+  box-shadow: 0 4px 14px rgba(0, 210, 255, 0.2);
+}
+
+.btn-accent:hover {
+  background: linear-gradient(135deg, #33dcff 0%, var(--accent) 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 210, 255, 0.3);
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--primary);
+  border: 1px solid rgba(6, 18, 44, 0.1);
+}
+
+.btn-secondary:hover {
+  background: var(--white);
+  border-color: var(--secondary);
+  transform: translateY(-2px);
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: #FFFFFF;
+}
+
+.btn-danger:hover {
+  background: #dc2626;
+  transform: translateY(-2px);
+}
+
+/* تأثير الشبكة التقنية للخلفية (Tech Grid Pattern) */
+.tech-grid {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: 
+    linear-gradient(rgba(0, 102, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 102, 255, 0.02) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* مؤشر التحميل الدوار (Spinner) */
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid rgba(0, 102, 255, 0.1);
+  border-left-color: var(--secondary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* الحركات الدقيقة (Micro-animations) */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* تنسيقات إضافية مخصصة للانبثاق */
+.badge {
+  display: inline-flex;
+  padding: 4px 8px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.badge-pending { background: rgba(245, 158, 11, 0.1); color: var(--warning); }
+.badge-preparing { background: rgba(0, 102, 255, 0.1); color: var(--secondary); }
+.badge-delivered { background: rgba(16, 185, 129, 0.1); color: var(--success); }
+.badge-cancelled { background: rgba(239, 68, 68, 0.1); color: var(--danger); }
+.badge-confirmed { background: rgba(16, 185, 129, 0.1); color: var(--success); }
