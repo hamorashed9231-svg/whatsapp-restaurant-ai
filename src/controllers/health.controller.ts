@@ -6,12 +6,6 @@ import { prisma } from '../services/prisma.service';
  */
 export const checkHealth = async (req: Request, res: Response): Promise<void> => {
   try {
-    console.log("DB_URL check:", {
-      exists: !!process.env.DB_URL,
-      length: process.env.DB_URL ? process.env.DB_URL.length : 0,
-      keys: Object.keys(process.env).filter(k => k.includes("DB") || k.includes("URL") || k.includes("WHATSAPP") || k.includes("API"))
-    });
-
     // التحقق من إمكانية الاتصال بقاعدة البيانات عبر استعلام بسيط
     await prisma.$queryRaw`SELECT 1`;
 
@@ -21,15 +15,10 @@ export const checkHealth = async (req: Request, res: Response): Promise<void> =>
       services: {
         database: 'up',
         server: 'up'
-      },
-      debug: {
-        dbUrlExists: !!process.env.DB_URL,
-        dbUrlLength: process.env.DB_URL ? process.env.DB_URL.length : 0,
-        keys: Object.keys(process.env).filter(k => k.includes("DB") || k.includes("URL"))
       }
     });
   } catch (error: any) {
-    console.error('خطأ في فحص الصحة (Health Check Error):', error.message);
+    console.error('Health Check Error:', error.message);
     
     res.status(500).json({
       status: 'unhealthy',
@@ -38,12 +27,7 @@ export const checkHealth = async (req: Request, res: Response): Promise<void> =>
         database: 'down',
         server: 'up'
       },
-      error: error.message,
-      debug: {
-        dbUrlExists: !!process.env.DB_URL,
-        dbUrlLength: process.env.DB_URL ? process.env.DB_URL.length : 0,
-        keys: Object.keys(process.env).filter(k => k.includes("DB") || k.includes("URL"))
-      }
+      error: error.message
     });
   }
 };

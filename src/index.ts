@@ -12,13 +12,24 @@ import apiRoutes from './routes/api.routes';
 const app = express();
 const port = process.env.PORT || 3000;
 
-// إعداد الـ CORS للسماح فقط للفرونت إند (localhost:5173) في بيئة التطوير
-app.use(cors({
-  origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
-  credentials: true
-}));
+// إعداد الـ CORS للسماح بجميع الطلبات
+app.use(cors({ origin: '*', credentials: false }));
 
 app.use(express.json());
+
+// الصفحة الرئيسية
+app.get('/', (req, res) => {
+  res.status(200).json({
+    status: 'running',
+    name: 'WhatsApp Restaurant AI Backend',
+    version: '1.0.0',
+    endpoints: {
+      health: '/health',
+      webhook: '/webhook',
+      api: '/api'
+    }
+  });
+});
 
 // مسارات الفحص والتشغيل الرئيسية
 app.use('/health', healthRoutes);
