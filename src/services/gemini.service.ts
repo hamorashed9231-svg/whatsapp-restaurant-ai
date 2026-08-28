@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
 import { prisma } from './prisma.service';
 import { ChatMessage } from '../models/types';
 
@@ -80,9 +80,9 @@ class GeminiService {
                 name: 'get_menu',
                 description: 'استرجاع قائمة المأكولات والمشروبات المتاحة في المطعم بمجرد طلب العميل للمنيو أو الأكل أو الطعام',
                 parameters: {
-                  type: 'OBJECT',
+                  type: SchemaType.OBJECT,
                   properties: {
-                    restaurant_id: { type: 'STRING', description: 'المعرف الفريد للمطعم' },
+                    restaurant_id: { type: SchemaType.STRING, description: 'المعرف الفريد للمطعم' },
                   },
                   required: ['restaurant_id'],
                 },
@@ -91,17 +91,17 @@ class GeminiService {
                 name: 'create_order',
                 description: 'إنشاء طلب طعام جديد للزبون وحفظه في قاعدة البيانات',
                 parameters: {
-                  type: 'OBJECT',
+                  type: SchemaType.OBJECT,
                   properties: {
-                    restaurant_id: { type: 'STRING', description: 'المعرف الفريد للمطعم' },
-                    customer_phone: { type: 'STRING', description: 'رقم هاتف الزبون' },
+                    restaurant_id: { type: SchemaType.STRING, description: 'المعرف الفريد للمطعم' },
+                    customer_phone: { type: SchemaType.STRING, description: 'رقم هاتف الزبون' },
                     items: {
-                      type: 'ARRAY',
+                      type: SchemaType.ARRAY,
                       items: {
-                        type: 'OBJECT',
+                        type: SchemaType.OBJECT,
                         properties: {
-                          name: { type: 'STRING', description: 'اسم الوجبة أو المشروب بدقة كما في المنيو' },
-                          quantity: { type: 'INTEGER', description: 'الكمية المطلوبة (يجب أن تكون 1 أو أكثر)' },
+                          name: { type: SchemaType.STRING, description: 'اسم الوجبة أو المشروب بدقة كما في المنيو' },
+                          quantity: { type: SchemaType.INTEGER, description: 'الكمية المطلوبة (يجب أن تكون 1 أو أكثر)' },
                         },
                         required: ['name', 'quantity'],
                       },
@@ -115,12 +115,12 @@ class GeminiService {
                 name: 'create_reservation',
                 description: 'إنشاء حجز طاولة جديد للزبون في المطعم',
                 parameters: {
-                  type: 'OBJECT',
+                  type: SchemaType.OBJECT,
                   properties: {
-                    restaurant_id: { type: 'STRING', description: 'المعرف الفريد للمطعم' },
-                    customer_phone: { type: 'STRING', description: 'رقم هاتف الزبون' },
-                    date_time: { type: 'STRING', description: 'تاريخ ووقت الحجز بصيغة ISO 8601 (مثال: 2026-08-25T20:00:00)' },
-                    party_size: { type: 'INTEGER', description: 'عدد الأشخاص للحجز' },
+                    restaurant_id: { type: SchemaType.STRING, description: 'المعرف الفريد للمطعم' },
+                    customer_phone: { type: SchemaType.STRING, description: 'رقم هاتف الزبون' },
+                    date_time: { type: SchemaType.STRING, description: 'تاريخ ووقت الحجز بصيغة ISO 8601 (مثال: 2026-08-25T20:00:00)' },
+                    party_size: { type: SchemaType.INTEGER, description: 'عدد الأشخاص للحجز' },
                   },
                   required: ['restaurant_id', 'customer_phone', 'date_time', 'party_size'],
                 },
@@ -142,10 +142,10 @@ class GeminiService {
       // حلقة تكرارية لمعالجة استدعاء الدوال المتعددة أو المتتالية
       const maxLoops = 5;
       let loopCount = 0;
+      let functionCalls = response.functionCalls();
 
-      while (response.functionCalls && response.functionCalls.length > 0 && loopCount < maxLoops) {
+      while (functionCalls && functionCalls.length > 0 && loopCount < maxLoops) {
         loopCount++;
-        const functionCalls = response.functionCalls;
         const functionResponses: any[] = [];
 
         for (const call of functionCalls) {
@@ -190,6 +190,7 @@ class GeminiService {
         // إرجاع نتائج الأدوات لـ Gemini لإكمال المحادثة وصياغة الرد
         result = await chat.sendMessage(functionResponses);
         response = result.response;
+        functionCalls = response.functionCalls();
       }
 
       const finalResponseText = response.text() || 'عذراً، لم أستطع معالجة طلبك حالياً.';
