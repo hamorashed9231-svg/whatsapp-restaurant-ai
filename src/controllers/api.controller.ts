@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import * as XLSX from 'xlsx';
 import { prisma } from '../services/prisma.service';
-import { anthropicService } from '../services/anthropic.service';
+import { geminiService } from '../services/gemini.service';
 
 /**
  * 1. تسجيل الدخول لمسؤول لوحة تحكم المطعم
@@ -300,7 +300,7 @@ export const handleDemoChat = async (req: Request, res: Response): Promise<void>
     const demoRestaurantName = 'مطعم ومطبخ البركة شاورما (نسخة تجريبية)';
     const demoCustomerPhone = 'demo-visitor-phone';
 
-    const { responseText } = await anthropicService.processMessage(
+    const { responseText } = await geminiService.processMessage(
       demoRestaurantId,
       demoRestaurantName,
       demoCustomerPhone,

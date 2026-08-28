@@ -1,19 +1,19 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { prisma } from './prisma.service';
 import { ChatMessage } from '../models/types';
 
-class AnthropicService {
-  private anthropic: Anthropic | null = null;
+class GeminiService {
+  private genAI: GoogleGenerativeAI | null = null;
 
   constructor() {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (apiKey && apiKey !== 'sk-ant-api03-mock-key') {
-      this.anthropic = new Anthropic({ apiKey });
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (apiKey && apiKey !== 'mock-key' && apiKey !== 'sk-ant-api03-mock-key') {
+      this.genAI = new GoogleGenerativeAI(apiKey);
     }
   }
 
   /**
-   * معالجة الرسائل الواردة من العميل باستخدام Claude مع تفعيل الـ Tool Use الكامل.
+   * معالجة الرسائل الواردة من العميل باستخدام Gemini مع تفعيل الـ Function Calling الكامل.
    * @param restaurantId معرف المطعم في قاعدة البيانات
    * @param restaurantName اسم المطعم لتخصيص سلوك الذكاء الاصطناعي
    * @param customerPhone رقم هاتف العميل
@@ -28,26 +28,6 @@ class AnthropicService {
     newMessage: string
   ): Promise<{ responseText: string; updatedHistory: ChatMessage[] }> {
     
-    // 1. تهيئة سجل المحادثة للتمرير لـ Claude
-    // يجب تحويل السجل الداخلي لتنسيق متوافق مع متطلبات Anthropic SDK
-    // ملاحظة: Claude لا يستقبل دور 'system' في مصفوفة الرسائل وإنما كمعامل منفصل 'system'
-    const formattedMessages: any[] = [];
-
-    // إضافة المحادثات السابقة
-    for (const msg of history) {
-      if (msg.role === 'system') continue; // تخطي رسائل النظام الداخلية
-      formattedMessages.push({
-        role: msg.role === 'assistant' ? 'assistant' : 'user',
-        content: msg.content,
-      });
-    }
-
-    // إضافة الرسالة الجديدة المستلمة
-    formattedMessages.push({
-      role: 'user',
-      content: newMessage,
-    });
-
     // سياق النظام المخصص للـ AI ليتصرف كمساعد ذكي للمطعم المحدد
     const systemPrompt = `أنت مساعد ذكي ومرحب تعمل لصالح مطعم "${restaurantName}" على واتساب.
 أجب دائماً باللغة العربية بأسلوب لبق، ودود، ومختصر ومناسب لمحادثات واتساب.
@@ -63,62 +43,9 @@ class AnthropicService {
 - تجنب الردود الطويلة جداً. استخدم الإيموجي بشكل لطيف لتجميل الرسائل.
 - الوقت الحالي للنظام هو: ${new Date().toISOString()}. استخدم هذا المرجع لتحديد الأوقات النسبية (مثل اليوم، غداً، إلخ).`;
 
-    // تعريف الأدوات (Tools) المتاحة لـ Claude
-    const tools: any[] = [
-      {
-        name: 'get_menu',
-        description: 'استرجاع قائمة المأكولات والمشروبات المتاحة في المطعم',
-        input_schema: {
-          type: 'object',
-          properties: {
-            restaurant_id: { type: 'string', description: 'المعرف الفريد للمطعم' },
-          },
-          required: ['restaurant_id'],
-        },
-      },
-      {
-        name: 'create_order',
-        description: 'إنشاء طلب طعام جديد للزبون وحفظه في قاعدة البيانات',
-        input_schema: {
-          type: 'object',
-          properties: {
-            restaurant_id: { type: 'string', description: 'المعرف الفريد للمطعم' },
-            customer_phone: { type: 'string', description: 'رقم هاتف الزبون' },
-            items: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  name: { type: 'string', description: 'اسم الوجبة أو المشروب بدقة كما في المنيو' },
-                  quantity: { type: 'integer', description: 'الكمية المطلوبة (يجب أن تكون 1 أو أكثر)' },
-                },
-                required: ['name', 'quantity'],
-              },
-              description: 'قائمة الأصناف المطلوبة وكمياتها',
-            },
-          },
-          required: ['restaurant_id', 'customer_phone', 'items'],
-        },
-      },
-      {
-        name: 'create_reservation',
-        description: 'إنشاء حجز طاولة جديد للزبون في المطعم',
-        input_schema: {
-          type: 'object',
-          properties: {
-            restaurant_id: { type: 'string', description: 'المعرف الفريد للمطعم' },
-            customer_phone: { type: 'string', description: 'رقم هاتف الزبون' },
-            date_time: { type: 'string', description: 'تاريخ ووقت الحجز بصيغة ISO 8601 (مثال: 2026-08-25T20:00:00)' },
-            party_size: { type: 'integer', description: 'عدد الأشخاص للحجز' },
-          },
-          required: ['restaurant_id', 'customer_phone', 'date_time', 'party_size'],
-        },
-      },
-    ];
-
     // إذا لم يتم ضبط مفتاح SDK، يتم استخدام محاكاة الرد لأغراض الفحص والاختبار
-    if (!this.anthropic) {
-      console.warn('تنبيه: ANTHROPIC_API_KEY غير متوفر. سيتم استخدام محاكاة للرد الذكي.');
+    if (!this.genAI) {
+      console.warn('تنبيه: GEMINI_API_KEY غير متوفر. سيتم استخدام محاكاة للرد الذكي.');
       const mockResponse = this.generateMockResponse(newMessage, restaurantName);
       
       const newHistory = [
@@ -131,93 +58,143 @@ class AnthropicService {
     }
 
     try {
-      let runLoop = true;
-      let loopCount = 0;
-      const maxLoops = 5; // منع الحلقات اللانهائية في حال تكرار طلب الأدوات
-      let finalResponseText = '';
-
-      while (runLoop && loopCount < maxLoops) {
-        loopCount++;
-        
-        // استدعاء Claude API
-        const response = await this.anthropic.messages.create({
-          model: 'claude-3-5-sonnet-20240620',
-          max_tokens: 1024,
-          system: systemPrompt,
-          messages: formattedMessages,
-          tools: tools,
+      // تحويل السجل الداخلي لتنسيق متوافق مع متطلبات Gemini SDK
+      // Gemini يتوقع تاريخ محادثة بهيئة: { role: 'user' | 'model', parts: [{ text: '...' }] }
+      const geminiHistory: any[] = [];
+      for (const msg of history) {
+        if (msg.role === 'system') continue; // تخطي رسائل النظام الداخلية
+        geminiHistory.push({
+          role: msg.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: msg.content }]
         });
-
-        // فحص سبب توقف الرد لمعرفة ما إذا كان يطلب تنفيذ أداة
-        if (response.stop_reason === 'tool_use') {
-          // إضافة رد المساعد (الذي يحتوي على طلب الأداة) إلى القائمة لتتبع السياق
-          formattedMessages.push({
-            role: 'assistant',
-            content: response.content,
-          });
-
-          const toolResults: any[] = [];
-
-          // معالجة كتل البيانات المستلمة وتنفيذ الأدوات المطلوبة
-          for (const block of response.content) {
-            if (block.type === 'tool_use') {
-              const toolUseId = block.id;
-              const toolName = block.name;
-              const toolInput = block.input as any;
-
-              console.log(`[AI Agent] طلب تشغيل الأداة: ${toolName} بمدخلات:`, toolInput);
-
-              let resultData;
-              try {
-                // تنفيذ الأداة المناسبة
-                if (toolName === 'get_menu') {
-                  resultData = await this.executeGetMenu(restaurantId);
-                } else if (toolName === 'create_order') {
-                  resultData = await this.executeCreateOrder(
-                    toolInput.restaurant_id || restaurantId,
-                    toolInput.customer_phone || customerPhone,
-                    toolInput.items
-                  );
-                } else if (toolName === 'create_reservation') {
-                  resultData = await this.executeCreateReservation(
-                    toolInput.restaurant_id || restaurantId,
-                    toolInput.customer_phone || customerPhone,
-                    toolInput.date_time,
-                    toolInput.party_size
-                  );
-                } else {
-                  resultData = { error: `الأداة ${toolName} غير معرفة.` };
-                }
-              } catch (err: any) {
-                console.error(`خطأ أثناء تشغيل الأداة ${toolName}:`, err);
-                resultData = { error: `حدث خطأ أثناء معالجة طلبك: ${err.message}` };
-              }
-
-              // إضافة نتيجة الأداة لمصفوفة الاستجابة للـ AI
-              toolResults.push({
-                type: 'tool_result',
-                tool_use_id: toolUseId,
-                content: JSON.stringify(resultData),
-              });
-            }
-          }
-
-          // إضافة نتائج الأدوات كرسالة جديدة من المستخدم ليعيد Claude معالجتها وصياغة الرد النهائي
-          formattedMessages.push({
-            role: 'user',
-            content: toolResults,
-          });
-
-        } else {
-          // إذا لم يطلب تنفيذ أداة، فهذا هو الرد النهائي
-          runLoop = false;
-          // استخراج النص من محتوى الاستجابة
-          const textBlock = response.content.find((block) => block.type === 'text');
-          finalResponseText = textBlock && 'text' in textBlock ? textBlock.text : 'عذراً، لم أستطع معالجة طلبك حالياً.';
-        }
       }
 
-      // 4. تحديث وحفظ سجل الرسائل بصيغتنا المخصصة لحفظه في قاعدة البيانات
+      // تهيئة موديل Gemini 1.5 Pro ليكون بأعلى دقة ممكنة
+      const model = this.genAI.getGenerativeModel({
+        model: 'gemini-1.5-pro',
+        systemInstruction: systemPrompt,
+        tools: [
+          {
+            functionDeclarations: [
+              {
+                name: 'get_menu',
+                description: 'استرجاع قائمة المأكولات والمشروبات المتاحة في المطعم بمجرد طلب العميل للمنيو أو الأكل أو الطعام',
+                parameters: {
+                  type: 'OBJECT',
+                  properties: {
+                    restaurant_id: { type: 'STRING', description: 'المعرف الفريد للمطعم' },
+                  },
+                  required: ['restaurant_id'],
+                },
+              },
+              {
+                name: 'create_order',
+                description: 'إنشاء طلب طعام جديد للزبون وحفظه في قاعدة البيانات',
+                parameters: {
+                  type: 'OBJECT',
+                  properties: {
+                    restaurant_id: { type: 'STRING', description: 'المعرف الفريد للمطعم' },
+                    customer_phone: { type: 'STRING', description: 'رقم هاتف الزبون' },
+                    items: {
+                      type: 'ARRAY',
+                      items: {
+                        type: 'OBJECT',
+                        properties: {
+                          name: { type: 'STRING', description: 'اسم الوجبة أو المشروب بدقة كما في المنيو' },
+                          quantity: { type: 'INTEGER', description: 'الكمية المطلوبة (يجب أن تكون 1 أو أكثر)' },
+                        },
+                        required: ['name', 'quantity'],
+                      },
+                      description: 'قائمة الأصناف المطلوبة وكمياتها',
+                    },
+                  },
+                  required: ['restaurant_id', 'customer_phone', 'items'],
+                },
+              },
+              {
+                name: 'create_reservation',
+                description: 'إنشاء حجز طاولة جديد للزبون في المطعم',
+                parameters: {
+                  type: 'OBJECT',
+                  properties: {
+                    restaurant_id: { type: 'STRING', description: 'المعرف الفريد للمطعم' },
+                    customer_phone: { type: 'STRING', description: 'رقم هاتف الزبون' },
+                    date_time: { type: 'STRING', description: 'تاريخ ووقت الحجز بصيغة ISO 8601 (مثال: 2026-08-25T20:00:00)' },
+                    party_size: { type: 'INTEGER', description: 'عدد الأشخاص للحجز' },
+                  },
+                  required: ['restaurant_id', 'customer_phone', 'date_time', 'party_size'],
+                },
+              },
+            ],
+          },
+        ],
+      });
+
+      // بدء جلسة المحادثة مع التاريخ السابق
+      const chat = model.startChat({
+        history: geminiHistory,
+      });
+
+      // إرسال رسالة المستخدم الجديدة
+      let result = await chat.sendMessage(newMessage);
+      let response = result.response;
+
+      // حلقة تكرارية لمعالجة استدعاء الدوال المتعددة أو المتتالية
+      const maxLoops = 5;
+      let loopCount = 0;
+
+      while (response.functionCalls && response.functionCalls.length > 0 && loopCount < maxLoops) {
+        loopCount++;
+        const functionCalls = response.functionCalls;
+        const functionResponses: any[] = [];
+
+        for (const call of functionCalls) {
+          const { name, args } = call;
+          const toolInput = args as any;
+
+          console.log(`[Gemini AI] طلب تشغيل الأداة: ${name} بمدخلات:`, toolInput);
+
+          let resultData;
+          try {
+            if (name === 'get_menu') {
+              resultData = await this.executeGetMenu(restaurantId);
+            } else if (name === 'create_order') {
+              resultData = await this.executeCreateOrder(
+                toolInput.restaurant_id || restaurantId,
+                toolInput.customer_phone || customerPhone,
+                toolInput.items
+              );
+            } else if (name === 'create_reservation') {
+              resultData = await this.executeCreateReservation(
+                toolInput.restaurant_id || restaurantId,
+                toolInput.customer_phone || customerPhone,
+                toolInput.date_time,
+                toolInput.party_size
+              );
+            } else {
+              resultData = { error: `الأداة ${name} غير معرفة.` };
+            }
+          } catch (err: any) {
+            console.error(`خطأ أثناء تشغيل الأداة ${name}:`, err);
+            resultData = { error: `حدث خطأ أثناء معالجة طلبك: ${err.message}` };
+          }
+
+          functionResponses.push({
+            functionResponse: {
+              name,
+              response: { result: resultData }
+            }
+          });
+        }
+
+        // إرجاع نتائج الأدوات لـ Gemini لإكمال المحادثة وصياغة الرد
+        result = await chat.sendMessage(functionResponses);
+        response = result.response;
+      }
+
+      const finalResponseText = response.text() || 'عذراً، لم أستطع معالجة طلبك حالياً.';
+
+      // تحديث وحفظ سجل الرسائل بصيغتنا المخصصة لحفظه في قاعدة البيانات
       const updatedHistory: ChatMessage[] = [
         ...history,
         { role: 'user', content: newMessage, timestamp: new Date().toISOString() },
@@ -227,8 +204,8 @@ class AnthropicService {
       return { responseText: finalResponseText, updatedHistory };
 
     } catch (error: any) {
-      console.error('خطأ في الاتصال بخدمة Anthropic API:', error);
-      throw new Error(`فشل معالجة الرسالة ذكياً: ${error.message}`);
+      console.error('خطأ في الاتصال بخدمة Gemini API:', error);
+      throw new Error(`فشل معالجة الرسالة ذكياً عبر Gemini: ${error.message}`);
     }
   }
 
@@ -268,7 +245,6 @@ class AnthropicService {
    * أداة إنشاء طلب جديد
    */
   private async executeCreateOrder(restaurantId: string, customerPhone: string, items: { name: string; quantity: number }[]) {
-    // 1. جلب قائمة الأطعمة المتوفرة للتحقق من الأسعار والوجود
     const menuItems = await prisma.menuItem.findMany({
       where: { restaurant_id: restaurantId }
     });
@@ -277,7 +253,6 @@ class AnthropicService {
     let totalPrice = 0;
 
     for (const orderItem of items) {
-      // البحث عن التطابق بغض النظر عن حالة الأحرف أو المسافات الزائدة
       const matchedMenu = menuItems.find(
         m => m.name.trim().toLowerCase() === orderItem.name.trim().toLowerCase()
       );
@@ -311,7 +286,6 @@ class AnthropicService {
       });
     }
 
-    // 2. إدراج الطلب في قاعدة البيانات
     const order = await prisma.order.create({
       data: {
         restaurant_id: restaurantId,
@@ -353,7 +327,6 @@ class AnthropicService {
       };
     }
 
-    // إدراج الحجز في قاعدة البيانات
     const reservation = await prisma.reservation.create({
       data: {
         restaurant_id: restaurantId,
@@ -374,7 +347,7 @@ class AnthropicService {
   }
 
   /**
-   * توليد رد محاكى بسيط في حال غياب مفتاح API لـ Claude
+   * توليد رد محاكى بسيط في حال غياب مفتاح API لـ Gemini
    */
   private generateMockResponse(message: string, restaurantName: string): string {
     const cleanMsg = message.toLowerCase();
@@ -401,4 +374,4 @@ class AnthropicService {
   }
 }
 
-export const anthropicService = new AnthropicService();
+export const geminiService = new GeminiService();

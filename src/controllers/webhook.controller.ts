@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../services/prisma.service';
-import { anthropicService } from '../services/anthropic.service';
+import { geminiService } from '../services/gemini.service';
 import { whatsappService } from '../services/whatsapp.service';
 import { ChatMessage } from '../models/types';
 
@@ -138,7 +138,7 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
     const history = (conversation.messages_json as any) as ChatMessage[];
 
     // 6. تمرير المحادثة والرسالة لخدمة الذكاء الاصطناعي لمعالجتها وتفعيل الأدوات (Tool Calling)
-    const { responseText, updatedHistory } = await anthropicService.processMessage(
+    const { responseText, updatedHistory } = await geminiService.processMessage(
       restaurant.id,
       restaurant.name,
       customerPhone,
