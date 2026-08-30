@@ -14,6 +14,7 @@ class GeminiService {
 
   /**
    * معالجة الرسائل الواردة من العميل باستخدام Gemini مع تفعيل الـ Function Calling الكامل.
+   * @param conversationId معرف المحادثة لتحديث التصنيف
    * @param restaurantId معرف المطعم في قاعدة البيانات
    * @param restaurantName اسم المطعم لتخصيص سلوك الذكاء الاصطناعي
    * @param customerPhone رقم هاتف العميل
@@ -21,6 +22,7 @@ class GeminiService {
    * @param newMessage الرسالة الجديدة الواردة من العميل
    */
   public async processMessage(
+    conversationId: string,
     restaurantId: string,
     restaurantName: string,
     customerPhone: string,
@@ -36,7 +38,10 @@ class GeminiService {
 2. إجراء طلبات الطعام الجديدة.
 3. حجز طاولات في المطعم.
 
-تعليمات هامة:
+تعليمات هامة للتصنيف والتفاعل:
+- عندما يشتكي العميل من أي شيء (مثل تأخير في التوصيل، طعام سيء، خدمة سيئة، طلب غير صحيح)، استخدم أداة "set_conversation_category" فوراً وحدد التصنيف كـ 'COMPLAINT' (شكاوى).
+- عندما يطلب العميل الطعام فعلياً، أو يسأل عن حالة أوردر سابق، أو يستفسر عن أسعار وجبات، استخدم أداة "set_conversation_category" وحدد التصنيف كـ 'ORDER' (طلبات).
+- عندما يستفسر العميل استفساراً عاماً أو تبدأ المحادثة بالسلام والتحية دون أي غرض آخر، تأكد من استدعاء أداة "set_conversation_category" بتصنيف 'INQUIRY' (استفسارات).
 - عندما يطلب العميل رؤية المنيو أو الطعام المتاح، استخدم أداة "get_menu" فوراً. لا تخترع أطعمة من عندك.
 - عندما يطلب العميل طلب طعام، اسأله عن الأصناف والكميات بدقة، ثم استخدم أداة "create_order". احسب الأسعار بناءً على القائمة الفعلية المسترجعة من الأداة.
 - عندما يطلب العميل حجز طاولة، اسأله عن التاريخ، الوقت، وعدد الأشخاص (party_size)، ثم استخدم أداة "create_reservation".
@@ -125,6 +130,20 @@ class GeminiService {
                   required: ['restaurant_id', 'customer_phone', 'date_time', 'party_size'],
                 },
               },
+              {
+                name: 'set_conversation_category',
+                description: 'تغيير تصنيف المحادثة الحالية بناءً على موضوع كلام العميل (طلب طعام، شكوى، أو استفسار عام)',
+                parameters: {
+                  type: SchemaType.OBJECT,
+                  properties: {
+                    category: {
+                      type: SchemaType.STRING,
+                      description: 'التصنيف المناسب للموضوع الحالي للمحادثة: ORDER للطلبات، COMPLAINT للشكاوى، أو INQUIRY للاستفسارات العامة',
+                    },
+                  },
+                  required: ['category'],
+                },
+              },
             ],
           },
         ],
@@ -170,6 +189,11 @@ class GeminiService {
                 toolInput.customer_phone || customerPhone,
                 toolInput.date_time,
                 toolInput.party_size
+              );
+            } else if (name === 'set_conversation_category') {
+              resultData = await this.executeSetConversationCategory(
+                conversationId,
+                toolInput.category
               );
             } else {
               resultData = { error: `الأداة ${name} غير معرفة.` };
@@ -345,6 +369,26 @@ class GeminiService {
       party_size: reservation.party_size,
       message: 'تم تسجيل حجز الطاولة بنجاح وهو بانتظار التأكيد.'
     };
+  }
+
+  /**
+   * أداة تحديث تصنيف المحادثة في قاعدة البيانات
+   */
+  private async executeSetConversationCategory(conversationId: string, category: string) {
+    if (conversationId === 'demo') {
+      return { status: 'success', category, message: 'محادثة تجريبية - لم يتم الحفظ' };
+    }
+
+    try {
+      await prisma.conversation.update({
+        where: { id: conversationId },
+        data: { category }
+      });
+      return { status: 'success', category };
+    } catch (err: any) {
+      console.error('خطأ أثناء تحديث تصنيف المحادثة:', err.message);
+      return { status: 'error', message: err.message };
+    }
   }
 
   /**

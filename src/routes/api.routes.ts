@@ -15,7 +15,11 @@ import {
   getConversationMessages,
   handleDemoChat,
   importMenu,
-  updateRestaurant
+  updateRestaurant,
+  createUser,
+  listUsers,
+  deleteUser,
+  updateConversationCategory
 } from '../controllers/api.controller';
 import { upload } from '../middlewares/upload.middleware';
 
@@ -54,5 +58,11 @@ router.put('/reservations/:reservationId/status', authMiddleware, updateReservat
 // المحادثات الحقيقية والرسائل
 router.get('/restaurants/:id/conversations', authMiddleware, getConversations);
 router.get('/conversations/:id/messages', authMiddleware, getConversationMessages);
+router.put('/conversations/:id/category', authMiddleware, updateConversationCategory);
+
+// إدارة المستخدمين (للمسؤول فقط)
+router.post('/users', authMiddleware, createUser);
+router.get('/users', authMiddleware, listUsers);
+router.delete('/users/:id', authMiddleware, deleteUser);
 
 export default router;

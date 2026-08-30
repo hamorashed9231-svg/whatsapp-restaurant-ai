@@ -139,6 +139,7 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
 
     // 6. تمرير المحادثة والرسالة لخدمة الذكاء الاصطناعي لمعالجتها وتفعيل الأدوات (Tool Calling)
     const { responseText, updatedHistory } = await geminiService.processMessage(
+      conversation.id,
       restaurant.id,
       restaurant.name,
       customerPhone,

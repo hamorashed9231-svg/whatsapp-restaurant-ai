@@ -54,6 +54,7 @@ model Conversation {
   customer_phone String     // رقم هاتف الزبون
   messages_json  Json       // سجل الرسائل بصيغة JSON (يخزن مصفوفة من الرسائل)
   status         String     // حالة المحادثة (مثال: ACTIVE, ARCHIVED)
+  category       String     @default("INQUIRY") // تصنيف المحادثة (INQUIRY, ORDER, COMPLAINT)
   created_at     DateTime   @default(now())
   updated_at     DateTime   @updatedAt
 
@@ -92,4 +93,15 @@ model Reservation {
   restaurant     Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
 
   @@map("reservations")
+}
+
+// نموذج المستخدمين لإدارة الموظفين والمسؤولين
+model User {
+  id         String   @id @default(uuid())
+  username   String   @unique
+  password   String   // كلمة المرور مشفرة بـ SHA-256
+  role       String   // الدور: "admin" (مسؤول) أو "staff" (موظف)
+  created_at DateTime @default(now())
+
+  @@map("users")
 }

@@ -15,7 +15,8 @@ import {
   XCircle,
   Send,
   AlertCircle,
-  Upload
+  Upload,
+  Users
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -68,6 +69,7 @@ interface Conversation {
   id: string;
   customer_phone: string;
   status: string;
+  category: 'INQUIRY' | 'ORDER' | 'COMPLAINT';
   updated_at: string;
 }
 
@@ -84,7 +86,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   onBackToLanding,
   onRedirectToLogin,
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'menu' | 'orders' | 'reservations' | 'conversations' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'menu' | 'orders' | 'reservations' | 'conversations' | 'settings' | 'users'>('overview');
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
   
   // حالات تحميل البيانات العامة
@@ -99,6 +101,37 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
+
+  // إعدادات وتصنيفات المستخدمين والمحادثات
+  const [userRole, setUserRole] = useState<'admin' | 'staff'>('staff');
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<'ALL' | 'ORDER' | 'COMPLAINT' | 'INQUIRY'>('ALL');
+  const [usersList, setUsersList] = useState<{ id: string; username: string; role: string; created_at: string }[]>([]);
+  const [newUsername, setNewUsername] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newRole, setNewRole] = useState<'admin' | 'staff'>('staff');
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usersError, setUsersError] = useState<string | null>(null);
+  const [usersSuccess, setUsersSuccess] = useState<string | null>(null);
+
+  // لفك تشفير التوكن والحصول على الدور (Role)
+  useEffect(() => {
+    if (token) {
+      try {
+        const base64Url = token.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(
+          window.atob(base64)
+            .split('')
+            .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+            .join('')
+        );
+        const decoded = JSON.parse(jsonPayload);
+        setUserRole(decoded.role || 'staff');
+      } catch (e) {
+        setUserRole('staff');
+      }
+    }
+  }, [token]);
 
   // حالات إدارة المنيو (إضافة وتعديل)
   const [showAddMenuModal, setShowAddMenuModal] = useState(false);
@@ -210,9 +243,83 @@ const Dashboard: React.FC<DashboardProps> = ({
       } else if (tab === 'conversations') {
         const res = await api.get(`/restaurants/${restaurant.id}/conversations`);
         setConversations(res.data);
+      } else if (tab === 'users') {
+        fetchUsersList();
       }
     } catch (err) {
       console.error('فشل تحديث البيانات للتبويب:', tab, err);
+    }
+  };
+
+  // جلب قائمة المستخدمين
+  const fetchUsersList = async () => {
+    setUsersLoading(true);
+    setUsersError(null);
+    try {
+      const res = await api.get('/users');
+      setUsersList(res.data);
+    } catch (err: any) {
+      console.error('Error fetching users:', err);
+      setUsersError(err.response?.data?.message || 'فشل جلب قائمة المستخدمين.');
+    } finally {
+      setUsersLoading(false);
+    }
+  };
+
+  // إنشاء مستخدم جديد
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUsername.trim() || !newPassword.trim()) return;
+    setUsersLoading(true);
+    setUsersError(null);
+    setUsersSuccess(null);
+    try {
+      const res = await api.post('/users', {
+        username: newUsername,
+        password: newPassword,
+        role: newRole
+      });
+      setUsersSuccess(res.data.message || 'تم إنشاء الحساب بنجاح!');
+      setNewUsername('');
+      setNewPassword('');
+      fetchUsersList();
+    } catch (err: any) {
+      console.error('Error creating user:', err);
+      setUsersError(err.response?.data?.message || 'فشل إنشاء حساب الموظف.');
+    } finally {
+      setUsersLoading(false);
+    }
+  };
+
+  // حذف مستخدم
+  const handleDeleteUser = async (id: string) => {
+    if (!window.confirm('هل أنت متأكد من رغبتك في حذف هذا الحساب؟')) return;
+    setUsersLoading(true);
+    setUsersError(null);
+    setUsersSuccess(null);
+    try {
+      const res = await api.delete(`/users/${id}`);
+      setUsersSuccess(res.data.message || 'تم حذف الحساب بنجاح!');
+      fetchUsersList();
+    } catch (err: any) {
+      console.error('Error deleting user:', err);
+      setUsersError(err.response?.data?.message || 'فشل حذف الحساب.');
+    } finally {
+      setUsersLoading(false);
+    }
+  };
+
+  // تحديث تصنيف المحادثة يدوياً
+  const handleUpdateCategory = async (conversationId: string, category: 'INQUIRY' | 'ORDER' | 'COMPLAINT') => {
+    try {
+      await api.put(`/conversations/${conversationId}/category`, { category });
+      setConversations(prev => prev.map(c => c.id === conversationId ? { ...c, category } : c));
+      if (selectedConversation?.id === conversationId) {
+        setSelectedConversation(prev => prev ? { ...prev, category } : null);
+      }
+    } catch (err: any) {
+      console.error('Error updating category:', err);
+      alert('فشل تحديث تصنيف المحادثة.');
     }
   };
 
@@ -507,6 +614,16 @@ const Dashboard: React.FC<DashboardProps> = ({
             <Settings size={20} />
             <span>إعدادات النظام</span>
           </button>
+
+          {userRole === 'admin' && (
+            <button
+              onClick={() => changeTab('users')}
+              style={{ ...styles.navItem, ...(activeTab === 'users' ? styles.navItemActive : {}) }}
+            >
+              <Users size={20} />
+              <span>إدارة الموظفين</span>
+            </button>
+          )}
         </nav>
 
         <div style={styles.sidebarFooter}>
@@ -929,32 +1046,122 @@ const Dashboard: React.FC<DashboardProps> = ({
               <div style={styles.conversationsLayout}>
                 {/* قائمة المحادثات (يسار) */}
                 <div style={styles.conversationsListPane}>
-                  <h4 style={{ padding: '16px', borderBottom: '1px solid rgba(0,0,0,0.05)', fontWeight: 'bold' }}>قائمة الدردشات النشطة</h4>
-                  {conversations.length === 0 ? (
-                    <p style={{ color: '#5E6E85', padding: '20px', textAlign: 'center' }}>لا توجد محادثات نشطة من واتساب بعد.</p>
+                  <h4 style={{ padding: '16px', borderBottom: '1px solid rgba(0,0,0,0.05)', fontWeight: 'bold', marginBottom: 0 }}>قائمة الدردشات النشطة</h4>
+                  
+                  {/* شريط التصنيفات (Filters) */}
+                  <div style={{ display: 'flex', borderBottom: '1px solid rgba(0,0,0,0.05)', backgroundColor: '#F8FAFC', padding: '8px', gap: '4px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCategoryFilter('ALL')}
+                      style={{
+                        flex: 1,
+                        padding: '6px 2px',
+                        fontSize: '0.7rem',
+                        fontWeight: 'bold',
+                        border: 'none',
+                        borderRadius: '6px',
+                        backgroundColor: selectedCategoryFilter === 'ALL' ? '#0066FF' : 'transparent',
+                        color: selectedCategoryFilter === 'ALL' ? '#FFFFFF' : '#64748B',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      💬 الكل
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCategoryFilter('ORDER')}
+                      style={{
+                        flex: 1,
+                        padding: '6px 2px',
+                        fontSize: '0.7rem',
+                        fontWeight: 'bold',
+                        border: 'none',
+                        borderRadius: '6px',
+                        backgroundColor: selectedCategoryFilter === 'ORDER' ? '#10B981' : 'transparent',
+                        color: selectedCategoryFilter === 'ORDER' ? '#FFFFFF' : '#64748B',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      📦 طلبات
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCategoryFilter('COMPLAINT')}
+                      style={{
+                        flex: 1,
+                        padding: '6px 2px',
+                        fontSize: '0.7rem',
+                        fontWeight: 'bold',
+                        border: 'none',
+                        borderRadius: '6px',
+                        backgroundColor: selectedCategoryFilter === 'COMPLAINT' ? '#EF4444' : 'transparent',
+                        color: selectedCategoryFilter === 'COMPLAINT' ? '#FFFFFF' : '#64748B',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      ⚠️ شكاوى
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCategoryFilter('INQUIRY')}
+                      style={{
+                        flex: 1,
+                        padding: '6px 2px',
+                        fontSize: '0.7rem',
+                        fontWeight: 'bold',
+                        border: 'none',
+                        borderRadius: '6px',
+                        backgroundColor: selectedCategoryFilter === 'INQUIRY' ? '#3B82F6' : 'transparent',
+                        color: selectedCategoryFilter === 'INQUIRY' ? '#FFFFFF' : '#64748B',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      ❓ استفسار
+                    </button>
+                  </div>
+
+                  {conversations.filter(c => selectedCategoryFilter === 'ALL' || c.category === selectedCategoryFilter).length === 0 ? (
+                    <p style={{ color: '#5E6E85', padding: '20px', textAlign: 'center' }}>لا توجد محادثات نشطة في هذا التصنيف بعد.</p>
                   ) : (
                     <div style={{ overflowY: 'auto', flex: 1 }}>
-                      {conversations.map(conv => (
-                        <div
-                          key={conv.id}
-                          onClick={() => handleSelectConversation(conv)}
-                          style={{
-                            ...styles.conversationItem,
-                            backgroundColor: selectedConversation?.id === conv.id ? 'rgba(0, 102, 255, 0.08)' : 'transparent',
-                          }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <div style={styles.convAvatar}>
-                              <MessageSquare size={16} color="#0066FF" />
+                      {conversations
+                        .filter(c => selectedCategoryFilter === 'ALL' || c.category === selectedCategoryFilter)
+                        .map(conv => {
+                          const catColor = conv.category === 'ORDER' ? '#10B981' : conv.category === 'COMPLAINT' ? '#EF4444' : '#3B82F6';
+                          const catLabel = conv.category === 'ORDER' ? 'طلب' : conv.category === 'COMPLAINT' ? 'شكوى' : 'استفسار';
+                          return (
+                            <div
+                              key={conv.id}
+                              onClick={() => handleSelectConversation(conv)}
+                              style={{
+                                ...styles.conversationItem,
+                                backgroundColor: selectedConversation?.id === conv.id ? 'rgba(0, 102, 255, 0.08)' : 'transparent',
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <div style={{ ...styles.convAvatar, backgroundColor: `${catColor}15` }}>
+                                  <MessageSquare size={16} color={catColor} />
+                                </div>
+                                <div>
+                                  <div style={{ fontWeight: 'bold', fontSize: '0.85rem' }}>{conv.customer_phone}</div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                                    <span style={{ fontSize: '0.65rem', color: catColor, fontWeight: 'bold', backgroundColor: `${catColor}10`, padding: '2px 6px', borderRadius: '4px' }}>
+                                      {catLabel}
+                                    </span>
+                                    <span style={{ fontSize: '0.65rem', color: '#8E9FB8' }}>
+                                      {new Date(conv.updated_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              <span className={`badge badge-${conv.status.toLowerCase()}`}>{conv.status}</span>
                             </div>
-                            <div>
-                              <div style={{ fontWeight: 'bold', fontSize: '0.85rem' }}>{conv.customer_phone}</div>
-                              <div style={{ fontSize: '0.7rem', color: '#5E6E85' }}>نشط منذ: {new Date(conv.updated_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
-                            </div>
-                          </div>
-                          <span className={`badge badge-${conv.status.toLowerCase()}`}>{conv.status}</span>
-                        </div>
-                      ))}
+                          );
+                        })}
                     </div>
                   )}
                 </div>
@@ -964,8 +1171,34 @@ const Dashboard: React.FC<DashboardProps> = ({
                   {selectedConversation ? (
                     <>
                       <div style={styles.chatPaneHeader}>
-                        <div style={{ fontWeight: 'bold' }}>مراقبة العميل: {selectedConversation.customer_phone}</div>
-                        <div style={{ fontSize: '0.75rem', color: '#10B981' }}>المساعد الذكي (AI) متصل ومستعد للرد</div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                          <div>
+                            <div style={{ fontWeight: 'bold' }}>مراقبة العميل: {selectedConversation.customer_phone}</div>
+                            <div style={{ fontSize: '0.75rem', color: '#10B981' }}>المساعد الذكي (AI) متصل ومستعد للرد</div>
+                          </div>
+                          
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 'bold' }}>تصنيف المحادثة:</span>
+                            <select
+                              value={selectedConversation.category || 'INQUIRY'}
+                              onChange={(e) => handleUpdateCategory(selectedConversation.id, e.target.value as any)}
+                              style={{
+                                padding: '6px 12px',
+                                borderRadius: '6px',
+                                fontSize: '0.75rem',
+                                border: '1px solid #CBD5E1',
+                                backgroundColor: '#FFFFFF',
+                                fontWeight: 'bold',
+                                cursor: 'pointer',
+                                color: selectedConversation.category === 'ORDER' ? '#10B981' : selectedConversation.category === 'COMPLAINT' ? '#EF4444' : '#3B82F6'
+                              }}
+                            >
+                              <option value="INQUIRY">❓ استفسارات عامة</option>
+                              <option value="ORDER">📦 طلبات وأوردرات</option>
+                              <option value="COMPLAINT">⚠️ شكاوى وبلاغات</option>
+                            </select>
+                          </div>
+                        </div>
                       </div>
 
                       <div style={styles.chatPaneBody}>
@@ -1153,6 +1386,129 @@ const Dashboard: React.FC<DashboardProps> = ({
                     </button>
                   </div>
                 </form>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'users' && userRole === 'admin' && (
+            <div className="animate-fade-in" style={styles.tabContent}>
+              <h3 style={{ ...styles.cardTitle, marginBottom: '8px' }}>إدارة طاقم العمل والموظفين</h3>
+              <p style={{ color: '#5E6E85', fontSize: '0.9rem', marginBottom: '24px' }}>
+                قم بإنشاء حسابات جديدة للموظفين الذين يعملون معك وتحديد أدوارهم وصلاحياتهم لحماية البيانات.
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '24px', alignItems: 'start' }}>
+                {/* نموذج إضافة مستخدم جديد */}
+                <div className="glass-card" style={{ padding: '24px' }}>
+                  <h4 style={{ fontWeight: 'bold', marginBottom: '16px', fontSize: '1rem' }}>إضافة موظف جديد</h4>
+                  
+                  {usersError && (
+                    <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.15)', padding: '10px', borderRadius: '8px', color: '#EF4444', fontSize: '0.8rem', marginBottom: '16px' }}>
+                      {usersError}
+                    </div>
+                  )}
+                  {usersSuccess && (
+                    <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.15)', padding: '10px', borderRadius: '8px', color: '#10B981', fontSize: '0.8rem', marginBottom: '16px' }}>
+                      {usersSuccess}
+                    </div>
+                  )}
+
+                  <form onSubmit={handleCreateUser}>
+                    <div style={{ ...styles.formGroup, marginBottom: '16px' }}>
+                      <label style={styles.formLabel}>اسم المستخدم</label>
+                      <input
+                        type="text"
+                        value={newUsername}
+                        onChange={e => setNewUsername(e.target.value)}
+                        placeholder="أدخل اسم مستخدم فريد (بالإنكليزية)"
+                        required
+                        style={styles.formInput}
+                      />
+                    </div>
+
+                    <div style={{ ...styles.formGroup, marginBottom: '16px' }}>
+                      <label style={styles.formLabel}>كلمة المرور</label>
+                      <input
+                        type="password"
+                        value={newPassword}
+                        onChange={e => setNewPassword(e.target.value)}
+                        placeholder="أدخل كلمة مرور قوية"
+                        required
+                        style={styles.formInput}
+                      />
+                    </div>
+
+                    <div style={{ ...styles.formGroup, marginBottom: '24px' }}>
+                      <label style={styles.formLabel}>دور وصلاحيات المستخدم</label>
+                      <select
+                        value={newRole}
+                        onChange={e => setNewRole(e.target.value as 'admin' | 'staff')}
+                        style={styles.formInput}
+                      >
+                        <option value="staff">موظف (مشاهدة ومراقبة فقط)</option>
+                        <option value="admin">مسؤول (صلاحيات كاملة للمنيو واليوزرات)</option>
+                      </select>
+                    </div>
+
+                    <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '12px' }} disabled={usersLoading}>
+                      {usersLoading ? 'جاري الحفظ...' : 'إضافة الموظف للنظام'}
+                    </button>
+                  </form>
+                </div>
+
+                {/* قائمة الموظفين الحاليين */}
+                <div className="glass-card" style={{ padding: '24px' }}>
+                  <h4 style={{ fontWeight: 'bold', marginBottom: '16px', fontSize: '1rem' }}>الحسابات المسجلة حالياً</h4>
+                  
+                  {usersList.length === 0 ? (
+                    <p style={{ color: '#5E6E85', padding: '20px', textAlign: 'center' }}>جاري تحميل الموظفين...</p>
+                  ) : (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid rgba(0,0,0,0.05)', color: '#5E6E85', fontSize: '0.8rem' }}>
+                            <th style={{ padding: '12px 8px' }}>اسم المستخدم</th>
+                            <th style={{ padding: '12px 8px' }}>الصلاحية</th>
+                            <th style={{ padding: '12px 8px' }}>تاريخ الإنشاء</th>
+                            <th style={{ padding: '12px 8px', textAlign: 'center' }}>العمليات</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {usersList.map(user => (
+                            <tr key={user.id} style={{ borderBottom: '1px solid rgba(0,0,0,0.02)', fontSize: '0.85rem' }}>
+                              <td style={{ padding: '12px 8px', fontWeight: 'bold' }}>{user.username}</td>
+                              <td style={{ padding: '12px 8px' }}>
+                                <span className={`badge badge-${user.role === 'admin' ? 'active' : 'pending'}`}>
+                                  {user.role === 'admin' ? 'مسؤول (Admin)' : 'موظف (Staff)'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '12px 8px', color: '#5E6E85' }}>
+                                {new Date(user.created_at).toLocaleDateString('ar-EG')}
+                              </td>
+                              <td style={{ padding: '12px 8px', textAlign: 'center' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteUser(user.id)}
+                                  disabled={user.username === 'admin'}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: user.username === 'admin' ? '#CBD5E1' : '#EF4444',
+                                    cursor: user.username === 'admin' ? 'not-allowed' : 'pointer',
+                                    padding: '4px'
+                                  }}
+                                  title={user.username === 'admin' ? 'لا يمكن حذف حساب المسؤول الرئيسي' : 'حذف الحساب'}
+                                >
+                                  <Trash size={16} />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}

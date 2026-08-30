@@ -3,37 +3,55 @@ import jwt from 'jsonwebtoken';
 import * as XLSX from 'xlsx';
 import { prisma } from '../services/prisma.service';
 import { geminiService } from '../services/gemini.service';
+import { hashPassword, comparePassword } from '../utils/auth';
 
 /**
  * 1. تسجيل الدخول لمسؤول لوحة تحكم المطعم
  */
 export const login = async (req: Request, res: Response): Promise<void> => {
   const { username, password } = req.body;
-
-  const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
-  const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin_password_123';
   const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_change_me_in_production';
 
-  if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
-    // توقيع الـ JWT بصلاحية 24 ساعة
-    const token = jwt.sign(
-      { username, role: 'admin' },
-      JWT_SECRET,
-      { expiresIn: '24h' }
-    );
+  try {
+    let user = await prisma.user.findUnique({ where: { username } });
 
-    res.status(200).json({
-      status: 'success',
-      token,
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-      message: 'تم تسجيل الدخول بنجاح!'
-    });
-  } else {
-    res.status(401).json({
-      status: 'error',
-      error_code: 'INVALID_CREDENTIALS',
-      message: 'اسم المستخدم أو كلمة المرور غير صحيحة!'
-    });
+    // إذا لم يكن هناك أي يوزرات مسجلة في النظام بعد، نقوم بإنشاء حساب الأدمن الافتراضي فوراً
+    const userCount = await prisma.user.count();
+    if (userCount === 0 && username === 'admin') {
+      const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin_password_123';
+      user = await prisma.user.create({
+        data: {
+          username: 'admin',
+          password: hashPassword(ADMIN_PASSWORD),
+          role: 'admin'
+        }
+      });
+    }
+
+    if (user && comparePassword(password, user.password)) {
+      // توقيع الـ JWT بصلاحية 24 ساعة
+      const token = jwt.sign(
+        { username: user.username, role: user.role },
+        JWT_SECRET,
+        { expiresIn: '24h' }
+      );
+
+      res.status(200).json({
+        status: 'success',
+        token,
+        role: user.role,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        message: 'تم تسجيل الدخول بنجاح!'
+      });
+    } else {
+      res.status(401).json({
+        status: 'error',
+        error_code: 'INVALID_CREDENTIALS',
+        message: 'اسم المستخدم أو كلمة المرور غير صحيحة!'
+      });
+    }
+  } catch (error: any) {
+    res.status(500).json({ status: 'error', message: error.message });
   }
 };
 
@@ -301,6 +319,7 @@ export const handleDemoChat = async (req: Request, res: Response): Promise<void>
     const demoCustomerPhone = 'demo-visitor-phone';
 
     const { responseText } = await geminiService.processMessage(
+      'demo',
       demoRestaurantId,
       demoRestaurantName,
       demoCustomerPhone,
@@ -487,6 +506,92 @@ export const updateRestaurant = async (req: Request, res: Response): Promise<voi
       message: 'عذراً، فشل تحديث إعدادات المطعم.',
       error: error.message
     });
+  }
+};
+
+/**
+ * إنشاء مستخدم (موظف) جديد في لوحة التحكم (للمسؤول فقط)
+ */
+export const createUser = async (req: Request, res: Response): Promise<void> => {
+  const { username, password, role } = req.body;
+  try {
+    const existingUser = await prisma.user.findUnique({ where: { username } });
+    if (existingUser) {
+      res.status(400).json({ status: 'error', message: 'اسم المستخدم مسجل بالفعل!' });
+      return;
+    }
+
+    const newUser = await prisma.user.create({
+      data: {
+        username,
+        password: hashPassword(password),
+        role
+      }
+    });
+
+    res.status(201).json({
+      status: 'success',
+      message: 'تم إنشاء المستخدم بنجاح!',
+      user: { id: newUser.id, username: newUser.username, role: newUser.role }
+    });
+  } catch (error: any) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+/**
+ * جلب جميع مستخدمي النظام (للمسؤول فقط)
+ */
+export const listUsers = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        created_at: true
+      },
+      orderBy: { created_at: 'desc' }
+    });
+    res.status(200).json(users);
+  } catch (error: any) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+/**
+ * حذف مستخدم معين من النظام (للمسؤول فقط)
+ */
+export const deleteUser = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+  try {
+    const userToDelete = await prisma.user.findUnique({ where: { id } });
+    if (userToDelete?.username === 'admin') {
+      res.status(400).json({ status: 'error', message: 'لا يمكن حذف حساب المسؤول الرئيسي!' });
+      return;
+    }
+
+    await prisma.user.delete({ where: { id } });
+    res.status(200).json({ status: 'success', message: 'تم حذف المستخدم بنجاح!' });
+  } catch (error: any) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+/**
+ * تحديث تصنيف المحادثة يدوياً
+ */
+export const updateConversationCategory = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params; // conversation_id
+  const { category } = req.body;
+  try {
+    const updated = await prisma.conversation.update({
+      where: { id },
+      data: { category }
+    });
+    res.status(200).json({ status: 'success', message: 'تم تحديث تصنيف المحادثة بنجاح!', conversation: updated });
+  } catch (error: any) {
+    res.status(500).json({ status: 'error', message: error.message });
   }
 };
 
