@@ -20,6 +20,7 @@ model Restaurant {
   subscription_tier       String        // فئة الاشتراك (مثال: FREE, PREMIUM)
   subscription_status     String        // حالة الاشتراك (مثال: ACTIVE, EXPIRED, TRIAL)
   subscription_expires_at DateTime
+  ai_instructions         String?       // تعليمات وقواعد الذكاء الاصطناعي الإضافية من الإدارة
   created_at              DateTime      @default(now())
 
   // العلاقات (Relations)

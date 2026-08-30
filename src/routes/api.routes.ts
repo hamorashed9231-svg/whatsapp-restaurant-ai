@@ -19,7 +19,10 @@ import {
   createUser,
   listUsers,
   deleteUser,
-  updateConversationCategory
+  updateConversationCategory,
+  handleAdminConfigChat,
+  getAiInstructions,
+  updateAiInstructions
 } from '../controllers/api.controller';
 import { upload } from '../middlewares/upload.middleware';
 
@@ -64,5 +67,10 @@ router.put('/conversations/:id/category', authMiddleware, updateConversationCate
 router.post('/users', authMiddleware, createUser);
 router.get('/users', authMiddleware, listUsers);
 router.delete('/users/:id', authMiddleware, deleteUser);
+
+// شات الضبط الذكي والتعليمات الإدارية المخصصة (للمسؤول فقط)
+router.post('/restaurants/:id/ai-config-chat', authMiddleware, handleAdminConfigChat);
+router.get('/restaurants/:id/ai-instructions', authMiddleware, getAiInstructions);
+router.put('/restaurants/:id/ai-instructions', authMiddleware, updateAiInstructions);
 
 export default router;

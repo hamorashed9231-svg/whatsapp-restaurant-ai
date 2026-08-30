@@ -595,4 +595,63 @@ export const updateConversationCategory = async (req: Request, res: Response): P
   }
 };
 
+/**
+ * شات الضبط الذكي الخاص بالأدمن لتوجيه المساعد
+ */
+export const handleAdminConfigChat = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params; // restaurant_id
+  const { message, history } = req.body;
+  try {
+    const restaurant = await prisma.restaurant.findUnique({ where: { id } });
+    if (!restaurant) {
+      res.status(404).json({ status: 'error', message: 'المطعم غير موجود.' });
+      return;
+    }
+
+    const result = await geminiService.processAdminConfigMessage(
+      restaurant.id,
+      restaurant.name,
+      history || [],
+      message
+    );
+
+    res.status(200).json(result);
+  } catch (error: any) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+/**
+ * جلب التعليمات الإدارية المخصصة الحالية للمطعم
+ */
+export const getAiInstructions = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params; // restaurant_id
+  try {
+    const restaurant = await prisma.restaurant.findUnique({
+      where: { id },
+      select: { ai_instructions: true }
+    });
+    res.status(200).json({ instructions: restaurant?.ai_instructions || '' });
+  } catch (error: any) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+/**
+ * تعديل التعليمات الإدارية المخصصة للمطعم مباشرة
+ */
+export const updateAiInstructions = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params; // restaurant_id
+  const { instructions } = req.body;
+  try {
+    await prisma.restaurant.update({
+      where: { id },
+      data: { ai_instructions: instructions }
+    });
+    res.status(200).json({ status: 'success', message: 'تم تحديث توجيهات المساعد الذكي بنجاح!' });
+  } catch (error: any) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
 

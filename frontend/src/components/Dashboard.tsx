@@ -16,7 +16,8 @@ import {
   Send,
   AlertCircle,
   Upload,
-  Users
+  Users,
+  Sparkles
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -86,7 +87,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   onBackToLanding,
   onRedirectToLogin,
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'menu' | 'orders' | 'reservations' | 'conversations' | 'settings' | 'users'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'menu' | 'orders' | 'reservations' | 'conversations' | 'settings' | 'users' | 'ai-assistant'>('overview');
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
   
   // حالات تحميل البيانات العامة
@@ -132,6 +133,13 @@ const Dashboard: React.FC<DashboardProps> = ({
       }
     }
   }, [token]);
+
+  // حالات مساعد الضبط الذكي والتعليمات المخصصة
+  const [aiInstructions, setAiInstructions] = useState('');
+  const [configChatMessages, setConfigChatMessages] = useState<ChatMessage[]>([]);
+  const [configChatInput, setConfigChatInput] = useState('');
+  const [configLoading, setConfigLoading] = useState(false);
+  const [isDirectEditing, setIsDirectEditing] = useState(false);
 
   // حالات إدارة المنيو (إضافة وتعديل)
   const [showAddMenuModal, setShowAddMenuModal] = useState(false);
@@ -204,17 +212,19 @@ const Dashboard: React.FC<DashboardProps> = ({
 
         // جلب بقية البيانات
         const actualRestId = resRest.data.id;
-        const [resMenu, resOrders, resReserv, resConvers] = await Promise.all([
+        const [resMenu, resOrders, resReserv, resConvers, resAiInst] = await Promise.all([
           api.get(`/restaurants/${actualRestId}/menu`),
           api.get(`/restaurants/${actualRestId}/orders`),
           api.get(`/restaurants/${actualRestId}/reservations`),
-          api.get(`/restaurants/${actualRestId}/conversations`)
+          api.get(`/restaurants/${actualRestId}/conversations`),
+          api.get(`/restaurants/${actualRestId}/ai-instructions`)
         ]);
 
         setMenuItems(resMenu.data);
         setOrders(resOrders.data);
         setReservations(resReserv.data);
         setConversations(resConvers.data);
+        setAiInstructions(resAiInst.data.instructions || '');
       } catch (err: any) {
         console.error('خطأ أثناء جلب بيانات لوحة التحكم:', err);
         setError(err.response?.data?.message || 'عذراً، فشل الاتصال بالباك إند وقاعدة البيانات. تأكد من تشغيل المخدم وتهيئة قاعدة البيانات.');
@@ -245,6 +255,9 @@ const Dashboard: React.FC<DashboardProps> = ({
         setConversations(res.data);
       } else if (tab === 'users') {
         fetchUsersList();
+      } else if (tab === 'ai-assistant') {
+        const res = await api.get(`/restaurants/${restaurant.id}/ai-instructions`);
+        setAiInstructions(res.data.instructions || '');
       }
     } catch (err) {
       console.error('فشل تحديث البيانات للتبويب:', tab, err);
@@ -320,6 +333,56 @@ const Dashboard: React.FC<DashboardProps> = ({
     } catch (err: any) {
       console.error('Error updating category:', err);
       alert('فشل تحديث تصنيف المحادثة.');
+    }
+  };
+
+  // معالجة إرسال رسالة في شات الضبط الذكي للأدمن
+  const handleConfigChatSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!configChatInput.trim() || !restaurant) return;
+
+    const userMsg = configChatInput;
+    setConfigChatInput('');
+
+    // إضافة رسالة المستخدم محلياً في قائمة الرسائل
+    const newUserMessage: ChatMessage = { role: 'user', content: userMsg, timestamp: new Date().toISOString() };
+    const updatedMsgs = [...configChatMessages, newUserMessage];
+    setConfigChatMessages(updatedMsgs);
+    setConfigLoading(true);
+
+    try {
+      const res = await api.post(`/restaurants/${restaurant.id}/ai-config-chat`, {
+        message: userMsg,
+        history: configChatMessages
+      });
+
+      // إضافة رد المساعد الذكي
+      const assistantMsg: ChatMessage = { role: 'assistant', content: res.data.responseText, timestamp: new Date().toISOString() };
+      setConfigChatMessages([...updatedMsgs, assistantMsg]);
+
+      // تحديث قائمة القواعد النشطة الحالية المعروضة
+      const resAiInst = await api.get(`/restaurants/${restaurant.id}/ai-instructions`);
+      setAiInstructions(resAiInst.data.instructions || '');
+    } catch (err: any) {
+      console.error('Error in config chat:', err);
+      alert(err.response?.data?.message || 'حدث خطأ أثناء معالجة رسالة الضبط.');
+    } finally {
+      setConfigLoading(false);
+    }
+  };
+
+  // حفظ القواعد المكتوبة يدوياً مباشرة بقاعدة البيانات
+  const handleDirectInstructionsSave = async () => {
+    if (!restaurant) return;
+    setConfigLoading(true);
+    try {
+      await api.put(`/restaurants/${restaurant.id}/ai-instructions`, { instructions: aiInstructions });
+      alert('تم حفظ وتطبيق القواعد بنجاح!');
+    } catch (err: any) {
+      console.error('Error saving instructions:', err);
+      alert('فشل حفظ القواعد في قاعدة البيانات.');
+    } finally {
+      setConfigLoading(false);
     }
   };
 
@@ -616,13 +679,23 @@ const Dashboard: React.FC<DashboardProps> = ({
           </button>
 
           {userRole === 'admin' && (
-            <button
-              onClick={() => changeTab('users')}
-              style={{ ...styles.navItem, ...(activeTab === 'users' ? styles.navItemActive : {}) }}
-            >
-              <Users size={20} />
-              <span>إدارة الموظفين</span>
-            </button>
+            <>
+              <button
+                onClick={() => changeTab('ai-assistant')}
+                style={{ ...styles.navItem, ...(activeTab === 'ai-assistant' ? styles.navItemActive : {}) }}
+              >
+                <Sparkles size={20} />
+                <span>مساعد الضبط الذكي</span>
+              </button>
+
+              <button
+                onClick={() => changeTab('users')}
+                style={{ ...styles.navItem, ...(activeTab === 'users' ? styles.navItemActive : {}) }}
+              >
+                <Users size={20} />
+                <span>إدارة الموظفين</span>
+              </button>
+            </>
           )}
         </nav>
 
@@ -1509,6 +1582,186 @@ const Dashboard: React.FC<DashboardProps> = ({
                     </div>
                   )}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'ai-assistant' && userRole === 'admin' && (
+            <div className="animate-fade-in" style={{ ...styles.tabContent, height: 'calc(100vh - 180px)', padding: 0 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', height: '100%', gap: '24px', padding: '24px', alignItems: 'stretch' }}>
+                
+                {/* شات المساعد الذكي لإعداد البوت (يمين) */}
+                <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: 0 }}>
+                  {/* رأس الشات */}
+                  <div style={{ padding: '16px 24px', borderBottom: '1px solid rgba(0,0,0,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <h4 style={{ fontWeight: 'bold', margin: 0, fontSize: '1rem' }}>دردشة الضبط والتوجيه المباشر</h4>
+                      <span style={{ fontSize: '0.75rem', color: '#10B981' }}>تعديل وتحديث قواعد بوت واتساب بالذكاء الاصطناعي</span>
+                    </div>
+                  </div>
+
+                  {/* جسم الشات */}
+                  <div style={{ flex: 1, overflowY: 'auto', padding: '24px', backgroundColor: '#F8FAFC', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    {configChatMessages.length === 0 ? (
+                      <div style={{ display: 'flex', height: '100%', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#5E6E85', textAlign: 'center', padding: '20px', maxWidth: '500px', margin: 'auto' }}>
+                        <Sparkles size={48} color="#0066FF" style={{ marginBottom: '16px' }} />
+                        <h5 style={{ fontWeight: 'bold', marginBottom: '8px', color: '#0F1E36' }}>مرحباً بك في مساعد الإعداد الذكي!</h5>
+                        <p style={{ fontSize: '0.85rem', lineHeight: '1.6' }}>
+                          أنا هنا لمساعدتك في صياغة وتحديث قواعد البوت المساعد لزبائنك على واتساب. يمكنك إعطائي الأوامر بلغة طبيعية وسأقوم بتعديل القواعد لحظياً!
+                        </p>
+                        <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', textAlign: 'right' }}>
+                          <span style={{ fontSize: '0.8rem', backgroundColor: '#FFFFFF', padding: '10px', borderRadius: '8px', border: '1px solid rgba(0,0,0,0.05)' }}>
+                            💡 <strong>جرب أن تقول:</strong> "قول للناس إن عندنا عرض النهاردة: بيتزا عليها واحدة تانية مجاناً"
+                          </span>
+                          <span style={{ fontSize: '0.8rem', backgroundColor: '#FFFFFF', padding: '10px', borderRadius: '8px', border: '1px solid rgba(0,0,0,0.05)' }}>
+                            💡 <strong>أو:</strong> "لو حد سأل على الشاورما قوله للأسف خلصت اليوم"
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      configChatMessages.map((msg, i) => (
+                        <div
+                          key={i}
+                          style={{
+                            display: 'flex',
+                            width: '100%',
+                            justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start'
+                          }}
+                        >
+                          <div
+                            style={{
+                              maxWidth: '75%',
+                              padding: '12px 16px',
+                              borderRadius: msg.role === 'user' ? '12px 12px 0 12px' : '12px 12px 12px 0',
+                              backgroundColor: msg.role === 'user' ? '#0066FF' : '#FFFFFF',
+                              color: msg.role === 'user' ? '#FFFFFF' : '#0F1E36',
+                              boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
+                              border: msg.role === 'user' ? 'none' : '1px solid rgba(0,0,0,0.05)'
+                            }}
+                          >
+                            <p style={{ fontSize: '0.85rem', margin: 0, whiteSpace: 'pre-line', lineHeight: '1.5' }}>{msg.content}</p>
+                            <span style={{ fontSize: '0.6rem', opacity: 0.7, marginTop: '4px', display: 'block', textAlign: msg.role === 'user' ? 'left' : 'right' }}>
+                              {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {/* شريط الإدخال */}
+                  <form onSubmit={handleConfigChatSubmit} style={{ padding: '16px', borderTop: '1px solid rgba(0,0,0,0.05)', display: 'flex', gap: '10px' }}>
+                    <input
+                      type="text"
+                      value={configChatInput}
+                      onChange={e => setConfigChatInput(e.target.value)}
+                      disabled={configLoading}
+                      placeholder="اطلب من الذكاء الاصطناعي تعديل القواعد (مثال: أضف خصم 20% على البرجر اليوم)..."
+                      style={{
+                        flex: 1,
+                        padding: '12px 16px',
+                        borderRadius: '8px',
+                        border: '1px solid #E2E8F0',
+                        fontSize: '0.9rem',
+                        outline: 'none'
+                      }}
+                    />
+                    <button
+                      type="submit"
+                      disabled={configLoading || !configChatInput.trim()}
+                      className="btn btn-primary"
+                      style={{ padding: '0 20px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      {configLoading ? (
+                        <span className="spinner" style={{ width: 18, height: 18 }}></span>
+                      ) : (
+                        <Send size={18} color="#FFFFFF" style={{ transform: 'rotate(180deg)' }} />
+                      )}
+                    </button>
+                  </form>
+                </div>
+
+                {/* القواعد والتعليمات النشطة حالياً (يسار) */}
+                <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', padding: '24px' }}>
+                  <h4 style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '1rem' }}>توجيهات البوت النشطة</h4>
+                  <p style={{ color: '#5E6E85', fontSize: '0.75rem', marginBottom: '20px' }}>
+                    هذه هي القواعد التي سيلتزم بها المساعد الذكي حالياً عند التحدث مع الزبائن على واتساب.
+                  </p>
+
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                    {isDirectEditing ? (
+                      <>
+                        <textarea
+                          value={aiInstructions}
+                          onChange={e => setAiInstructions(e.target.value)}
+                          placeholder="اكتب التوجيهات والقواعد المخصصة هنا مباشرة..."
+                          style={{
+                            flex: 1,
+                            width: '100%',
+                            padding: '16px',
+                            borderRadius: '8px',
+                            border: '1px solid #CBD5E1',
+                            fontFamily: 'inherit',
+                            fontSize: '0.85rem',
+                            resize: 'none',
+                            lineHeight: '1.6',
+                            outline: 'none',
+                            marginBottom: '16px'
+                          }}
+                        />
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            type="button"
+                            onClick={handleDirectInstructionsSave}
+                            disabled={configLoading}
+                            className="btn btn-primary"
+                            style={{ flex: 1, padding: '10px' }}
+                          >
+                            {configLoading ? 'جاري الحفظ...' : 'حفظ'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsDirectEditing(false)}
+                            className="btn btn-secondary"
+                            style={{ flex: 1, padding: '10px', backgroundColor: '#E2E8F0', color: '#4A5568' }}
+                          >
+                            إلغاء
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div
+                          style={{
+                            flex: 1,
+                            backgroundColor: '#F8FAFC',
+                            borderRadius: '8px',
+                            padding: '16px',
+                            border: '1px solid rgba(0,0,0,0.05)',
+                            fontSize: '0.85rem',
+                            overflowY: 'auto',
+                            lineHeight: '1.6',
+                            whiteSpace: 'pre-wrap',
+                            color: aiInstructions ? '#0F1E36' : '#94A3B8',
+                            marginBottom: '16px'
+                          }}
+                        >
+                          {aiInstructions || 'لا توجد أي قواعد مضافة حالياً. يمكنك التحدث مع المساعد على اليمين لصياغة القواعد وحفظها تلقائياً.'}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setIsDirectEditing(true)}
+                          className="btn btn-secondary"
+                          style={{ width: '100%', padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', border: '1px dashed #0066FF', color: '#0066FF', backgroundColor: 'rgba(0,102,255,0.02)' }}
+                        >
+                          <Edit size={16} />
+                          <span>تعديل القواعد كتابةً</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
               </div>
             </div>
           )}

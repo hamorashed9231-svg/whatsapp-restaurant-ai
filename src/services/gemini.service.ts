@@ -30,6 +30,20 @@ class GeminiService {
     newMessage: string
   ): Promise<{ responseText: string; updatedHistory: ChatMessage[] }> {
     
+    // جلب التعليمات المخصصة من قاعدة البيانات إن وجدت
+    let customInstructions = '';
+    try {
+      const restaurant = await prisma.restaurant.findUnique({
+        where: { id: restaurantId },
+        select: { ai_instructions: true }
+      });
+      if (restaurant?.ai_instructions) {
+        customInstructions = `\n\n⚠️ تعليمات وإرشادات وتوجيهات خاصة وعاجلة من إدارة المطعم يجب الالتزام بها فوراً وبدقة:\n${restaurant.ai_instructions}`;
+      }
+    } catch (err: any) {
+      console.error('خطأ أثناء جلب تعليمات المطعم الإضافية:', err.message);
+    }
+
     // سياق النظام المخصص للـ AI ليتصرف كمساعد ذكي للمطعم المحدد
     const systemPrompt = `أنت مساعد ذكي ومرحب تعمل لصالح مطعم "${restaurantName}" على واتساب.
 أجب دائماً باللغة العربية بأسلوب لبق، ودود، ومختصر ومناسب لمحادثات واتساب.
@@ -46,7 +60,7 @@ class GeminiService {
 - عندما يطلب العميل طلب طعام، اسأله عن الأصناف والكميات بدقة، ثم استخدم أداة "create_order". احسب الأسعار بناءً على القائمة الفعلية المسترجعة من الأداة.
 - عندما يطلب العميل حجز طاولة، اسأله عن التاريخ، الوقت، وعدد الأشخاص (party_size)، ثم استخدم أداة "create_reservation".
 - تجنب الردود الطويلة جداً. استخدم الإيموجي بشكل لطيف لتجميل الرسائل.
-- الوقت الحالي للنظام هو: ${new Date().toISOString()}. استخدم هذا المرجع لتحديد الأوقات النسبية (مثل اليوم، غداً، إلخ).`;
+- الوقت الحالي للنظام هو: ${new Date().toISOString()}. استخدم هذا المرجع لتحديد الأوقات النسبية (مثل اليوم، غداً، إلخ).` + customInstructions;
 
     // إذا لم يتم ضبط مفتاح SDK، يتم استخدام محاكاة الرد لأغراض الفحص والاختبار
     if (!this.genAI) {
@@ -392,6 +406,132 @@ class GeminiService {
   }
 
   /**
+   * معالجة محادثة المدير (الأدمن) لضبط سلوك وقواعد الذكاء الاصطناعي الخاص بالمطعم.
+   * @param restaurantId معرف المطعم
+   * @param restaurantName اسم المطعم
+   * @param history سجل الدردشة بين الأدمن والمساعد
+   * @param newMessage الرسالة الجديدة من الأدمن
+   */
+  public async processAdminConfigMessage(
+    restaurantId: string,
+    restaurantName: string,
+    history: ChatMessage[],
+    newMessage: string
+  ): Promise<{ responseText: string }> {
+
+    // 1. جلب القواعد الحالية من قاعدة البيانات لتزويد المساعد بها
+    let currentInstructions = 'لا توجد أي قواعد مخصصة مضافة حالياً.';
+    try {
+      const restaurant = await prisma.restaurant.findUnique({
+        where: { id: restaurantId },
+        select: { ai_instructions: true }
+      });
+      if (restaurant?.ai_instructions) {
+        currentInstructions = restaurant.ai_instructions;
+      }
+    } catch (err: any) {
+      console.error('خطأ جلب قواعد المطعم للمساعد الإعدادي:', err.message);
+    }
+
+    const systemPrompt = `أنت مساعد الضبط الذكي والمسؤول عن تخصيص وتحديث سلوك بوت واتساب المساعد لمطعم "${restaurantName}".
+يتحدث معك الآن مدير المطعم (الأدمن) لتعديل أو إضافة أو حذف قواعد توجيهية للبوت.
+مثال على ما قد يطلبه المدير:
+- "قول للناس إن عندنا خصم 50% على الشاورما اليوم" -> عليك صياغتها كقاعدة وحفظها.
+- "متقبلش حجوزات طاولات بعد 10 مساءً" -> عليك تحديث قواعد الحجوزات وحفظها.
+- "احذف عرض الشاورما" -> عليك إزالة القاعدة وحفظها.
+
+القواعد والتوجيهات النشطة حالياً للمطعم هي:
+\"\"\"
+${currentInstructions}
+\"\"\"
+
+مهمتك:
+1. فهم التغييرات المطلوبة من الأدمن (إضافة، تعديل، أو حذف).
+2. صياغة القائمة الكاملة المحدثة للتعليمات على شكل نقاط واضحة ومختصرة باللغة العربية (Markdown List).
+3. استدعاء أداة "update_restaurant_instructions" فوراً لتحديث القواعد في قاعدة البيانات ليتم تطبيقها لحظياً.
+4. الرد على الأدمن بأسلوب لبق واحترافي باللغة العربية وتأكيد القواعد التي تم تعديلها أو حفظها بنجاح.
+
+تنبيه: يجب دائماً استدعاء أداة "update_restaurant_instructions" عند حدوث أي تعديل في القواعد لضمان حفظها في قاعدة البيانات.`;
+
+    if (!this.genAI) {
+      return { responseText: 'عذراً، خدمة الذكاء الاصطناعي معطلة لعدم وجود مفتاح API.' };
+    }
+
+    try {
+      const geminiHistory: any[] = [];
+      for (const msg of history) {
+        if (msg.role === 'system') continue;
+        geminiHistory.push({
+          role: msg.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: msg.content }]
+        });
+      }
+
+      const model = this.genAI.getGenerativeModel({
+        model: 'gemini-1.5-pro',
+        systemInstruction: systemPrompt,
+        tools: [
+          {
+            functionDeclarations: [
+              {
+                name: 'update_restaurant_instructions',
+                description: 'حفظ وتحديث القائمة الكاملة للتعليمات والقواعد المخصصة لبوت المطعم في قاعدة البيانات فوراً',
+                parameters: {
+                  type: SchemaType.OBJECT,
+                  properties: {
+                    instructions: {
+                      type: SchemaType.STRING,
+                      description: 'القائمة الكاملة المحدثة للتعليمات المنسقة بنقاط Markdown (Bulleted List)'
+                    }
+                  },
+                  required: ['instructions']
+                }
+              }
+            ]
+          }
+        ]
+      });
+
+      const chat = model.startChat({ history: geminiHistory });
+      let result = await chat.sendMessage(newMessage);
+      let response = result.response;
+
+      let functionCalls = response.functionCalls();
+      if (functionCalls && functionCalls.length > 0) {
+        const call = functionCalls[0];
+        if (call.name === 'update_restaurant_instructions') {
+          const toolInput = call.args as any;
+
+          // تشغيل الأداة وحفظ البيانات
+          await prisma.restaurant.update({
+            where: { id: restaurantId },
+            data: { ai_instructions: toolInput.instructions }
+          });
+
+          // إرسال النتيجة لـ Gemini لصياغة الرد النهائي للأدمن
+          const functionResponses = [
+            {
+              functionResponse: {
+                name: call.name,
+                response: { result: { status: 'success', message: 'تم التحديث بنجاح' } }
+              }
+            }
+          ];
+
+          result = await chat.sendMessage(functionResponses);
+          response = result.response;
+        }
+      }
+
+      return { responseText: response.text() || 'تم استلام وتحديث القواعد بنجاح.' };
+    } catch (err: any) {
+      console.error('خطأ في مساعد الإعداد الذكي:', err);
+      return { responseText: `عذراً، حدث خطأ أثناء معالجة طلبك: ${err.message}` };
+    }
+  }
+
+  /**
+   * (التحقق من المساعد التجريبي)
    * توليد رد محاكى بسيط في حال غياب مفتاح API لـ Gemini
    */
   private generateMockResponse(message: string, restaurantName: string): string {
