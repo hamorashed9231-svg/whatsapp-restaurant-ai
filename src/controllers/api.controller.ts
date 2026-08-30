@@ -15,9 +15,8 @@ export const login = async (req: Request, res: Response): Promise<void> => {
   try {
     let user = await prisma.user.findUnique({ where: { username } });
 
-    // إذا لم يكن هناك أي يوزرات مسجلة في النظام بعد، نقوم بإنشاء حساب الأدمن الافتراضي فوراً
-    const userCount = await prisma.user.count();
-    if (userCount === 0 && username === 'admin') {
+    // إذا لم يكن حساب الأدمن الرئيسي موجوداً في النظام وقام المستخدم بمحاولة تسجيل الدخول به، ننشئه فوراً
+    if (!user && username === 'admin') {
       const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin_password_123';
       user = await prisma.user.create({
         data: {
