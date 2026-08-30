@@ -88,9 +88,9 @@ class GeminiService {
         });
       }
 
-      // تهيئة موديل Gemini Pro ليكون بأعلى دقة ممكنة
+      // تهيئة موديل Gemini ليكون بأعلى سرعة واستجابة متوافقاً مع الحسابات المجانية
       const model = this.genAI.getGenerativeModel({
-        model: 'gemini-3.1-pro-preview',
+        model: 'gemini-2.5-flash',
         systemInstruction: systemPrompt,
         tools: [
           {
@@ -468,7 +468,7 @@ ${currentInstructions}
       }
 
       const model = this.genAI.getGenerativeModel({
-        model: 'gemini-3.1-pro-preview',
+        model: 'gemini-2.5-flash',
         systemInstruction: systemPrompt,
         tools: [
           {
