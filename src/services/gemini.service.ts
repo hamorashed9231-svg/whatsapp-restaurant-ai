@@ -90,7 +90,7 @@ class GeminiService {
 
       // تهيئة موديل Gemini Pro ليكون بأعلى دقة ممكنة
       const model = this.genAI.getGenerativeModel({
-        model: 'gemini-2.5-pro',
+        model: 'gemini-3.1-pro-preview',
         systemInstruction: systemPrompt,
         tools: [
           {
@@ -468,7 +468,7 @@ ${currentInstructions}
       }
 
       const model = this.genAI.getGenerativeModel({
-        model: 'gemini-2.5-pro',
+        model: 'gemini-3.1-pro-preview',
         systemInstruction: systemPrompt,
         tools: [
           {
