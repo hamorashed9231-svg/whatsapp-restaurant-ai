@@ -90,7 +90,7 @@ class GeminiService {
 
       // تهيئة موديل Gemini ليكون بأعلى سرعة واستجابة متوافقاً مع الحسابات المجانية
       const model = this.genAI.getGenerativeModel({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.5-flash',
         systemInstruction: systemPrompt,
         tools: [
           {
@@ -468,7 +468,7 @@ ${currentInstructions}
       }
 
       const model = this.genAI.getGenerativeModel({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.5-flash',
         systemInstruction: systemPrompt,
         tools: [
           {
