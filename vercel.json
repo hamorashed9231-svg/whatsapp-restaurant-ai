@@ -5,11 +5,19 @@
       "src": "src/index.ts",
       "use": "@vercel/node",
       "config": {
-        "includeFiles": ["frontend/dist/**"]
+        "includeFiles": ["frontend/dist/**", "frontend/public/**"]
       }
     }
   ],
   "routes": [
+    {
+      "src": "/assets/(.*)",
+      "dest": "src/index.ts"
+    },
+    {
+      "src": "/logo.jpg",
+      "dest": "src/index.ts"
+    },
     {
       "src": "/(.*)",
       "dest": "src/index.ts"

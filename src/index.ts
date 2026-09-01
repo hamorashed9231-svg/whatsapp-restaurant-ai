@@ -3,6 +3,8 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 
+import fs from 'fs';
+
 // تهيئة متغيرات البيئة من ملف .env
 dotenv.config();
 
@@ -23,7 +25,26 @@ app.use(cors({ origin: '*', credentials: false }));
 app.use(express.json());
 
 // تقديم ملفات الواجهة الأمامية لـ لوحة تحكم الكول سنتر (React Dashboard)
-const frontendDistPath = path.join(process.cwd(), 'frontend/dist');
+const getFrontendDistPath = () => {
+  const candidates = [
+    path.join(process.cwd(), 'frontend/dist'),
+    path.join(__dirname, '../frontend/dist'),
+    path.join(__dirname, '../../frontend/dist'),
+    path.join(__dirname, 'frontend/dist'),
+    path.resolve(process.cwd(), 'frontend/dist'),
+    '/var/task/frontend/dist'
+  ];
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) {
+        return p;
+      }
+    } catch (e) {}
+  }
+  return path.join(process.cwd(), 'frontend/dist');
+};
+
+const frontendDistPath = getFrontendDistPath();
 app.use(express.static(frontendDistPath));
 
 // مسارات الفحص والتشغيل الرئيسية
