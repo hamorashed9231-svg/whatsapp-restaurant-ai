@@ -46,6 +46,7 @@ interface MenuItem {
   description: string | null;
   price: number;
   category: string;
+  image_url?: string | null;
   is_available: boolean;
 }
 

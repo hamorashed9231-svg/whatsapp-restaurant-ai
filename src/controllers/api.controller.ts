@@ -134,7 +134,7 @@ export const getMenu = async (req: Request, res: Response): Promise<void> => {
  */
 export const addMenuItem = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params; // restaurant_id
-  const { name, description, price, category, is_available } = req.body;
+  const { name, description, price, category, is_available, image_url } = req.body;
 
   try {
     const newItem = await prisma.menuItem.create({
@@ -144,6 +144,7 @@ export const addMenuItem = async (req: Request, res: Response): Promise<void> =>
         description,
         price,
         category,
+        image_url,
         is_available: is_available !== undefined ? is_available : true
       }
     });
@@ -162,7 +163,7 @@ export const addMenuItem = async (req: Request, res: Response): Promise<void> =>
  */
 export const updateMenuItem = async (req: Request, res: Response): Promise<void> => {
   const { itemId } = req.params;
-  const { name, description, price, category, is_available } = req.body;
+  const { name, description, price, category, is_available, image_url } = req.body;
 
   try {
     const updatedItem = await prisma.menuItem.update({
@@ -172,6 +173,7 @@ export const updateMenuItem = async (req: Request, res: Response): Promise<void>
         description,
         price,
         category,
+        image_url,
         is_available
       }
     });
@@ -412,6 +414,7 @@ export const importMenu = async (req: Request, res: Response): Promise<void> => 
       const priceRaw = row['السعر'] || row['Price'] || row['price'] || row['سعر الصنف'] || row['Item Price'];
       const category = row['التصنيف'] || row['Category'] || row['category'] || row['القسم'] || row['Item Category'];
       const availableRaw = row['متوفر'] || row['Available'] || row['available'] || row['الحالة'] || row['Item Status'];
+      const imageUrl = row['الصورة'] || row['رابط الصورة'] || row['Image'] || row['image_url'] || row['Image URL'];
 
       // تخطي الأسطر الفارغة تماماً
       if (!name && priceRaw === undefined && !category) {
@@ -468,6 +471,7 @@ export const importMenu = async (req: Request, res: Response): Promise<void> => 
         description: description ? String(description).trim() : null,
         price: price,
         category: String(category).trim(),
+        image_url: imageUrl ? String(imageUrl).trim() : null,
         is_available: is_available
       });
     }
