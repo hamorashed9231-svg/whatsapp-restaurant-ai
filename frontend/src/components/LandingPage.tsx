@@ -98,7 +98,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onGoToDashboard, onGoToLogin 
       {/* الهيدر (Navbar) */}
       <header style={styles.header}>
         <div style={styles.logoArea}>
-          <div style={styles.logoCircle}>R</div>
+          <img src="/logo.jpg" alt="RIVIX" style={{ width: '42px', height: '42px', borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(0, 210, 255, 0.4)' }} />
           <span style={styles.logoText}>RIVIX</span>
         </div>
         <nav style={styles.navLinks}>
