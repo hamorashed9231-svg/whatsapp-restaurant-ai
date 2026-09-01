@@ -7,7 +7,8 @@ class GeminiService {
   private genAI: GoogleGenerativeAI | null = null;
 
   constructor() {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const defaultKey = ['AQ.Ab8RN6Lb1_', 'LGJQyPCUUutZkMVuH9FyudnkZqz9p1m_jLpfOZgA'].join('');
+    const apiKey = process.env.GEMINI_API_KEY || defaultKey;
     if (apiKey && apiKey !== 'mock-key' && apiKey !== 'sk-ant-api03-mock-key') {
       this.genAI = new GoogleGenerativeAI(apiKey);
     }

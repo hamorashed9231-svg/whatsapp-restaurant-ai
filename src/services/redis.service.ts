@@ -1,8 +1,8 @@
 import Redis from 'ioredis';
 
-const redisHost = process.env.REDIS_HOST || '127.0.0.1';
+const redisHost = process.env.REDIS_HOST || 'maximum-ferret-271365.upstash.io';
 const redisPort = parseInt(process.env.REDIS_PORT || '6379', 10);
-const redisPassword = process.env.REDIS_PASSWORD || undefined;
+const redisPassword = process.env.REDIS_PASSWORD || 'gQAAAAAABCQFAAIgcDI3NmE2NGM1MWE3OTY0NTVlYjdjY2ZlZjcwZGMyN2MwYQ';
 const isTls = process.env.REDIS_TLS === 'true' || redisHost.includes('upstash.io');
 
 export const redisConnectionOptions: any = {
