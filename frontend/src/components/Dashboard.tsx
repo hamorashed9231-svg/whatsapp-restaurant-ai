@@ -155,6 +155,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     description: '',
     price: '',
     category: 'وجبات رئيسية',
+    image_url: '',
     is_available: true,
   });
 
@@ -440,6 +441,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       description: '',
       price: '',
       category: 'وجبات رئيسية',
+      image_url: '',
       is_available: true
     });
     setShowAddMenuModal(true);
@@ -452,6 +454,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       description: item.description || '',
       price: item.price.toString(),
       category: item.category,
+      image_url: item.image_url || '',
       is_available: item.is_available
     });
     setShowAddMenuModal(true);
@@ -466,6 +469,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       description: menuForm.description,
       price: parseFloat(menuForm.price),
       category: menuForm.category,
+      image_url: menuForm.image_url,
       is_available: menuForm.is_available
     };
 
@@ -892,6 +896,17 @@ const Dashboard: React.FC<DashboardProps> = ({
                           value={menuForm.description}
                           onChange={e => setMenuForm({ ...menuForm, description: e.target.value })}
                           style={{ ...styles.formInput, height: '80px', resize: 'none' }}
+                        />
+                      </div>
+
+                      <div style={styles.formGroup}>
+                        <label style={styles.formLabel}>رابط صورة الصنف (Image URL)</label>
+                        <input
+                          type="url"
+                          placeholder="https://example.com/photo.jpg"
+                          value={menuForm.image_url}
+                          onChange={e => setMenuForm({ ...menuForm, image_url: e.target.value })}
+                          style={styles.formInput}
                         />
                       </div>
 

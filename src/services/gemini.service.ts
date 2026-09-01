@@ -91,8 +91,9 @@ class GeminiService {
       }
 
       // تهيئة موديل Gemini ليكون بأعلى سرعة واستجابة متوافقاً مع الحسابات المجانية
+      const targetModelName = process.env.GEMINI_MODEL || 'gemini-1.5-flash-latest';
       const model = this.genAI.getGenerativeModel({
-        model: 'gemini-1.5-flash',
+        model: targetModelName,
         systemInstruction: systemPrompt,
         tools: [
           {
@@ -560,8 +561,9 @@ ${currentInstructions}
         });
       }
 
+      const targetModelName = process.env.GEMINI_MODEL || 'gemini-1.5-flash-latest';
       const model = this.genAI.getGenerativeModel({
-        model: 'gemini-1.5-flash',
+        model: targetModelName,
         systemInstruction: systemPrompt,
         tools: [
           {
