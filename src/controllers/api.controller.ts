@@ -93,11 +93,37 @@ export const getRestaurant = async (req: Request, res: Response): Promise<void> 
 export const getMenu = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
   try {
-    const menu = await prisma.menuItem.findMany({
-      where: { restaurant_id: id },
-      orderBy: { category: 'asc' }
-    });
-    res.status(200).json(menu);
+    let whereClause: any = {};
+    if (id && id !== 'default') {
+      whereClause = { restaurant_id: id };
+    }
+
+    try {
+      const menu = await prisma.menuItem.findMany({
+        where: whereClause,
+        orderBy: { category: 'asc' }
+      });
+      res.status(200).json(menu);
+    } catch (dbErr: any) {
+      if (dbErr.message && dbErr.message.includes('image_url')) {
+        const fallbackMenu = await prisma.menuItem.findMany({
+          where: whereClause,
+          select: {
+            id: true,
+            restaurant_id: true,
+            name: true,
+            description: true,
+            price: true,
+            category: true,
+            is_available: true
+          },
+          orderBy: { category: 'asc' }
+        });
+        res.status(200).json(fallbackMenu.map(item => ({ ...item, image_url: null })));
+        return;
+      }
+      throw dbErr;
+    }
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message });
   }

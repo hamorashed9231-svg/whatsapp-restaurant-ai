@@ -270,18 +270,40 @@ class GeminiService {
   // ================= الأدوات المنفذة فعلياً بقاعدة البيانات (Tools Implementations) =================
 
   /**
+   * جلب عناصر المنيو بأمان ضد غياب عمود image_url في الداتابيز أونلاين
+   */
+  private async fetchMenuItemsResiliently(restaurantId: string) {
+    try {
+      return await prisma.menuItem.findMany({
+        where: { restaurant_id: restaurantId, is_available: true },
+        orderBy: { category: 'asc' },
+      });
+    } catch (err: any) {
+      if (err.message && err.message.includes('image_url')) {
+        const items = await prisma.menuItem.findMany({
+          where: { restaurant_id: restaurantId, is_available: true },
+          select: {
+            id: true,
+            restaurant_id: true,
+            name: true,
+            description: true,
+            price: true,
+            category: true,
+            is_available: true,
+          },
+          orderBy: { category: 'asc' },
+        });
+        return items.map((item) => ({ ...item, image_url: null }));
+      }
+      throw err;
+    }
+  }
+
+  /**
    * أداة استرجاع المنيو
    */
   private async executeGetMenu(restaurantId: string) {
-    const items = await prisma.menuItem.findMany({
-      where: {
-        restaurant_id: restaurantId,
-        is_available: true,
-      },
-      orderBy: {
-        category: 'asc',
-      },
-    });
+    const items = await this.fetchMenuItemsResiliently(restaurantId);
 
     if (items.length === 0) {
       return { status: 'empty', message: 'قائمة الطعام فارغة حالياً أو غير متوفرة.' };
@@ -304,10 +326,7 @@ class GeminiService {
    * أداة إرسال المنيو التفاعلي بالصور والأصناف عبر واتساب
    */
   private async executeSendInteractiveMenu(restaurantId: string, restaurantName: string, customerPhone: string) {
-    const items = await prisma.menuItem.findMany({
-      where: { restaurant_id: restaurantId, is_available: true },
-      orderBy: { category: 'asc' }
-    });
+    const items = await this.fetchMenuItemsResiliently(restaurantId);
 
     if (items.length === 0) {
       return { status: 'empty', message: 'قائمة الطعام فارغة حالياً.' };
