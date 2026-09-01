@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
 
 // تهيئة متغيرات البيئة من ملف .env
 dotenv.config();
@@ -21,8 +22,17 @@ app.use(cors({ origin: '*', credentials: false }));
 
 app.use(express.json());
 
-// الصفحة الرئيسية
-app.get('/', (req, res) => {
+// تقديم ملفات الواجهة الأمامية لـ لوحة تحكم الكول سنتر (React Dashboard)
+const frontendDistPath = path.join(__dirname, '../frontend/dist');
+app.use(express.static(frontendDistPath));
+
+// مسارات الفحص والتشغيل الرئيسية
+app.use('/health', healthRoutes);
+app.use('/webhook', webhookRoutes);
+app.use('/api', apiRoutes);
+
+// معلومات حالة الـ API
+app.get('/api-info', (req, res) => {
   res.status(200).json({
     status: 'running',
     name: 'WhatsApp Restaurant AI Backend',
@@ -36,10 +46,22 @@ app.get('/', (req, res) => {
   });
 });
 
-// مسارات الفحص والتشغيل الرئيسية
-app.use('/health', healthRoutes);
-app.use('/webhook', webhookRoutes);
-app.use('/api', apiRoutes);
+// توجيه جميع مسارات المتصفح إلى لوحة التحكم التفاعلية
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api') || req.path.startsWith('/webhook') || req.path.startsWith('/health')) {
+    return next();
+  }
+  res.sendFile(path.join(frontendDistPath, 'index.html'), (err) => {
+    if (err) {
+      res.status(200).json({
+        status: 'running',
+        name: 'WhatsApp Restaurant AI Backend',
+        version: '1.1.0',
+        queue: 'BullMQ + Redis Active'
+      });
+    }
+  });
+});
 
 // بدء تشغيل خادم الويب
 app.listen(port, () => {
