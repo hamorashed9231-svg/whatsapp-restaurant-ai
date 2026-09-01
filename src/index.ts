@@ -23,7 +23,7 @@ app.use(cors({ origin: '*', credentials: false }));
 app.use(express.json());
 
 // تقديم ملفات الواجهة الأمامية لـ لوحة تحكم الكول سنتر (React Dashboard)
-const frontendDistPath = path.join(__dirname, '../frontend/dist');
+const frontendDistPath = path.join(process.cwd(), 'frontend/dist');
 app.use(express.static(frontendDistPath));
 
 // مسارات الفحص والتشغيل الرئيسية
