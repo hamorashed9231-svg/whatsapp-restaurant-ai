@@ -40,6 +40,7 @@ model MenuItem {
   description   String?
   price         Decimal    @db.Decimal(10, 2)
   category      String     // التصنيف (مثال: وجبات رئيسية، مقبلات، مشروبات)
+  image_url     String?    // رابط صورة الصنف
   is_available  Boolean    @default(true)
 
   // العلاقات
@@ -53,7 +54,7 @@ model Conversation {
   id             String     @id @default(uuid())
   restaurant_id  String
   customer_phone String     // رقم هاتف الزبون
-  messages_json  Json       // سجل الرسائل بصيغة JSON (يخزن مصفوفة من الرسائل)
+  messages_json  Json       // سجل الرسائل بصيغة JSON (مصفوفة متوافقة)
   status         String     // حالة المحادثة (مثال: ACTIVE, ARCHIVED)
   category       String     @default("INQUIRY") // تصنيف المحادثة (INQUIRY, ORDER, COMPLAINT)
   created_at     DateTime   @default(now())
@@ -61,8 +62,23 @@ model Conversation {
 
   // العلاقات
   restaurant     Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+  messages       Message[]
 
   @@map("conversations")
+}
+
+// نموذج الرسائل الفردية (Message) لتفادي تضارب التحديثات المتزامنة
+model Message {
+  id              String       @id @default(uuid())
+  conversation_id String
+  role            String       // "user" | "assistant" | "system"
+  content         String       @db.Text
+  created_at      DateTime     @default(now())
+
+  // العلاقات
+  conversation    Conversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+
+  @@map("messages")
 }
 
 // نموذج الطلبات (Order)

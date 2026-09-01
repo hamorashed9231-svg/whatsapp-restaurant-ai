@@ -5,6 +5,10 @@ import dotenv from 'dotenv';
 // تهيئة متغيرات البيئة من ملف .env
 dotenv.config();
 
+// تهيئة خادم Redis وطابور المعالجة بالخلفية
+import './services/redis.service';
+import './workers/whatsapp.worker';
+
 import healthRoutes from './routes/health.routes';
 import webhookRoutes from './routes/webhook.routes';
 import apiRoutes from './routes/api.routes';
@@ -22,7 +26,8 @@ app.get('/', (req, res) => {
   res.status(200).json({
     status: 'running',
     name: 'WhatsApp Restaurant AI Backend',
-    version: '1.0.0',
+    version: '1.1.0',
+    queue: 'BullMQ + Redis Active',
     endpoints: {
       health: '/health',
       webhook: '/webhook',
@@ -39,7 +44,7 @@ app.use('/api', apiRoutes);
 // بدء تشغيل خادم الويب
 app.listen(port, () => {
   console.log(`===========================================================`);
-  console.log(`🚀 خادم AI Agent للمطاعم على واتساب يعمل بنجاح.`);
+  console.log(`🚀 خادم AI Agent للمطاعم على واتساب يعمل بنجاح (مع دعم Redis + BullMQ).`);
   console.log(`📡 المنفذ: ${port}`);
   console.log(`🔗 رابط فحص الحالة (Health Check): http://localhost:${port}/health`);
   console.log(`🔗 رابط الويب هوك (Webhook Endpoint): http://localhost:${port}/webhook`);

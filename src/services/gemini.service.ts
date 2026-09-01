@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
 import { prisma } from './prisma.service';
+import { whatsappService } from './whatsapp.service';
 import { ChatMessage } from '../models/types';
 
 class GeminiService {
@@ -90,7 +91,7 @@ class GeminiService {
 
       // تهيئة موديل Gemini ليكون بأعلى سرعة واستجابة متوافقاً مع الحسابات المجانية
       const model = this.genAI.getGenerativeModel({
-        model: 'gemini-3.5-flash',
+        model: 'gemini-1.5-flash',
         systemInstruction: systemPrompt,
         tools: [
           {
@@ -142,6 +143,17 @@ class GeminiService {
                     party_size: { type: SchemaType.INTEGER, description: 'عدد الأشخاص للحجز' },
                   },
                   required: ['restaurant_id', 'customer_phone', 'date_time', 'party_size'],
+                },
+              },
+              {
+                name: 'send_interactive_menu',
+                description: 'إرسال قائمة الطعام (المنيو) كقائمة تفاعلية بالصور والأصناف للعميل على واتساب مباشرة بمجرد طلبه استعراض المنيو أو الطعام',
+                parameters: {
+                  type: SchemaType.OBJECT,
+                  properties: {
+                    restaurant_id: { type: SchemaType.STRING, description: 'المعرف الفريد للمطعم' },
+                  },
+                  required: ['restaurant_id'],
                 },
               },
               {
@@ -203,6 +215,12 @@ class GeminiService {
                 toolInput.customer_phone || customerPhone,
                 toolInput.date_time,
                 toolInput.party_size
+              );
+            } else if (name === 'send_interactive_menu') {
+              resultData = await this.executeSendInteractiveMenu(
+                toolInput.restaurant_id || restaurantId,
+                restaurantName,
+                customerPhone
               );
             } else if (name === 'set_conversation_category') {
               resultData = await this.executeSetConversationCategory(
@@ -275,8 +293,63 @@ class GeminiService {
         name: item.name,
         description: item.description,
         price: Number(item.price),
-        category: item.category
+        category: item.category,
+        image_url: item.image_url || null
       }))
+    };
+  }
+
+  /**
+   * أداة إرسال المنيو التفاعلي بالصور والأصناف عبر واتساب
+   */
+  private async executeSendInteractiveMenu(restaurantId: string, restaurantName: string, customerPhone: string) {
+    const items = await prisma.menuItem.findMany({
+      where: { restaurant_id: restaurantId, is_available: true },
+      orderBy: { category: 'asc' }
+    });
+
+    if (items.length === 0) {
+      return { status: 'empty', message: 'قائمة الطعام فارغة حالياً.' };
+    }
+
+    const categoryMap: { [category: string]: any[] } = {};
+    for (const item of items) {
+      if (!categoryMap[item.category]) {
+        categoryMap[item.category] = [];
+      }
+      categoryMap[item.category].push(item);
+    }
+
+    const sections = Object.keys(categoryMap).map(category => ({
+      title: category.substring(0, 24),
+      rows: categoryMap[category].slice(0, 10).map(item => ({
+        id: `item_${item.id}`,
+        title: item.name.substring(0, 24),
+        description: `${Number(item.price)} ريال - ${(item.description || '').substring(0, 50)}`
+      }))
+    }));
+
+    await whatsappService.sendInteractiveListMessage(
+      customerPhone,
+      `📋 منيو مطعم ${restaurantName}`,
+      'تفضل باختيار الأصناف المفضلة لديك من القائمة التفاعلية التالية:',
+      'عرض المنيو والتصنيفات 🍕',
+      sections
+    );
+
+    // إرسال صورة أول صنف يتوفر لديه صورة لإبراز الشكل البصري
+    const itemWithImage = items.find(i => i.image_url && i.image_url.trim().length > 0);
+    if (itemWithImage && itemWithImage.image_url) {
+      await whatsappService.sendImageMessage(
+        customerPhone,
+        itemWithImage.image_url,
+        `📸 صنف مميز: ${itemWithImage.name} - السعر: ${Number(itemWithImage.price)} ريال`
+      );
+    }
+
+    return {
+      status: 'success',
+      message: 'تم إرسال القائمة التفاعلية والصورة بنجاح للزبون عبر واتساب.'
     };
   }
 
@@ -468,7 +541,7 @@ ${currentInstructions}
       }
 
       const model = this.genAI.getGenerativeModel({
-        model: 'gemini-3.5-flash',
+        model: 'gemini-1.5-flash',
         systemInstruction: systemPrompt,
         tools: [
           {

@@ -1,8 +1,5 @@
 import { Request, Response } from 'express';
-import { prisma } from '../services/prisma.service';
-import { geminiService } from '../services/gemini.service';
-import { whatsappService } from '../services/whatsapp.service';
-import { ChatMessage } from '../models/types';
+import { whatsappQueue } from '../queues/whatsapp.queue';
 
 /**
  * التحقق من خادم الويب هوك (Webhook Verification) من فيسبوك
@@ -30,10 +27,10 @@ export const verifyWebhook = async (req: Request, res: Response): Promise<void> 
 };
 
 /**
- * استقبال أحداث ورسائل واتساب ومعالجتها بالكامل
+ * استقبال أحداث ورسائل واتساب وإضافتها فوراً إلى طابور BullMQ
  */
 export const handleWebhook = async (req: Request, res: Response): Promise<void> => {
-  // يرجى دائماً إرجاع الحالة 200 لـ WhatsApp فوراً لمنع تكرار إرسال الرسالة نفسها في حال بطء المعالجة
+  // إرجاع حالة 200 لـ WhatsApp فوراً لمنع تكرار الإرسال وتفادي انتهاء المهلة (Timeout)
   res.status(200).json({ status: 'received' });
 
   const body = req.body;
@@ -49,7 +46,6 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
     const value = change?.value;
     const message = value?.messages?.[0];
 
-    // التأكد من وجود رسالة جديدة مرسلة
     if (!message) {
       return;
     }
@@ -65,7 +61,6 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
     const customerPhone = message.from;
     let messageText = '';
 
-    // دعم أنواع الرسائل المختلفة (نصية، تفاعلية مثل أزرار أو قوائم)
     if (message.type === 'text') {
       messageText = message.text?.body || '';
     } else if (message.type === 'interactive') {
@@ -84,89 +79,23 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    console.log(`[Webhook] تم استقبال رسالة من [${customerPhone}] متجهة للمطعم ذو المعرف [${whatsappNumberId}]: "${messageText}"`);
+    console.log(`[Webhook] تم استلام رسالة وإضافتها لطابور BullMQ [${customerPhone}] -> [${whatsappNumberId}]: "${messageText}"`);
 
-    // 3. تحديد المطعم المرتبط برقم الواتساب المستلم
-    const restaurant = await prisma.restaurant.findUnique({
-      where: { whatsapp_number_id: whatsappNumberId }
-    });
-
-    if (!restaurant) {
-      console.warn(`[Webhook] تحذير: لم يتم العثور على مطعم مسجل في قاعدة البيانات للرقم الفريد: ${whatsappNumberId}`);
-      // إرسال رد تلقائي افتراضي عبر واتساب مباشرة لإرشاد المرسل
-      await whatsappService.sendTextMessage(
+    // 3. إضافة الرسالة فوراً لمصفوفة طابور BullMQ للمعالجة المنظمة بالخلفية
+    await whatsappQueue.add(
+      'process-whatsapp-message',
+      {
+        whatsappNumberId,
         customerPhone,
-        'عذراً، هذا الرقم غير مرتبط بأي مطعم مسجل لدينا حالياً.',
-        whatsappNumberId
-      );
-      return;
-    }
-
-    // 4. التحقق من صلاحية وحالة اشتراك المطعم
-    if (restaurant.subscription_status !== 'ACTIVE' || new Date(restaurant.subscription_expires_at) < new Date()) {
-      console.log(`[Webhook] اشتراك المطعم "${restaurant.name}" غير نشط أو منتهي الصلاحية.`);
-      await whatsappService.sendTextMessage(
-        customerPhone,
-        `عذراً، خدمة المساعد الذكي لمطعم "${restaurant.name}" معطلة مؤقتاً لانتهاء فترة الاشتراك.`,
-        whatsappNumberId
-      );
-      return;
-    }
-
-    // 5. جلب المحادثة النشطة للعميل أو إنشاء واحدة جديدة
-    let conversation = await prisma.conversation.findFirst({
-      where: {
-        restaurant_id: restaurant.id,
-        customer_phone: customerPhone,
-        status: 'ACTIVE'
+        messageText,
+        messageType: message.type,
+        timestamp: new Date().toISOString(),
+      },
+      {
+        jobId: `msg_${customerPhone}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       }
-    });
-
-    if (!conversation) {
-      conversation = await prisma.conversation.create({
-        data: {
-          restaurant_id: restaurant.id,
-          customer_phone: customerPhone,
-          messages_json: [],
-          status: 'ACTIVE'
-        }
-      });
-      console.log(`[Webhook] تم إنشاء سجل محادثة جديد للزبون [${customerPhone}] في مطعم [${restaurant.name}]`);
-    }
-
-    // قراءة السجل الحالي للرسائل
-    const history = (conversation.messages_json as any) as ChatMessage[];
-
-    // 6. تمرير المحادثة والرسالة لخدمة الذكاء الاصطناعي لمعالجتها وتفعيل الأدوات (Tool Calling)
-    const { responseText, updatedHistory } = await geminiService.processMessage(
-      conversation.id,
-      restaurant.id,
-      restaurant.name,
-      customerPhone,
-      history,
-      messageText
     );
-
-    // 7. تحديث سجل المحادثة بقاعدة البيانات بالرسالة الجديدة والرد
-    await prisma.conversation.update({
-      where: { id: conversation.id },
-      data: {
-        messages_json: updatedHistory as any,
-        updated_at: new Date()
-      }
-    });
-
-    // 8. إرسال رد الـ AI للزبون على الواتساب
-    await whatsappService.sendTextMessage(
-      customerPhone,
-      responseText,
-      restaurant.whatsapp_number_id,
-      restaurant.whatsapp_access_token || undefined
-    );
-
-    console.log(`[Webhook] تم إرسال الرد وتحديث السجل للزبون [${customerPhone}] بنجاح.`);
-
   } catch (error: any) {
-    console.error('[Webhook] خطأ غير متوقع أثناء معالجة رسالة واتساب:', error);
+    console.error('[Webhook] خطأ أثناء دفع الرسالة إلى طابور BullMQ:', error.message);
   }
 };

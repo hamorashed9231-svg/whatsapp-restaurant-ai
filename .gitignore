@@ -10,3 +10,5 @@ dist/
 /scratch/
 /logs/
 *.tmp
+
+.vercel
