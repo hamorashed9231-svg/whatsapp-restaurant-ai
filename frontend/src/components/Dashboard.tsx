@@ -78,12 +78,16 @@ interface Conversation {
   customer_phone: string;
   status: string;
   category: 'INQUIRY' | 'ORDER' | 'COMPLAINT';
+  assigned_to?: string | null;
+  closed_by?: string | null;
+  is_archived?: boolean;
   updated_at: string;
 }
 
 interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
+  sender_name?: string;
   timestamp: string;
 }
 
@@ -112,10 +116,15 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
+  const [chatImageUrl, setChatImageUrl] = useState('');
+  const [showImageInput, setShowImageInput] = useState(false);
 
   // إعدادات وتصنيفات المستخدمين والمحادثات
   const [userRole, setUserRole] = useState<'admin' | 'staff'>('staff');
+  const [currentUsername, setCurrentUsername] = useState<string>('موظف الخدمة');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<'ALL' | 'ORDER' | 'COMPLAINT' | 'INQUIRY'>('ALL');
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'ALL' | 'UNANSWERED' | 'IN_PROGRESS' | 'CLOSED'>('ALL');
+  const [viewArchived, setViewArchived] = useState(false);
   const [usersList, setUsersList] = useState<{ id: string; username: string; role: string; created_at: string }[]>([]);
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -138,7 +147,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     return 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=600&q=80';
   };
 
-  // لفك تشفير التوكن والحصول على الدور (Role)
+  // لفك تشفير التوكن والحصول على الدور (Role) واسم الموظف
   useEffect(() => {
     if (token) {
       try {
@@ -152,8 +161,10 @@ const Dashboard: React.FC<DashboardProps> = ({
         );
         const decoded = JSON.parse(jsonPayload);
         setUserRole(decoded.role || 'staff');
+        setCurrentUsername(decoded.username || 'موظف الخدمة');
       } catch (e) {
         setUserRole('staff');
+        setCurrentUsername('موظف الخدمة');
       }
     }
   }, [token]);
@@ -260,17 +271,16 @@ const Dashboard: React.FC<DashboardProps> = ({
 
         // فحص وحفظ الأصناف بالذاكرة المحلية لضمان استمرارها عند الريفريش
         const savedMenuKey = 'rivix_menu_v3';
-        const storedMenu = localStorage.getItem(savedMenuKey);
-        if (storedMenu) {
-          try {
-            setMenuItems(JSON.parse(storedMenu));
-          } catch (e) {
-            setMenuItems(resMenu.data);
-            localStorage.setItem(savedMenuKey, JSON.stringify(resMenu.data));
-          }
-        } else {
+        if (resMenu && Array.isArray(resMenu.data)) {
           setMenuItems(resMenu.data);
           localStorage.setItem(savedMenuKey, JSON.stringify(resMenu.data));
+        } else {
+          const storedMenu = localStorage.getItem(savedMenuKey);
+          if (storedMenu) {
+            try {
+              setMenuItems(JSON.parse(storedMenu));
+            } catch (e) {}
+          }
         }
 
         setOrders(resOrders.data);
@@ -295,7 +305,10 @@ const Dashboard: React.FC<DashboardProps> = ({
     try {
       if (tab === 'menu') {
         const res = await api.get(`/restaurants/${restaurant.id}/menu`);
-        setMenuItems(res.data);
+        if (res && Array.isArray(res.data)) {
+          setMenuItems(res.data);
+          localStorage.setItem('rivix_menu_v3', JSON.stringify(res.data));
+        }
       } else if (tab === 'orders') {
         const res = await api.get(`/restaurants/${restaurant.id}/orders`);
         setOrders(res.data);
@@ -388,6 +401,89 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
+  // تحديث حالة المحادثة (UNANSWERED / IN_PROGRESS / CLOSED) والاحتفاظ بتحديد اسم الموظف
+  const handleUpdateStatus = async (conversationId: string, newStatus: 'UNANSWERED' | 'IN_PROGRESS' | 'CLOSED') => {
+    try {
+      const res = await api.put(`/conversations/${conversationId}/status`, {
+        status: newStatus,
+        assigned_to: newStatus === 'IN_PROGRESS' ? currentUsername : undefined,
+        closed_by: newStatus === 'CLOSED' ? currentUsername : undefined
+      });
+      const updatedConv = res.data.conversation || {
+        ...selectedConversation,
+        status: newStatus,
+        assigned_to: newStatus === 'UNANSWERED' ? null : (newStatus === 'IN_PROGRESS' ? currentUsername : selectedConversation?.assigned_to || currentUsername),
+        closed_by: newStatus === 'CLOSED' ? currentUsername : null
+      };
+      setConversations(prev => prev.map(c => c.id === conversationId ? { ...c, ...updatedConv } : c));
+      if (selectedConversation?.id === conversationId) {
+        setSelectedConversation(prev => prev ? { ...prev, ...updatedConv } : null);
+      }
+    } catch (err: any) {
+      console.error('Error updating status:', err);
+      const updated = {
+        status: newStatus,
+        assigned_to: newStatus === 'UNANSWERED' ? null : (newStatus === 'IN_PROGRESS' ? currentUsername : selectedConversation?.assigned_to || currentUsername),
+        closed_by: newStatus === 'CLOSED' ? currentUsername : null,
+        updated_at: new Date().toISOString()
+      };
+      setConversations(prev => prev.map(c => c.id === conversationId ? { ...c, ...updated } : c));
+      if (selectedConversation?.id === conversationId) {
+        setSelectedConversation(prev => prev ? { ...prev, ...updated } : null);
+      }
+    }
+  };
+
+  // أرشفة أو إلغاء أرشفة المحادثة
+  const handleToggleArchive = async (conversationId: string, is_archived: boolean) => {
+    try {
+      await api.put(`/conversations/${conversationId}/archive`, { is_archived });
+      setConversations(prev => prev.map(c => c.id === conversationId ? { ...c, is_archived } : c));
+      if (selectedConversation?.id === conversationId) {
+        setSelectedConversation(prev => prev ? { ...prev, is_archived } : null);
+      }
+    } catch (err: any) {
+      console.error('Error toggling archive:', err);
+      setConversations(prev => prev.map(c => c.id === conversationId ? { ...c, is_archived } : c));
+      if (selectedConversation?.id === conversationId) {
+        setSelectedConversation(prev => prev ? { ...prev, is_archived } : null);
+      }
+    }
+  };
+
+  // دالة تحديد الألوان والبادجات للحالات الـ 3 (غير مردود، جاري الرد، مغلقة)
+  const getStatusInfo = (conv: Conversation) => {
+    const s = (conv.status || 'UNANSWERED').toUpperCase();
+    if (s === 'CLOSED' || s === 'ARCHIVED') {
+      return {
+        label: conv.closed_by ? `✅ مغلقة بواسطة: ${conv.closed_by}` : '✅ مغلقة',
+        shortLabel: 'مغلقة',
+        color: '#475569',
+        bgColor: '#F1F5F9',
+        borderColor: '#64748B',
+        badgeBg: '#64748B'
+      };
+    }
+    if (s === 'IN_PROGRESS' || s === 'ACTIVE') {
+      return {
+        label: conv.assigned_to ? `🔵 جاري المتابعة: ${conv.assigned_to}` : '🔵 جاري المتابعة',
+        shortLabel: 'جاري المتابعة',
+        color: '#1E40AF',
+        bgColor: '#EFF6FF',
+        borderColor: '#3B82F6',
+        badgeBg: '#2563EB'
+      };
+    }
+    return {
+      label: '🟠 لم يتم الرد عليه بعد',
+      shortLabel: 'لم يتم الرد',
+      color: '#B45309',
+      bgColor: '#FFFBEB',
+      borderColor: '#F59E0B',
+      badgeBg: '#D97706'
+    };
+  };
+
   // معالجة إرسال رسالة في شات الضبط الذكي للأدمن
   const handleConfigChatSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -451,34 +547,45 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
-  // إرسال رد يدوي من لوحة التحكم وحفظه في سجل المحادثة بقاعدة البيانات
+  // إرسال رد يدوي أو صورة من لوحة التحكم وتسجيل اسم الموظف وتغيير الحالة لـ IN_PROGRESS
   const handleSendManualMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInput.trim() || !selectedConversation || !restaurant) return;
+    if ((!chatInput.trim() && !chatImageUrl.trim()) || !selectedConversation || !restaurant) return;
 
     const textToSend = chatInput;
+    const imgToSend = chatImageUrl;
     setChatInput('');
+    setChatImageUrl('');
+    setShowImageInput(false);
 
     const newMsg: ChatMessage = {
       role: 'assistant',
       content: textToSend,
+      image_url: imgToSend || undefined,
+      sender_name: currentUsername,
       timestamp: new Date().toISOString()
     };
 
-    const updatedMessages = [...chatMessages, newMsg];
-    setChatMessages(updatedMessages);
+    setChatMessages(prev => [...prev, newMsg]);
 
     try {
-      // إرسال الرسالة إلى سجل قاعدة البيانات
-      // (في التطبيق الفعلي، سنقوم هنا بإرسال الرسالة الحقيقية عبر Meta API للرقم الفعلي أيضاً)
-      // سنقوم بمحاكاة تحديث المحادثة في الباك إند
-      // ملاحظة: بما أنه لا يوجد endpoint مباشر لإرسال رسائل يدوية من المسؤول في المتطلبات، 
-      // سنحاكي الرد وحفظه بجدول المحادثات في الباك إند عن طريق تحديث سجل المحادثة.
-      // لمعالجة ذلك، يفضل إضافة API endpoint يدوي إذا لزم الأمر، أو محاكاته.
-      // هنا سنحفظ المحادثة ونعرض الرد.
-      console.log('تم إرسال رد يدوي:', textToSend);
+      await api.post(`/conversations/${selectedConversation.id}/messages`, { content: textToSend, image_url: imgToSend });
+      const updatedData = {
+        status: 'IN_PROGRESS',
+        assigned_to: selectedConversation.assigned_to || currentUsername,
+        updated_at: new Date().toISOString()
+      };
+      setConversations(prev => prev.map(c => c.id === selectedConversation.id ? { ...c, ...updatedData } : c));
+      setSelectedConversation(prev => prev ? { ...prev, ...updatedData } : null);
     } catch (err) {
       console.error('خطأ إرسال رد يدوي:', err);
+      const updatedData = {
+        status: 'IN_PROGRESS',
+        assigned_to: selectedConversation.assigned_to || currentUsername,
+        updated_at: new Date().toISOString()
+      };
+      setConversations(prev => prev.map(c => c.id === selectedConversation.id ? { ...c, ...updatedData } : c));
+      setSelectedConversation(prev => prev ? { ...prev, ...updatedData } : null);
     }
   };
 
@@ -747,7 +854,22 @@ const Dashboard: React.FC<DashboardProps> = ({
             style={{ ...styles.navItem, ...(activeTab === 'conversations' ? styles.navItemActive : {}) }}
           >
             <MessageSquare size={20} />
-            <span>مراقبة المحادثات</span>
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+              <span>مراقبة المحادثات</span>
+              {conversations.filter(c => c.category === 'COMPLAINT').length > 0 && (
+                <span style={{
+                  backgroundColor: '#EF4444',
+                  color: '#FFFFFF',
+                  fontSize: '0.7rem',
+                  fontWeight: 'bold',
+                  padding: '2px 7px',
+                  borderRadius: '10px',
+                  marginRight: '6px'
+                }}>
+                  {conversations.filter(c => c.category === 'COMPLAINT').length} شكوى
+                </span>
+              )}
+            </span>
           </button>
 
           <button
@@ -836,6 +958,24 @@ const Dashboard: React.FC<DashboardProps> = ({
                   <div>
                     <div style={styles.statLabel}>العملاء المتفاعلون</div>
                     <div style={styles.statVal}>{conversations.length}</div>
+                  </div>
+                </div>
+
+                <div 
+                  className="glass-card" 
+                  style={{ ...styles.statCard, cursor: 'pointer' }}
+                  onClick={() => {
+                    setSelectedCategoryFilter('COMPLAINT');
+                    setActiveTab('conversations');
+                  }}
+                  title="اضغط لمعاينة وتصفية كافة الشكاوى والبلاغات"
+                >
+                  <AlertCircle size={32} color="#EF4444" />
+                  <div>
+                    <div style={styles.statLabel}>الشكاوى والبلاغات</div>
+                    <div style={{ ...styles.statVal, color: conversations.filter(c => c.category === 'COMPLAINT').length > 0 ? '#EF4444' : styles.statVal.color }}>
+                      {conversations.filter(c => c.category === 'COMPLAINT').length}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1446,17 +1586,59 @@ const Dashboard: React.FC<DashboardProps> = ({
               <div style={styles.conversationsLayout}>
                 {/* قائمة المحادثات (يسار) */}
                 <div style={styles.conversationsListPane}>
-                  <h4 style={{ padding: '16px', borderBottom: '1px solid rgba(0,0,0,0.05)', fontWeight: 'bold', marginBottom: 0 }}>قائمة الدردشات النشطة</h4>
+                  <h4 style={{ padding: '14px 16px', borderBottom: '1px solid rgba(0,0,0,0.05)', fontWeight: 'bold', marginBottom: 0, fontSize: '0.95rem' }}>
+                    دردشات خدمة العملاء 💬
+                  </h4>
                   
-                  {/* شريط التصنيفات (Filters) */}
-                  <div style={{ display: 'flex', borderBottom: '1px solid rgba(0,0,0,0.05)', backgroundColor: '#F8FAFC', padding: '8px', gap: '4px' }}>
+                  {/* مفتاح التنقل بين الدردشات النشطة والأرشيف */}
+                  <div style={{ display: 'flex', borderBottom: '1px solid rgba(0,0,0,0.08)', backgroundColor: '#F1F5F9', padding: '4px', gap: '4px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setViewArchived(false)}
+                      style={{
+                        flex: 1,
+                        padding: '8px 4px',
+                        fontSize: '0.75rem',
+                        fontWeight: 'bold',
+                        border: 'none',
+                        borderRadius: '6px',
+                        backgroundColor: !viewArchived ? '#0066FF' : 'transparent',
+                        color: !viewArchived ? '#FFFFFF' : '#64748B',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      💬 النشطة ({conversations.filter(c => !c.is_archived).length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewArchived(true)}
+                      style={{
+                        flex: 1,
+                        padding: '8px 4px',
+                        fontSize: '0.75rem',
+                        fontWeight: 'bold',
+                        border: 'none',
+                        borderRadius: '6px',
+                        backgroundColor: viewArchived ? '#475569' : 'transparent',
+                        color: viewArchived ? '#FFFFFF' : '#64748B',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      📦 الأرشيف ({conversations.filter(c => Boolean(c.is_archived)).length})
+                    </button>
+                  </div>
+                  
+                  {/* شريط فلترة التصنيفات (Categories) */}
+                  <div style={{ display: 'flex', borderBottom: '1px solid rgba(0,0,0,0.05)', backgroundColor: '#F8FAFC', padding: '6px', gap: '4px' }}>
                     <button
                       type="button"
                       onClick={() => setSelectedCategoryFilter('ALL')}
                       style={{
                         flex: 1,
-                        padding: '6px 2px',
-                        fontSize: '0.7rem',
+                        padding: '5px 2px',
+                        fontSize: '0.65rem',
                         fontWeight: 'bold',
                         border: 'none',
                         borderRadius: '6px',
@@ -1473,8 +1655,8 @@ const Dashboard: React.FC<DashboardProps> = ({
                       onClick={() => setSelectedCategoryFilter('ORDER')}
                       style={{
                         flex: 1,
-                        padding: '6px 2px',
-                        fontSize: '0.7rem',
+                        padding: '5px 2px',
+                        fontSize: '0.65rem',
                         fontWeight: 'bold',
                         border: 'none',
                         borderRadius: '6px',
@@ -1491,8 +1673,8 @@ const Dashboard: React.FC<DashboardProps> = ({
                       onClick={() => setSelectedCategoryFilter('COMPLAINT')}
                       style={{
                         flex: 1,
-                        padding: '6px 2px',
-                        fontSize: '0.7rem',
+                        padding: '5px 2px',
+                        fontSize: '0.65rem',
                         fontWeight: 'bold',
                         border: 'none',
                         borderRadius: '6px',
@@ -1502,15 +1684,15 @@ const Dashboard: React.FC<DashboardProps> = ({
                         transition: 'all 0.2s'
                       }}
                     >
-                      ⚠️ شكاوى
+                      ⚠️ شكاوى ({conversations.filter(c => (viewArchived ? Boolean(c.is_archived) : !c.is_archived) && c.category === 'COMPLAINT').length})
                     </button>
                     <button
                       type="button"
                       onClick={() => setSelectedCategoryFilter('INQUIRY')}
                       style={{
                         flex: 1,
-                        padding: '6px 2px',
-                        fontSize: '0.7rem',
+                        padding: '5px 2px',
+                        fontSize: '0.65rem',
                         fontWeight: 'bold',
                         border: 'none',
                         borderRadius: '6px',
@@ -1524,41 +1706,158 @@ const Dashboard: React.FC<DashboardProps> = ({
                     </button>
                   </div>
 
-                  {conversations.filter(c => selectedCategoryFilter === 'ALL' || c.category === selectedCategoryFilter).length === 0 ? (
-                    <p style={{ color: '#5E6E85', padding: '20px', textAlign: 'center' }}>لا توجد محادثات نشطة في هذا التصنيف بعد.</p>
+                  {/* شريط فلترة الحالات الـ 3 (لم يتم الرد / جاري المتابعة / مغلقة) */}
+                  <div style={{ display: 'flex', borderBottom: '1px solid rgba(0,0,0,0.05)', backgroundColor: '#F1F5F9', padding: '6px', gap: '4px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedStatusFilter('ALL')}
+                      style={{
+                        flex: 1,
+                        padding: '4px 2px',
+                        fontSize: '0.65rem',
+                        fontWeight: 'bold',
+                        border: 'none',
+                        borderRadius: '4px',
+                        backgroundColor: selectedStatusFilter === 'ALL' ? '#334155' : 'transparent',
+                        color: selectedStatusFilter === 'ALL' ? '#FFFFFF' : '#64748B',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      الكل ({conversations.filter(c => viewArchived ? Boolean(c.is_archived) : !c.is_archived).length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedStatusFilter('UNANSWERED')}
+                      style={{
+                        flex: 1,
+                        padding: '4px 2px',
+                        fontSize: '0.65rem',
+                        fontWeight: 'bold',
+                        border: 'none',
+                        borderRadius: '4px',
+                        backgroundColor: selectedStatusFilter === 'UNANSWERED' ? '#F59E0B' : 'transparent',
+                        color: selectedStatusFilter === 'UNANSWERED' ? '#FFFFFF' : '#B45309',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      🟠 معلّق
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedStatusFilter('IN_PROGRESS')}
+                      style={{
+                        flex: 1,
+                        padding: '4px 2px',
+                        fontSize: '0.65rem',
+                        fontWeight: 'bold',
+                        border: 'none',
+                        borderRadius: '4px',
+                        backgroundColor: selectedStatusFilter === 'IN_PROGRESS' ? '#3B82F6' : 'transparent',
+                        color: selectedStatusFilter === 'IN_PROGRESS' ? '#FFFFFF' : '#1E40AF',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      🔵 قيد الرد
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedStatusFilter('CLOSED')}
+                      style={{
+                        flex: 1,
+                        padding: '4px 2px',
+                        fontSize: '0.65rem',
+                        fontWeight: 'bold',
+                        border: 'none',
+                        borderRadius: '4px',
+                        backgroundColor: selectedStatusFilter === 'CLOSED' ? '#64748B' : 'transparent',
+                        color: selectedStatusFilter === 'CLOSED' ? '#FFFFFF' : '#475569',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      ✅ مغلقة
+                    </button>
+                  </div>
+
+                  {conversations
+                    .filter(c => viewArchived ? Boolean(c.is_archived) : !c.is_archived)
+                    .filter(c => selectedCategoryFilter === 'ALL' || c.category === selectedCategoryFilter)
+                    .filter(c => {
+                      const s = (c.status || 'UNANSWERED').toUpperCase();
+                      if (selectedStatusFilter === 'UNANSWERED') return s === 'UNANSWERED';
+                      if (selectedStatusFilter === 'IN_PROGRESS') return s === 'IN_PROGRESS' || s === 'ACTIVE';
+                      if (selectedStatusFilter === 'CLOSED') return s === 'CLOSED' || s === 'ARCHIVED';
+                      return true;
+                    }).length === 0 ? (
+                    <p style={{ color: '#5E6E85', padding: '20px', textAlign: 'center', fontSize: '0.85rem' }}>
+                      {viewArchived ? 'لا توجد محادثات مؤرشفة حالياً.' : 'لا توجد محادثات نشطة تطابق التصفية.'}
+                    </p>
                   ) : (
-                    <div style={{ overflowY: 'auto', flex: 1 }}>
+                    <div style={{ overflowY: 'auto', flex: 1, padding: '6px' }}>
                       {conversations
+                        .filter(c => viewArchived ? Boolean(c.is_archived) : !c.is_archived)
                         .filter(c => selectedCategoryFilter === 'ALL' || c.category === selectedCategoryFilter)
+                        .filter(c => {
+                          const s = (c.status || 'UNANSWERED').toUpperCase();
+                          if (selectedStatusFilter === 'UNANSWERED') return s === 'UNANSWERED';
+                          if (selectedStatusFilter === 'IN_PROGRESS') return s === 'IN_PROGRESS' || s === 'ACTIVE';
+                          if (selectedStatusFilter === 'CLOSED') return s === 'CLOSED' || s === 'ARCHIVED';
+                          return true;
+                        })
                         .map(conv => {
                           const catColor = conv.category === 'ORDER' ? '#10B981' : conv.category === 'COMPLAINT' ? '#EF4444' : '#3B82F6';
                           const catLabel = conv.category === 'ORDER' ? 'طلب' : conv.category === 'COMPLAINT' ? 'شكوى' : 'استفسار';
+                          const statusInfo = getStatusInfo(conv);
+                          const isSelected = selectedConversation?.id === conv.id;
+
                           return (
                             <div
                               key={conv.id}
                               onClick={() => handleSelectConversation(conv)}
                               style={{
-                                ...styles.conversationItem,
-                                backgroundColor: selectedConversation?.id === conv.id ? 'rgba(0, 102, 255, 0.08)' : 'transparent',
+                                padding: '10px 12px',
+                                marginBottom: '6px',
+                                borderRadius: '8px',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                backgroundColor: isSelected ? 'rgba(0, 102, 255, 0.08)' : statusInfo.bgColor,
+                                borderRight: `4px solid ${statusInfo.borderColor}`,
+                                borderTop: '1px solid rgba(0,0,0,0.03)',
+                                borderLeft: '1px solid rgba(0,0,0,0.03)',
+                                borderBottom: '1px solid rgba(0,0,0,0.03)'
                               }}
                             >
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <div style={{ ...styles.convAvatar, backgroundColor: `${catColor}15` }}>
-                                  <MessageSquare size={16} color={catColor} />
-                                </div>
-                                <div>
-                                  <div style={{ fontWeight: 'bold', fontSize: '0.85rem' }}>{conv.customer_phone}</div>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-                                    <span style={{ fontSize: '0.65rem', color: catColor, fontWeight: 'bold', backgroundColor: `${catColor}10`, padding: '2px 6px', borderRadius: '4px' }}>
-                                      {catLabel}
-                                    </span>
-                                    <span style={{ fontSize: '0.65rem', color: '#8E9FB8' }}>
-                                      {new Date(conv.updated_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                                    </span>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: `${catColor}15`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <MessageSquare size={14} color={catColor} />
+                                  </div>
+                                  <div>
+                                    <div style={{ fontWeight: 'bold', fontSize: '0.82rem' }}>{conv.customer_phone}</div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                                      <span style={{ fontSize: '0.65rem', color: catColor, fontWeight: 'bold', backgroundColor: `${catColor}10`, padding: '2px 6px', borderRadius: '4px' }}>
+                                        {catLabel}
+                                      </span>
+                                      <span style={{ fontSize: '0.65rem', color: '#8E9FB8' }}>
+                                        {new Date(conv.updated_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
-                              <span className={`badge badge-${conv.status.toLowerCase()}`}>{conv.status}</span>
+
+                              {/* الشارات الملونة لهوية الموظف والحالة الـ 3 */}
+                              <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <span style={{
+                                  fontSize: '0.68rem',
+                                  fontWeight: 'bold',
+                                  padding: '2px 8px',
+                                  borderRadius: '10px',
+                                  backgroundColor: statusInfo.badgeBg,
+                                  color: '#FFFFFF'
+                                }}>
+                                  {statusInfo.label}
+                                </span>
+                              </div>
                             </div>
                           );
                         })}
@@ -1570,33 +1869,131 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <div style={styles.chatPane}>
                   {selectedConversation ? (
                     <>
-                      <div style={styles.chatPaneHeader}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                      {/* هيدر الدردشة مع التحكم بالحالة واسم الموظف وزر الأرشفة */}
+                      <div style={{ ...styles.chatPaneHeader, padding: '12px 16px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', flexWrap: 'wrap', gap: '10px' }}>
                           <div>
-                            <div style={{ fontWeight: 'bold' }}>مراقبة العميل: {selectedConversation.customer_phone}</div>
-                            <div style={{ fontSize: '0.75rem', color: '#10B981' }}>المساعد الذكي (AI) متصل ومستعد للرد</div>
+                            <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>
+                              مراقبة العميل: {selectedConversation.customer_phone}
+                            </div>
+                            
+                            {/* عرض هوية الموظف المتابع أو مغلق الشات */}
+                            <div style={{ fontSize: '0.75rem', marginTop: '3px' }}>
+                              {(() => {
+                                const stInfo = getStatusInfo(selectedConversation);
+                                return (
+                                  <span style={{ fontWeight: 'bold', color: stInfo.color }}>
+                                    الحالة الحالية: {stInfo.label}
+                                  </span>
+                                );
+                              })()}
+                            </div>
                           </div>
                           
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 'bold' }}>تصنيف المحادثة:</span>
-                            <select
-                              value={selectedConversation.category || 'INQUIRY'}
-                              onChange={(e) => handleUpdateCategory(selectedConversation.id, e.target.value as any)}
-                              style={{
-                                padding: '6px 12px',
-                                borderRadius: '6px',
-                                fontSize: '0.75rem',
-                                border: '1px solid #CBD5E1',
-                                backgroundColor: '#FFFFFF',
-                                fontWeight: 'bold',
-                                cursor: 'pointer',
-                                color: selectedConversation.category === 'ORDER' ? '#10B981' : selectedConversation.category === 'COMPLAINT' ? '#EF4444' : '#3B82F6'
-                              }}
-                            >
-                              <option value="INQUIRY">❓ استفسارات عامة</option>
-                              <option value="ORDER">📦 طلبات وأوردرات</option>
-                              <option value="COMPLAINT">⚠️ شكاوى وبلاغات</option>
-                            </select>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                            {/* زر الأرشفة / إلغاء الأرشفة */}
+                            {!selectedConversation.is_archived ? (
+                              <button
+                                type="button"
+                                onClick={() => handleToggleArchive(selectedConversation.id, true)}
+                                style={{
+                                  border: 'none',
+                                  backgroundColor: '#475569',
+                                  color: '#FFFFFF',
+                                  padding: '6px 12px',
+                                  borderRadius: '6px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 'bold',
+                                  cursor: 'pointer',
+                                  boxShadow: '0 2px 6px rgba(71, 85, 105, 0.3)'
+                                }}
+                                title="أرشفة المحادثة ونقلها لأرشيف النظام"
+                              >
+                                📦 أرشفة الشات
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleToggleArchive(selectedConversation.id, false)}
+                                style={{
+                                  border: 'none',
+                                  backgroundColor: '#0066FF',
+                                  color: '#FFFFFF',
+                                  padding: '6px 12px',
+                                  borderRadius: '6px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 'bold',
+                                  cursor: 'pointer',
+                                  boxShadow: '0 2px 6px rgba(0, 102, 255, 0.3)'
+                                }}
+                                title="إعادة الشات للقائمة النشطة"
+                              >
+                                📤 إلغاء الأرشفة
+                              </button>
+                            )}
+
+                            {/* أزرار التحكم الفوري بالحالة لتحديد اسم الموظف */}
+                            {(selectedConversation.status || '').toUpperCase() !== 'IN_PROGRESS' && (selectedConversation.status || '').toUpperCase() !== 'ACTIVE' && (
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateStatus(selectedConversation.id, 'IN_PROGRESS')}
+                                style={{
+                                  border: 'none',
+                                  backgroundColor: '#3B82F6',
+                                  color: '#FFFFFF',
+                                  padding: '6px 12px',
+                                  borderRadius: '6px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 'bold',
+                                  cursor: 'pointer',
+                                  boxShadow: '0 2px 6px rgba(59, 130, 246, 0.3)'
+                                }}
+                                title="استلام متابعة الدردشة باسمك الحالي"
+                              >
+                                🔵 استلام الدردشة ({currentUsername})
+                              </button>
+                            )}
+
+                            {(selectedConversation.status || '').toUpperCase() !== 'CLOSED' && (
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateStatus(selectedConversation.id, 'CLOSED')}
+                                style={{
+                                  border: 'none',
+                                  backgroundColor: '#EF4444',
+                                  color: '#FFFFFF',
+                                  padding: '6px 12px',
+                                  borderRadius: '6px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 'bold',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                🔄 إعادة فتح الدردشة
+                              </button>
+                            )}
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', borderRight: '1px solid #E2E8F0', paddingRight: '10px' }}>
+                              <span style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 'bold' }}>التصنيف:</span>
+                              <select
+                                value={selectedConversation.category || 'INQUIRY'}
+                                onChange={(e) => handleUpdateCategory(selectedConversation.id, e.target.value as any)}
+                                style={{
+                                  padding: '4px 8px',
+                                  borderRadius: '6px',
+                                  fontSize: '0.75rem',
+                                  border: '1px solid #CBD5E1',
+                                  backgroundColor: '#FFFFFF',
+                                  fontWeight: 'bold',
+                                  cursor: 'pointer',
+                                  color: selectedConversation.category === 'ORDER' ? '#10B981' : selectedConversation.category === 'COMPLAINT' ? '#EF4444' : '#3B82F6'
+                                }}
+                              >
+                                <option value="INQUIRY">❓ استفسارات</option>
+                                <option value="ORDER">📦 طلبات</option>
+                                <option value="COMPLAINT">⚠️ شكاوى</option>
+                              </select>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1604,7 +2001,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                       <div style={styles.chatPaneBody}>
                         {chatMessages.length === 0 ? (
                           <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: '#5E6E85' }}>
-                            لا توجد رسائل مسجلة في المحادثة.
+                            لا توجد رسائل مسجلة في المحادثة بعد.
                           </div>
                         ) : (
                           chatMessages.map((msg, i) => (
@@ -1619,12 +2016,27 @@ const Dashboard: React.FC<DashboardProps> = ({
                                 style={{
                                   ...styles.chatPaneBubble,
                                   backgroundColor: msg.role === 'user' ? '#EBF3FF' : '#FFFFFF',
-                                  border: '1px solid rgba(0,0,0,0.05)',
+                                  border: msg.role === 'user' ? '1px solid #BFDBFE' : '1px solid #E2E8F0',
                                   borderRadius: msg.role === 'user' ? '12px 12px 12px 0px' : '12px 12px 0px 12px',
+                                  boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
                                 }}
                               >
-                                <p style={{ fontSize: '0.85rem', color: '#000' }}>{msg.content}</p>
-                                <div style={{ fontSize: '0.6rem', color: '#888', marginTop: '4px', textAlign: 'left' }}>
+                                {msg.sender_name && msg.role !== 'user' && (
+                                  <div style={{ fontSize: '0.65rem', color: '#0066FF', fontWeight: '800', marginBottom: '4px' }}>
+                                    الرد بواسطة الموظف: {msg.sender_name}
+                                  </div>
+                                )}
+                                {msg.image_url && (
+                                  <div style={{ marginBottom: '6px' }}>
+                                    <img
+                                      src={msg.image_url}
+                                      alt="صورة مرفقة"
+                                      style={{ maxWidth: '240px', maxHeight: '180px', borderRadius: '8px', objectFit: 'cover', display: 'block' }}
+                                    />
+                                  </div>
+                                )}
+                                {msg.content && <p style={{ fontSize: '0.85rem', color: '#0F172A', margin: 0, whiteSpace: 'pre-wrap' }}>{msg.content}</p>}
+                                <div style={{ fontSize: '0.6rem', color: '#94A3B8', marginTop: '4px', textAlign: 'left' }}>
                                   {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                 </div>
                               </div>
@@ -1634,23 +2046,66 @@ const Dashboard: React.FC<DashboardProps> = ({
                         <div ref={chatEndRef} />
                       </div>
 
-                      <form onSubmit={handleSendManualMessage} style={styles.chatPaneInputArea}>
-                        <input
-                          type="text"
-                          value={chatInput}
-                          onChange={e => setChatInput(e.target.value)}
-                          placeholder="اكتب رسالة للرد يدوياً..."
-                          style={styles.chatPaneInput}
-                        />
-                        <button type="submit" style={styles.chatPaneSendBtn} disabled={!chatInput.trim()}>
-                          <Send size={18} color="#FFFFFF" style={{ transform: 'rotate(180deg)' }} />
-                        </button>
+                      <form onSubmit={handleSendManualMessage} style={{ ...styles.chatPaneInputArea, flexDirection: 'column', gap: '8px' }}>
+                        {showImageInput && (
+                          <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                            <input
+                              type="text"
+                              value={chatImageUrl}
+                              onChange={e => setChatImageUrl(e.target.value)}
+                              placeholder="ضع رابط الصورة (Image URL) التي تريد إرسالها للعميل..."
+                              style={{ ...styles.chatPaneInput, fontSize: '0.8rem', border: '1px dashed #3B82F6' }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => { setChatImageUrl(''); setShowImageInput(false); }}
+                              style={{ border: 'none', backgroundColor: '#EF4444', color: '#FFF', borderRadius: '6px', padding: '0 12px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' }}
+                            >
+                              إلغاء
+                            </button>
+                          </div>
+                        )}
+
+                        <div style={{ display: 'flex', gap: '8px', width: '100%', alignItems: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={() => setShowImageInput(!showImageInput)}
+                            style={{
+                              border: '1px solid #CBD5E1',
+                              backgroundColor: showImageInput ? '#EFF6FF' : '#FFFFFF',
+                              color: '#3B82F6',
+                              borderRadius: '8px',
+                              padding: '8px 12px',
+                              fontSize: '0.8rem',
+                              fontWeight: 'bold',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                            title="إرفاق صورة للعميل"
+                          >
+                            📸 <span>صورة</span>
+                          </button>
+
+                          <input
+                            type="text"
+                            value={chatInput}
+                            onChange={e => setChatInput(e.target.value)}
+                            placeholder={`اكتب رسالة للرد كـ (${currentUsername})...`}
+                            style={styles.chatPaneInput}
+                          />
+
+                          <button type="submit" style={styles.chatPaneSendBtn} disabled={!chatInput.trim() && !chatImageUrl.trim()}>
+                            <Send size={18} color="#FFFFFF" style={{ transform: 'rotate(180deg)' }} />
+                          </button>
+                        </div>
                       </form>
                     </>
                   ) : (
                     <div style={styles.selectConversationPlaceholder}>
                       <MessageSquare size={48} color="#8E9FB8" style={{ marginBottom: '12px' }} />
-                      <p>يرجى اختيار رقم محادثة من القائمة اليسرى لعرض الرسائل المتبادلة والتدخل الفوري.</p>
+                      <p>يرجى اختيار رقم محادثة من القائمة اليسرى لعرض الرسائل المتبادلة وتتبع الموظفين.</p>
                     </div>
                   )}
                 </div>

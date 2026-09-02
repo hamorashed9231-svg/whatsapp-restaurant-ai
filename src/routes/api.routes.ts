@@ -13,13 +13,16 @@ import {
   updateReservationStatus,
   getConversations,
   getConversationMessages,
+  updateConversationCategory,
+  updateConversationStatus,
+  archiveConversation,
+  sendManualMessage,
   handleDemoChat,
   importMenu,
   updateRestaurant,
   createUser,
   listUsers,
   deleteUser,
-  updateConversationCategory,
   handleAdminConfigChat,
   getAiInstructions,
   updateAiInstructions
@@ -62,6 +65,9 @@ router.put('/reservations/:reservationId/status', authMiddleware, updateReservat
 router.get('/restaurants/:id/conversations', authMiddleware, getConversations);
 router.get('/conversations/:id/messages', authMiddleware, getConversationMessages);
 router.put('/conversations/:id/category', authMiddleware, updateConversationCategory);
+router.put('/conversations/:id/status', authMiddleware, updateConversationStatus);
+router.put('/conversations/:id/archive', authMiddleware, archiveConversation);
+router.post('/conversations/:id/messages', authMiddleware, sendManualMessage);
 
 // إدارة المستخدمين (للمسؤول فقط)
 router.post('/users', authMiddleware, createUser);

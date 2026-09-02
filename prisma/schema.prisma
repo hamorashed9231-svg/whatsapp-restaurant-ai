@@ -55,8 +55,11 @@ model Conversation {
   restaurant_id  String
   customer_phone String     // رقم هاتف الزبون
   messages_json  Json       // سجل الرسائل بصيغة JSON (مصفوفة متوافقة)
-  status         String     // حالة المحادثة (مثال: ACTIVE, ARCHIVED)
+  status         String     // حالة المحادثة: UNANSWERED (لم يتم الرد), IN_PROGRESS (جاري المتابعة), CLOSED (مغلقة)
   category       String     @default("INQUIRY") // تصنيف المحادثة (INQUIRY, ORDER, COMPLAINT)
+  assigned_to    String?    // اسم الموظف المتابع للمحادثة (المسند إليه)
+  closed_by      String?    // اسم الموظف الذي قام بإغلاق المحادثة
+  is_archived    Boolean    @default(false) // هل المحادثة مؤرشفة
   created_at     DateTime   @default(now())
   updated_at     DateTime   @updatedAt
 
