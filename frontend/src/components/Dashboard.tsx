@@ -122,6 +122,20 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersError, setUsersError] = useState<string | null>(null);
   const [usersSuccess, setUsersSuccess] = useState<string | null>(null);
+  const [menuViewMode, setMenuViewMode] = useState<'grid' | 'table'>('grid');
+
+  const getFoodImage = (item: MenuItem) => {
+    if (item.image_url && item.image_url.trim()) return item.image_url;
+    const name = item.name.toLowerCase();
+    if (name.includes('شاورما')) return 'https://images.unsplash.com/photo-1529006557810-274b9b2fc783?auto=format&fit=crop&w=600&q=80';
+    if (name.includes('بيتزا')) return 'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=600&q=80';
+    if (name.includes('بطاطس')) return 'https://images.unsplash.com/photo-1573080496219-bb080dd4f877?auto=format&fit=crop&w=600&q=80';
+    if (name.includes('عصير') || name.includes('برتقال')) return 'https://images.unsplash.com/photo-1613478223719-2ab802602423?auto=format&fit=crop&w=600&q=80';
+    if (name.includes('كولا') || name.includes('مشروب')) return 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?auto=format&fit=crop&w=600&q=80';
+    if (item.category.includes('مشروب')) return 'https://images.unsplash.com/photo-1544145945-f90425340c7e?auto=format&fit=crop&w=600&q=80';
+    if (item.category.includes('مقبل')) return 'https://images.unsplash.com/photo-1541529086526-db283c563270?auto=format&fit=crop&w=600&q=80';
+    return 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=600&q=80';
+  };
 
   // لفك تشفير التوكن والحصول على الدور (Role)
   useEffect(() => {
@@ -846,15 +860,55 @@ const Dashboard: React.FC<DashboardProps> = ({
           {/* 2. التبويب الثاني: إدارة المنيو (Menu Manager) */}
           {activeTab === 'menu' && (
             <div className="animate-fade-in" style={styles.tabContent}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px' }}>
-                <h3 style={styles.cardTitle}>قائمة المأكولات والمشروبات</h3>
-                <div style={{ display: 'flex', gap: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+                <div>
+                  <h3 style={styles.cardTitle}>قائمة المأكولات والمشروبات</h3>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '4px' }}>استعرض وعدّل أصناف طعام مطعمك المعروضة للزبائن بالصور والأسعار بالجنيه المصري.</p>
+                </div>
+                
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                  {/* زر التبديل بين عرض الكروت الفاخرة وعرض الجدول */}
+                  <div style={{ display: 'flex', backgroundColor: 'var(--card-bg)', borderRadius: '10px', padding: '4px', border: '1px solid var(--border-color)' }}>
+                    <button
+                      onClick={() => setMenuViewMode('grid')}
+                      style={{
+                        border: 'none',
+                        backgroundColor: menuViewMode === 'grid' ? '#0066FF' : 'transparent',
+                        color: menuViewMode === 'grid' ? '#FFFFFF' : 'var(--text-muted)',
+                        padding: '6px 14px',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        fontSize: '0.8rem',
+                        fontWeight: '700',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      عرض كروت الطعام 📇
+                    </button>
+                    <button
+                      onClick={() => setMenuViewMode('table')}
+                      style={{
+                        border: 'none',
+                        backgroundColor: menuViewMode === 'table' ? '#0066FF' : 'transparent',
+                        color: menuViewMode === 'table' ? '#FFFFFF' : 'var(--text-muted)',
+                        padding: '6px 14px',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        fontSize: '0.8rem',
+                        fontWeight: '700',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      عرض الجدول 📋
+                    </button>
+                  </div>
+
                   <button onClick={() => setShowImportModal(true)} className="btn btn-secondary">
-                    <Upload size={20} />
-                    <span>استيراد من Excel/CSV</span>
+                    <Upload size={18} />
+                    <span>استيراد Excel</span>
                   </button>
                   <button onClick={handleOpenAddModal} className="btn btn-primary">
-                    <Plus size={20} />
+                    <Plus size={18} />
                     <span>إضافة صنف جديد</span>
                   </button>
                 </div>
@@ -862,15 +916,146 @@ const Dashboard: React.FC<DashboardProps> = ({
 
               {menuItems.length === 0 ? (
                 <div className="glass-card" style={{ padding: '40px', textAlign: 'center' }}>
-                  <Utensils size={48} color="#5E6E85" style={{ margin: '0 auto 16px auto' }} />
-                  <p>لا توجد أي أصناف في منيو المطعم حالياً.</p>
-                  <button onClick={handleOpenAddModal} className="btn btn-primary" style={{ marginTop: '16px' }}>أضف أول صنف</button>
+                  <Utensils size={48} color="#00D2FF" style={{ margin: '0 auto 16px auto' }} />
+                  <p style={{ color: 'var(--text-main)', fontSize: '1.1rem', fontWeight: 'bold' }}>لا توجد أي أصناف في منيو المطعم حالياً.</p>
+                  <button onClick={handleOpenAddModal} className="btn btn-primary" style={{ marginTop: '16px' }}>أضف أول صنف الآن</button>
+                </div>
+              ) : menuViewMode === 'grid' ? (
+                /* عرض كروت المأكولات الفاخرة بالصور والأسعار (Cards Grid View) */
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '24px', marginTop: '16px' }}>
+                  {menuItems.map(item => (
+                    <div 
+                      key={item.id} 
+                      className="glass-card animate-fade-in"
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        borderRadius: '16px',
+                        overflow: 'hidden',
+                        backgroundColor: 'var(--card-bg)',
+                        border: '1px solid var(--border-color)',
+                        boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+                        transition: 'transform 0.2s, box-shadow 0.2s',
+                      }}
+                    >
+                      {/* صورة الوجبة المضيئة مع السعر والتصنيف */}
+                      <div style={{ position: 'relative', width: '100%', height: '175px', overflow: 'hidden', backgroundColor: '#060E1E' }}>
+                        <img 
+                          src={getFoodImage(item)} 
+                          alt={item.name} 
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                        />
+                        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(6,14,30,0.9) 0%, transparent 65%)' }} />
+                        
+                        {/* شارة التصنيف */}
+                        <span style={{
+                          position: 'absolute',
+                          top: '12px',
+                          left: '12px',
+                          padding: '4px 12px',
+                          borderRadius: '20px',
+                          fontSize: '0.75rem',
+                          fontWeight: '700',
+                          backgroundColor: 'rgba(6, 14, 30, 0.8)',
+                          color: '#00D2FF',
+                          border: '1px solid rgba(0, 210, 255, 0.4)',
+                          backdropFilter: 'blur(4px)'
+                        }}>
+                          {item.category}
+                        </span>
+
+                        {/* شارة السعر المضيئة بالجنيه المصري */}
+                        <span style={{
+                          position: 'absolute',
+                          top: '12px',
+                          right: '12px',
+                          padding: '6px 14px',
+                          borderRadius: '20px',
+                          fontSize: '0.95rem',
+                          fontWeight: '900',
+                          backgroundColor: '#00D2FF',
+                          color: '#06122C',
+                          boxShadow: '0 4px 14px rgba(0, 210, 255, 0.6)',
+                        }}>
+                          {Number(item.price)} ج.م
+                        </span>
+                      </div>
+
+                      {/* معلومات الوجبة والتحكم */}
+                      <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'space-between', gap: '14px' }}>
+                        <div>
+                          <h4 style={{ fontSize: '1.15rem', fontWeight: '800', color: 'var(--text-main)', marginBottom: '8px' }}>{item.name}</h4>
+                          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5', minHeight: '40px' }}>
+                            {item.description || 'وجبة شهية ومجهزة فوراً بفرن المطعم.'}
+                          </p>
+                        </div>
+
+                        {/* شريط الحالة والخيارات */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '14px' }}>
+                          <span style={{
+                            padding: '4px 10px',
+                            borderRadius: '12px',
+                            fontSize: '0.75rem',
+                            fontWeight: '700',
+                            backgroundColor: item.is_available ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                            color: item.is_available ? '#10B981' : '#EF4444',
+                            border: item.is_available ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)'
+                          }}>
+                            {item.is_available ? '● متوفر' : '✕ غير متوفر'}
+                          </span>
+
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button 
+                              onClick={() => handleOpenEditModal(item)} 
+                              style={{
+                                border: 'none',
+                                backgroundColor: 'rgba(0, 102, 255, 0.15)',
+                                color: '#0066FF',
+                                padding: '8px 12px',
+                                borderRadius: '8px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                fontSize: '0.8rem',
+                                fontWeight: '700'
+                              }}
+                            >
+                              <Edit size={14} />
+                              <span>تعديل</span>
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteMenuItem(item.id)} 
+                              style={{
+                                border: 'none',
+                                backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                                color: '#EF4444',
+                                padding: '8px 12px',
+                                borderRadius: '8px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                fontSize: '0.8rem',
+                                fontWeight: '700'
+                              }}
+                            >
+                              <Trash size={14} />
+                              <span>حذف</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : (
+                /* عرض الجدول التقليدي */
                 <div style={styles.menuTableContainer}>
                   <table style={styles.table}>
                     <thead>
                       <tr style={styles.tableHeaderRow}>
+                        <th style={styles.tableHeaderCell}>الصورة والمعاينة</th>
                         <th style={styles.tableHeaderCell}>الصنف</th>
                         <th style={styles.tableHeaderCell}>التصنيف</th>
                         <th style={styles.tableHeaderCell}>السعر</th>
@@ -882,11 +1067,18 @@ const Dashboard: React.FC<DashboardProps> = ({
                       {menuItems.map(item => (
                         <tr key={item.id} style={styles.tableRow}>
                           <td style={styles.tableCell}>
+                            <img 
+                              src={getFoodImage(item)} 
+                              alt={item.name} 
+                              style={{ width: '48px', height: '48px', borderRadius: '8px', objectFit: 'cover', border: '1px solid var(--border-color)' }} 
+                            />
+                          </td>
+                          <td style={styles.tableCell}>
                             <div style={{ fontWeight: 'bold' }}>{item.name}</div>
-                            {item.description && <div style={{ fontSize: '0.75rem', color: '#5E6E85' }}>{item.description}</div>}
+                            {item.description && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{item.description}</div>}
                           </td>
                           <td style={styles.tableCell}>{item.category}</td>
-                          <td style={styles.tableCell}>{Number(item.price)} ج.م</td>
+                          <td style={styles.tableCell}><span style={{ fontWeight: '900', color: '#00D2FF' }}>{Number(item.price)} ج.م</span></td>
                           <td style={styles.tableCell}>
                             <span style={{
                               padding: '4px 8px',
