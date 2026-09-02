@@ -259,7 +259,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         ]);
 
         // فحص وحفظ الأصناف بالذاكرة المحلية لضمان استمرارها عند الريفريش
-        const savedMenuKey = `rivix_menu_${actualRestId}`;
+        const savedMenuKey = 'rivix_menu_v3';
         const storedMenu = localStorage.getItem(savedMenuKey);
         if (storedMenu) {
           try {
@@ -532,7 +532,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       } else {
         nextList = [...prev, data];
       }
-      localStorage.setItem(`rivix_menu_${restaurant.id}`, JSON.stringify(nextList));
+      localStorage.setItem('rivix_menu_v3', JSON.stringify(nextList));
       return nextList;
     });
 
@@ -573,7 +573,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       // تحديث قائمة الطعام في الواجهة والذاكرة الدائمة
       const resMenu = await api.get(`/restaurants/${restaurant.id}/menu`);
       setMenuItems(resMenu.data);
-      localStorage.setItem(`rivix_menu_${restaurant.id}`, JSON.stringify(resMenu.data));
+      localStorage.setItem('rivix_menu_v3', JSON.stringify(resMenu.data));
 
       // إغلاق المودال بعد ثانيتين
       setTimeout(() => {
@@ -594,9 +594,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
     setMenuItems(prev => {
       const nextList = prev.filter(m => m.id !== itemId);
-      if (restaurant) {
-        localStorage.setItem(`rivix_menu_${restaurant.id}`, JSON.stringify(nextList));
-      }
+      localStorage.setItem('rivix_menu_v3', JSON.stringify(nextList));
       return nextList;
     });
 

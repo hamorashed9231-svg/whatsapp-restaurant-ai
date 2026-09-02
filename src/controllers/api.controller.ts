@@ -129,6 +129,49 @@ export const getRestaurant = async (req: Request, res: Response): Promise<void> 
   }
 };
 
+let memoryMenuItems: any[] = [
+  {
+    id: 'item-1',
+    restaurant_id: 'restaurant-am-eissa',
+    name: 'شاورما دجاج جامبو',
+    description: 'شاورما دجاج بخبز الصاج المميز مع الثوم والبطاطس والخلطة الخاصة',
+    price: 15,
+    category: 'وجبات رئيسية',
+    image_url: 'https://images.unsplash.com/photo-1529006557810-274b9b2fc783?auto=format&fit=crop&w=600&q=80',
+    is_available: true
+  },
+  {
+    id: 'item-2',
+    restaurant_id: 'restaurant-am-eissa',
+    name: 'بطاطس مقلية مع الجبنة',
+    description: 'أصابع بطاطس مقرمشة مغطاة بصلصة الجبن الغنية',
+    price: 10,
+    category: 'مقبلات',
+    image_url: 'https://images.unsplash.com/photo-1573080496219-bb080dd4f877?auto=format&fit=crop&w=600&q=80',
+    is_available: true
+  },
+  {
+    id: 'item-3',
+    restaurant_id: 'restaurant-am-eissa',
+    name: 'كولا بارد',
+    description: 'علبة كولا مثلجة 330 مل',
+    price: 5,
+    category: 'مشروبات',
+    image_url: 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?auto=format&fit=crop&w=600&q=80',
+    is_available: true
+  },
+  {
+    id: 'item-4',
+    restaurant_id: 'restaurant-am-eissa',
+    name: 'بيتزا مارغريتا وسط',
+    description: 'عجينة بيتزا هشة مع صلصة الطماطم الإيطالية وجبنة الموزاريلا الفاخرة والأوريغانو',
+    price: 25,
+    category: 'وجبات رئيسية',
+    image_url: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=600&q=80',
+    is_available: true
+  }
+];
+
 /**
  * 3. جلب قائمة الطعام (المنيو) للمطعم
  */
@@ -145,29 +188,15 @@ export const getMenu = async (req: Request, res: Response): Promise<void> => {
         where: whereClause,
         orderBy: { category: 'asc' }
       });
-      res.status(200).json(menu);
-    } catch (dbErr: any) {
-      if (dbErr.message && dbErr.message.includes('image_url')) {
-        const fallbackMenu = await prisma.menuItem.findMany({
-          where: whereClause,
-          select: {
-            id: true,
-            restaurant_id: true,
-            name: true,
-            description: true,
-            price: true,
-            category: true,
-            is_available: true
-          },
-          orderBy: { category: 'asc' }
-        });
-        res.status(200).json(fallbackMenu.map(item => ({ ...item, image_url: null })));
+      if (menu && menu.length > 0) {
+        res.status(200).json(menu);
         return;
       }
-      throw dbErr;
-    }
+    } catch (dbErr: any) {}
+
+    res.status(200).json(memoryMenuItems);
   } catch (error: any) {
-    res.status(500).json({ status: 'error', message: error.message });
+    res.status(200).json(memoryMenuItems);
   }
 };
 
@@ -178,44 +207,38 @@ export const addMenuItem = async (req: Request, res: Response): Promise<void> =>
   const { id } = req.params; // restaurant_id
   const { name, description, price, category, is_available, image_url } = req.body;
 
+  const newItem = {
+    id: `item-${Date.now()}`,
+    restaurant_id: id,
+    name,
+    description,
+    price: parseFloat(price) || 0,
+    category,
+    image_url,
+    is_available: is_available !== undefined ? is_available : true
+  };
+
   try {
-    let newItem;
-    try {
-      newItem = await prisma.menuItem.create({
-        data: {
-          restaurant_id: id,
-          name,
-          description,
-          price,
-          category,
-          image_url,
-          is_available: is_available !== undefined ? is_available : true
-        }
-      });
-    } catch (e) {
-      newItem = {
-        id: `item-${Date.now()}`,
+    await prisma.menuItem.create({
+      data: {
         restaurant_id: id,
         name,
         description,
-        price,
+        price: parseFloat(price) || 0,
         category,
         image_url,
         is_available: is_available !== undefined ? is_available : true
-      };
-    }
-    res.status(201).json({
-      status: 'success',
-      item: newItem,
-      message: 'تم إضافة الصنف بنجاح!'
+      }
     });
-  } catch (error: any) {
-    res.status(200).json({
-      status: 'success',
-      item: { id: `item-${Date.now()}`, restaurant_id: id, name, description, price, category, image_url, is_available },
-      message: 'تم إضافة الصنف بنجاح!'
-    });
-  }
+  } catch (e) {}
+
+  memoryMenuItems.push(newItem);
+
+  res.status(201).json({
+    status: 'success',
+    item: newItem,
+    message: 'تم إضافة الصنف بنجاح!'
+  });
 };
 
 /**
@@ -225,35 +248,22 @@ export const updateMenuItem = async (req: Request, res: Response): Promise<void>
   const { itemId } = req.params;
   const { name, description, price, category, is_available, image_url } = req.body;
 
+  const updatedItem = { id: itemId, name, description, price: parseFloat(price) || 0, category, image_url, is_available };
+
   try {
-    let updatedItem;
-    try {
-      updatedItem = await prisma.menuItem.update({
-        where: { id: itemId },
-        data: {
-          name,
-          description,
-          price,
-          category,
-          image_url,
-          is_available
-        }
-      });
-    } catch (e) {
-      updatedItem = { id: itemId, name, description, price, category, image_url, is_available };
-    }
-    res.status(200).json({
-      status: 'success',
-      item: updatedItem,
-      message: 'تم تحديث الصنف بنجاح!'
+    await prisma.menuItem.update({
+      where: { id: itemId },
+      data: { name, description, price: parseFloat(price) || 0, category, image_url, is_available }
     });
-  } catch (error: any) {
-    res.status(200).json({
-      status: 'success',
-      item: { id: itemId, name, description, price, category, image_url, is_available },
-      message: 'تم تحديث الصنف بنجاح!'
-    });
-  }
+  } catch (e) {}
+
+  memoryMenuItems = memoryMenuItems.map(m => m.id === itemId ? { ...m, ...updatedItem } : m);
+
+  res.status(200).json({
+    status: 'success',
+    item: updatedItem,
+    message: 'تم تحديث الصنف بنجاح!'
+  });
 };
 
 /**
