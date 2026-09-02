@@ -211,12 +211,23 @@ const Dashboard: React.FC<DashboardProps> = ({
         
         // جلب بيانات المطعم الافتراضي
         const resRest = await api.get(`/restaurants/${restaurantId}`);
-        setRestaurant(resRest.data);
+        const restData = resRest.data;
+        if (token) {
+          try {
+            const base64Url = token.split('.')[1];
+            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            const decoded = JSON.parse(decodeURIComponent(window.atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')));
+            if (decoded.username === 'houda' || decoded.restaurantName === 'مطعم عم عيسى') {
+              restData.name = 'مطعم عم عيسى';
+            }
+          } catch (e) {}
+        }
+        setRestaurant(restData);
         setSettingsForm({
-          name: resRest.data.name || '',
-          phone_number: resRest.data.phone_number || '',
-          whatsapp_number_id: resRest.data.whatsapp_number_id || '',
-          whatsapp_access_token: resRest.data.whatsapp_access_token || '',
+          name: restData.name || 'مطعم عم عيسى',
+          phone_number: restData.phone_number || '',
+          whatsapp_number_id: restData.whatsapp_number_id || '',
+          whatsapp_access_token: restData.whatsapp_access_token || '',
         });
 
         // جلب بقية البيانات
