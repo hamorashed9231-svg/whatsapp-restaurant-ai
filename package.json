@@ -4,7 +4,7 @@
   "description": "Node.js (Express + TypeScript) backend for WhatsApp Restaurant AI Agent using Prisma and Anthropic Claude",
   "main": "dist/index.js",
   "scripts": {
-    "build": "cd frontend && npm install && npm run build && cd .. && prisma generate && prisma db push && tsc",
+    "build": "cd frontend && npm install && npm run build && cd .. && prisma generate && tsc",
     "start": "node dist/index.js",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "prisma:generate": "prisma generate",
