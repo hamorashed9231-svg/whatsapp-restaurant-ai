@@ -189,13 +189,14 @@ export const getMenu = async (req: Request, res: Response): Promise<void> => {
         where: whereClause,
         orderBy: { category: 'asc' }
       });
-      if (menu) {
+      if (menu && menu.length > 0) {
         res.status(200).json(menu);
         return;
       }
     } catch (dbErr: any) {}
 
-    res.status(200).json(memoryMenuItems);
+    const filteredMemory = memoryMenuItems.filter(m => !id || id === 'default' || m.restaurant_id === id || m.restaurant_id === 'restaurant-am-eissa');
+    res.status(200).json(filteredMemory.length > 0 ? filteredMemory : memoryMenuItems);
   } catch (error: any) {
     res.status(200).json(memoryMenuItems);
   }
@@ -208,31 +209,38 @@ export const addMenuItem = async (req: Request, res: Response): Promise<void> =>
   const { id } = req.params; // restaurant_id
   const { name, description, price, category, is_available, image_url } = req.body;
 
-  const newItem = {
+  let newItem: any = {
     id: `item-${Date.now()}`,
     restaurant_id: id,
     name,
-    description,
+    description: description || '',
     price: parseFloat(price) || 0,
-    category,
-    image_url,
+    category: category || 'وجبات رئيسية',
+    image_url: image_url || '',
     is_available: is_available !== undefined ? is_available : true
   };
 
   try {
-    await prisma.menuItem.create({
+    const dbItem = await prisma.menuItem.create({
       data: {
         restaurant_id: id,
         name,
-        description,
+        description: description || '',
         price: parseFloat(price) || 0,
-        category,
-        image_url,
+        category: category || 'وجبات رئيسية',
+        image_url: image_url || '',
         is_available: is_available !== undefined ? is_available : true
       }
     });
-  } catch (e) {}
+    if (dbItem) {
+      newItem = dbItem;
+    }
+  } catch (e) {
+    console.warn('Prisma create failed, fallback to memoryMenuItems:', e);
+  }
 
+  // تجنب تكرار الصنف بالذاكرة إذا كان موجوداً
+  memoryMenuItems = memoryMenuItems.filter(m => m.id !== newItem.id);
   memoryMenuItems.push(newItem);
 
   res.status(201).json({
@@ -249,20 +257,28 @@ export const updateMenuItem = async (req: Request, res: Response): Promise<void>
   const { itemId } = req.params;
   const { name, description, price, category, is_available, image_url } = req.body;
 
-  const updatedItem = { id: itemId, name, description, price: parseFloat(price) || 0, category, image_url, is_available };
+  const updatedFields = {
+    name,
+    description: description || '',
+    price: parseFloat(price) || 0,
+    category,
+    image_url: image_url || '',
+    is_available: is_available !== undefined ? is_available : true
+  };
 
   try {
     await prisma.menuItem.update({
       where: { id: itemId },
-      data: { name, description, price: parseFloat(price) || 0, category, image_url, is_available }
+      data: updatedFields
     });
   } catch (e) {}
 
-  memoryMenuItems = memoryMenuItems.map(m => m.id === itemId ? { ...m, ...updatedItem } : m);
+  memoryMenuItems = memoryMenuItems.map(m => m.id === itemId ? { ...m, ...updatedFields } : m);
+  const found = memoryMenuItems.find(m => m.id === itemId) || { id: itemId, ...updatedFields };
 
   res.status(200).json({
     status: 'success',
-    item: updatedItem,
+    item: found,
     message: 'تم تحديث الصنف بنجاح!'
   });
 };
@@ -278,9 +294,7 @@ export const deleteMenuItem = async (req: Request, res: Response): Promise<void>
       await prisma.menuItem.delete({
         where: { id: itemId }
       });
-    } catch (e) {
-      console.warn('تنبيه: تم الحذف محلياً لتجاوز عدم اتصال قاعدة البيانات');
-    }
+    } catch (e) {}
     
     memoryMenuItems = memoryMenuItems.filter(m => m.id !== itemId);
 

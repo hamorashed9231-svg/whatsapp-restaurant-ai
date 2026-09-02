@@ -305,7 +305,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     try {
       if (tab === 'menu') {
         const res = await api.get(`/restaurants/${restaurant.id}/menu`);
-        if (res && Array.isArray(res.data)) {
+        if (res && Array.isArray(res.data) && res.data.length > 0) {
           setMenuItems(res.data);
           localStorage.setItem('rivix_menu_v3', JSON.stringify(res.data));
         }
@@ -621,9 +621,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     e.preventDefault();
     if (!restaurant) return;
 
-    const data: MenuItem = {
-      id: editingItem ? editingItem.id : `item-${Date.now()}`,
-      restaurant_id: restaurant.id,
+    const dataPayload = {
       name: menuForm.name,
       description: menuForm.description,
       price: parseFloat(menuForm.price) || 0,
@@ -632,25 +630,41 @@ const Dashboard: React.FC<DashboardProps> = ({
       is_available: menuForm.is_available
     };
 
-    setMenuItems(prev => {
-      let nextList: MenuItem[];
-      if (editingItem) {
-        nextList = prev.map(m => m.id === editingItem.id ? data : m);
-      } else {
-        nextList = [...prev, data];
-      }
-      localStorage.setItem('rivix_menu_v3', JSON.stringify(nextList));
-      return nextList;
-    });
-
     try {
       if (editingItem) {
-        await api.put(`/menu/${editingItem.id}`, data);
+        const res = await api.put(`/menu/${editingItem.id}`, dataPayload);
+        const updatedItem = res.data.item || { ...editingItem, ...dataPayload };
+        setMenuItems(prev => {
+          const nextList = prev.map(m => m.id === editingItem.id ? updatedItem : m);
+          localStorage.setItem('rivix_menu_v3', JSON.stringify(nextList));
+          return nextList;
+        });
       } else {
-        await api.post(`/restaurants/${restaurant.id}/menu`, data);
+        const res = await api.post(`/restaurants/${restaurant.id}/menu`, dataPayload);
+        const newItem = res.data.item || { id: `item-${Date.now()}`, restaurant_id: restaurant.id, ...dataPayload };
+        setMenuItems(prev => {
+          const nextList = [...prev.filter(m => m.id !== newItem.id), newItem];
+          localStorage.setItem('rivix_menu_v3', JSON.stringify(nextList));
+          return nextList;
+        });
       }
     } catch (err) {
-      console.warn('تمت إضافة وحفظ الصنف بنجاح بالذاكرة الحية للمتصفح لتجنب مسحه عند الريفريش');
+      console.warn('تنبيه: تعذر حفظ الصنف عبر الـ API، جاري التخزين المحلي بالمتصفح');
+      const fallbackItem: MenuItem = {
+        id: editingItem ? editingItem.id : `item-${Date.now()}`,
+        restaurant_id: restaurant.id,
+        ...dataPayload
+      };
+      setMenuItems(prev => {
+        let nextList: MenuItem[];
+        if (editingItem) {
+          nextList = prev.map(m => m.id === editingItem.id ? fallbackItem : m);
+        } else {
+          nextList = [...prev.filter(m => m.id !== fallbackItem.id), fallbackItem];
+        }
+        localStorage.setItem('rivix_menu_v3', JSON.stringify(nextList));
+        return nextList;
+      });
     }
 
     setShowAddMenuModal(false);
@@ -679,8 +693,10 @@ const Dashboard: React.FC<DashboardProps> = ({
       
       // تحديث قائمة الطعام في الواجهة والذاكرة الدائمة
       const resMenu = await api.get(`/restaurants/${restaurant.id}/menu`);
-      setMenuItems(resMenu.data);
-      localStorage.setItem('rivix_menu_v3', JSON.stringify(resMenu.data));
+      if (resMenu && Array.isArray(resMenu.data) && resMenu.data.length > 0) {
+        setMenuItems(resMenu.data);
+        localStorage.setItem('rivix_menu_v3', JSON.stringify(resMenu.data));
+      }
 
       // إغلاق المودال بعد ثانيتين
       setTimeout(() => {
@@ -699,6 +715,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   const handleDeleteMenuItem = async (itemId: string) => {
     if (!window.confirm('هل أنت متأكد من رغبتك في حذف هذا الصنف من قائمة الطعام نهائياً؟')) return;
 
+    // حذف فوري من الواجهة والـ localStorage لمنع التعليق
     setMenuItems(prev => {
       const nextList = prev.filter(m => m.id !== itemId);
       localStorage.setItem('rivix_menu_v3', JSON.stringify(nextList));
