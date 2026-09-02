@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import { LogIn, ArrowRight, Shield, AlertCircle } from 'lucide-react';
+import { LogIn, ArrowRight, AlertCircle, Sun, Moon } from 'lucide-react';
 
 interface LoginProps {
   onLoginSuccess: (token: string) => void;
   onBackToLanding: () => void;
+  darkMode?: boolean;
+  onToggleTheme?: () => void;
 }
 
-const Login: React.FC<LoginProps> = ({ onLoginSuccess, onBackToLanding }) => {
+const Login: React.FC<LoginProps> = ({ onLoginSuccess, onBackToLanding, darkMode = true, onToggleTheme }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -44,12 +46,29 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onBackToLanding }) => {
       <div className="tech-grid"></div>
       
       <div className="glass-card animate-fade-in" style={styles.card}>
-        <div style={styles.header}>
-          <div style={styles.iconContainer}>
-            <Shield size={32} color="#00D2FF" />
+        {onToggleTheme && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
+            <button onClick={onToggleTheme} className="theme-toggle-btn" style={{ padding: '6px 12px', fontSize: '0.8rem' }}>
+              {darkMode ? <Sun size={16} color="#F59E0B" /> : <Moon size={16} color="#0066FF" />}
+              <span>{darkMode ? 'مضيء' : 'داكن'}</span>
+            </button>
           </div>
-          <h2 style={styles.title}>تسجيل الدخول إلى Rivix</h2>
-          <p style={styles.subtitle}>أدخل بيانات اعتماد المسؤول للوصول إلى لوحة التحكم</p>
+        )}
+        
+        <div style={styles.header}>
+          <div 
+            style={{ ...styles.iconContainer, cursor: onToggleTheme ? 'pointer' : 'default' }}
+            onClick={onToggleTheme}
+            title="اضغط على اللوجو لتبديل المظهر"
+          >
+            <img 
+              src="/logo.jpg" 
+              alt="Rivix System Logo" 
+              style={{ width: '64px', height: '64px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #00D2FF', boxShadow: '0 0 16px rgba(0, 210, 255, 0.5)' }} 
+            />
+          </div>
+          <h2 style={styles.title}>تسجيل الدخول إلى <span style={{ color: '#00D2FF' }}>Rivix System</span></h2>
+          <p style={styles.subtitle}>أدخل بيانات الاعتماد للوصول إلى لوحة تحكم المطاعم</p>
         </div>
 
         {error && (

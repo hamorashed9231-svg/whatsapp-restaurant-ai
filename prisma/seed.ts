@@ -19,7 +19,7 @@ async function main() {
   const restaurant = await prisma.restaurant.create({
     data: {
       name: 'مطعم ومطبخ البركة شاورما',
-      phone_number: '+966500000000',
+      phone_number: '+201000000000',
       whatsapp_number_id: '1234567890', // معرف الواتساب بيزنس
       subscription_tier: 'PREMIUM',
       subscription_status: 'ACTIVE',
@@ -29,21 +29,21 @@ async function main() {
 
   console.log(`تم إنشاء المطعم: ${restaurant.name} (معرف: ${restaurant.id})`);
 
-  // 3. إنشاء عناصر قائمة الطعام (Menu Items)
+  // 3. إنشاء عناصر قائمة الطعام (Menu Items بالجنيه المصري)
   const menuItems = [
     {
       restaurant_id: restaurant.id,
-      name: 'شاورما دجاج جامبو',
+      name: 'شاورما دجاج سوبر',
       description: 'شاورما دجاج بخبز الصاج المميز مع الثوم والبطاطس والخلطة الخاصة',
-      price: 15.00,
+      price: 85.00,
       category: 'وجبات رئيسية',
       is_available: true,
     },
     {
       restaurant_id: restaurant.id,
-      name: 'بيتزا مارغريتا وسط',
+      name: 'بيتزا مارغريتا عائلية',
       description: 'عجينة بيتزا هشة مع صلصة الطماطم الإيطالية وجبنة الموزاريلا الفاخرة والأوريغانو',
-      price: 25.00,
+      price: 145.00,
       category: 'وجبات رئيسية',
       is_available: true,
     },
@@ -51,7 +51,7 @@ async function main() {
       restaurant_id: restaurant.id,
       name: 'بطاطس مقلية مع الجبنة',
       description: 'أصابع بطاطس مقرمشة مغطاة بصلصة الجبن الغنية',
-      price: 10.00,
+      price: 45.00,
       category: 'مقبلات',
       is_available: true,
     },
@@ -59,7 +59,7 @@ async function main() {
       restaurant_id: restaurant.id,
       name: 'عصير برتقال طازج',
       description: 'عصير برتقال طبيعي 100% معصور طازجاً بدون إضافة سكر',
-      price: 8.00,
+      price: 35.00,
       category: 'مشروبات',
       is_available: true,
     },
@@ -67,7 +67,7 @@ async function main() {
       restaurant_id: restaurant.id,
       name: 'كولا بارد',
       description: 'علبة كولا مثلجة 330 مل',
-      price: 5.00,
+      price: 20.00,
       category: 'مشروبات',
       is_available: true,
     },
@@ -77,7 +77,7 @@ async function main() {
     const createdItem = await prisma.menuItem.create({
       data: item,
     });
-    console.log(`تم إضافة صنف للمنيو: ${createdItem.name} (${createdItem.price} ريال)`);
+    console.log(`تم إضافة صنف للمنيو: ${createdItem.name} (${createdItem.price} ج.م)`);
   }
 
   console.log('✅ اكتملت عملية تهيئة البيانات بنجاح!');

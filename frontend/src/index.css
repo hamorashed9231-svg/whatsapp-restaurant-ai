@@ -1,10 +1,12 @@
 :root {
-  /* ألوان الهوية البصرية لبراند Rivix */
+  /* ألوان الهوية البصرية لبراند Rivix (الوضع الفاتح) */
   --primary: #06122C;       /* كحلي داكن */
   --secondary: #0066FF;     /* أزرق ملكي */
   --accent: #00D2FF;        /* سماوي مضيء */
   --background: #F4F7FE;    /* خلفية رمادي فاتح مائل للزرقة */
   --white: #FFFFFF;
+  --card-bg: rgba(255, 255, 255, 0.85);
+  --border-color: rgba(6, 18, 44, 0.08);
   --text-main: #0F1E36;     /* نص كحلي قريب للأسود */
   --text-muted: #5E6E85;    /* نص رمادي */
   --success: #10B981;       /* أخضر للعمليات الناجحة */
@@ -16,18 +18,23 @@
   --radius-md: 16px;
   --radius-lg: 24px;
   
-  --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
   --shadow-sm: 0 4px 12px rgba(6, 18, 44, 0.03);
   --shadow-md: 0 8px 24px rgba(6, 18, 44, 0.05);
   --shadow-lg: 0 16px 48px rgba(6, 18, 44, 0.08);
 }
 
-/* الوضع الداكن لبعض عناصر لوحة التحكم */
-.dark-theme {
-  --background: #050C1A;
-  --white: #0B192C;
+/* الوضع الداكن الشامل (Dark Theme) */
+.dark-theme, [data-theme="dark"] {
+  --background: #060E1E;
+  --white: #0E1B33;
+  --card-bg: rgba(14, 27, 51, 0.85);
+  --border-color: rgba(255, 255, 255, 0.08);
   --text-main: #F4F7FE;
   --text-muted: #8E9FB8;
+  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.4);
 }
 
 * {
@@ -66,10 +73,10 @@ body {
 
 /* الكروت الزجاجية (Glassmorphism) */
 .glass-card {
-  background: rgba(255, 255, 255, 0.75);
+  background: var(--card-bg);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-md);
   transition: var(--transition);
@@ -78,7 +85,7 @@ body {
 .glass-card:hover {
   transform: translateY(-4px);
   box-shadow: var(--shadow-lg);
-  border-color: rgba(0, 102, 255, 0.2);
+  border-color: rgba(0, 210, 255, 0.3);
 }
 
 .glass-card-dark {
@@ -206,3 +213,26 @@ body {
 .badge-delivered { background: rgba(16, 185, 129, 0.1); color: var(--success); }
 .badge-cancelled { background: rgba(239, 68, 68, 0.1); color: var(--danger); }
 .badge-confirmed { background: rgba(16, 185, 129, 0.1); color: var(--success); }
+
+/* زر تبديل المظهر (Dark/Light Mode Toggle Button) */
+.theme-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(8px);
+}
+
+.theme-toggle-btn:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}

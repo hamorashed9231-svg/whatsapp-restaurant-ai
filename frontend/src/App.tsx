@@ -7,6 +7,22 @@ function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
   const [view, setView] = useState<'landing' | 'login' | 'dashboard'>('landing');
   const [restaurantId] = useState<string>('default');
+  const [darkMode, setDarkMode] = useState<boolean>(() => {
+    const savedTheme = localStorage.getItem('theme');
+    return savedTheme ? savedTheme === 'dark' : true; // الوضع الداكن افتراضياً
+  });
+
+  // مزامنة حالة المظهر مع الـ DOM و localStorage
+  useEffect(() => {
+    localStorage.setItem('theme', darkMode ? 'dark' : 'light');
+    if (darkMode) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+      document.body.classList.add('dark-theme');
+    } else {
+      document.documentElement.setAttribute('data-theme', 'light');
+      document.body.classList.remove('dark-theme');
+    }
+  }, [darkMode]);
 
   // التحقق من حالة الدخول عند بدء التشغيل
   useEffect(() => {
@@ -15,6 +31,10 @@ function App() {
       setToken(savedToken);
     }
   }, []);
+
+  const toggleTheme = () => {
+    setDarkMode(prev => !prev);
+  };
 
   const handleLoginSuccess = (newToken: string) => {
     localStorage.setItem('token', newToken);
@@ -43,6 +63,8 @@ function App() {
         <LandingPage 
           onGoToDashboard={handleGoToDashboard} 
           onGoToLogin={() => setView('login')}
+          darkMode={darkMode}
+          onToggleTheme={toggleTheme}
         />
       )}
       
@@ -50,6 +72,8 @@ function App() {
         <Login 
           onLoginSuccess={handleLoginSuccess} 
           onBackToLanding={() => setView('landing')} 
+          darkMode={darkMode}
+          onToggleTheme={toggleTheme}
         />
       )}
       
@@ -60,6 +84,8 @@ function App() {
           onLogout={handleLogout}
           onBackToLanding={() => setView('landing')}
           onRedirectToLogin={() => setView('login')}
+          darkMode={darkMode}
+          onToggleTheme={toggleTheme}
         />
       )}
     </div>

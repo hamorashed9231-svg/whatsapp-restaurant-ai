@@ -17,7 +17,9 @@ import {
   AlertCircle,
   Upload,
   Users,
-  Sparkles
+  Sparkles,
+  Sun,
+  Moon
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -26,6 +28,8 @@ interface DashboardProps {
   onLogout: () => void;
   onBackToLanding: () => void;
   onRedirectToLogin: () => void;
+  darkMode?: boolean;
+  onToggleTheme?: () => void;
 }
 
 // تعريف هياكل البيانات المسترجعة
@@ -87,7 +91,10 @@ const Dashboard: React.FC<DashboardProps> = ({
   onLogout,
   onBackToLanding,
   onRedirectToLogin,
+  darkMode = true,
+  onToggleTheme,
 }) => {
+  const styles = getDashboardStyles(darkMode);
   const [activeTab, setActiveTab] = useState<'overview' | 'menu' | 'orders' | 'reservations' | 'conversations' | 'settings' | 'users' | 'ai-assistant'>('overview');
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
   
@@ -592,7 +599,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       if (!Array.isArray(items)) return 'تنسيق طلب غير صالح';
       return items.map((it: any, i: number) => (
         <div key={i} style={{ fontSize: '0.85rem' }}>
-          • {it.name} (عدد: {it.quantity}) - {it.subtotal || it.price * it.quantity} ريال
+          • {it.name} (عدد: {it.quantity}) - {it.subtotal || it.price * it.quantity} ج.م
         </div>
       ));
     } catch (e) {
@@ -626,11 +633,15 @@ const Dashboard: React.FC<DashboardProps> = ({
     <div style={styles.dashboardLayout}>
       {/* شريط التنقل الجانبي (Sidebar) */}
       <aside style={styles.sidebar}>
-        <div style={styles.sidebarHeader}>
-          <img src="/logo.jpg" alt="RIVIX" style={{ width: '42px', height: '42px', borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(0, 210, 255, 0.4)' }} />
+        <div 
+          style={{ ...styles.sidebarHeader, cursor: onToggleTheme ? 'pointer' : 'default' }}
+          onClick={onToggleTheme}
+          title="اضغط على اللوجو لتبديل المظهر (داكن / مضيء)"
+        >
+          <img src="/logo.jpg" alt="RIVIX SYSTEM" style={{ width: '42px', height: '42px', borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(0, 210, 255, 0.4)' }} />
           <div style={styles.sidebarTitle}>
-            <div style={{ fontWeight: '800', fontSize: '1.2rem' }}>Rivix</div>
-            <div style={{ fontSize: '0.7rem', color: '#8E9FB8' }}>لوحة تحكم المطاعم</div>
+            <div style={{ fontWeight: '800', fontSize: '1.2rem', color: '#FFFFFF' }}>Rivix System</div>
+            <div style={{ fontSize: '0.7rem', color: '#00D2FF' }}>تبديل المظهر 🌙/☀️</div>
           </div>
         </div>
 
@@ -720,9 +731,17 @@ const Dashboard: React.FC<DashboardProps> = ({
             <h2 style={{ fontSize: '1.5rem', fontWeight: '800' }}>مرحباً، {restaurant?.name}</h2>
             <p style={{ fontSize: '0.85rem', color: '#5E6E85' }}>مستوى الاشتراك: {restaurant?.subscription_tier}</p>
           </div>
-          <button onClick={onBackToLanding} className="btn btn-secondary">
-            العودة لصفحة الهبوط
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {onToggleTheme && (
+              <button onClick={onToggleTheme} className="theme-toggle-btn" title="تبديل مظهر اللوحة">
+                {darkMode ? <Sun size={18} color="#F59E0B" /> : <Moon size={18} color="#0066FF" />}
+                <span>{darkMode ? 'الوضع المضيء' : 'الوضع الداكن'}</span>
+              </button>
+            )}
+            <button onClick={onBackToLanding} className="btn btn-secondary">
+              العودة لصفحة الهبوط
+            </button>
+          </div>
         </header>
 
         {/* محتوى التبويبات */}
@@ -772,7 +791,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                             <div style={{ color: '#5E6E85', fontSize: '0.8rem' }}>التاريخ: {new Date(order.created_at).toLocaleString()}</div>
                           </div>
                           <div>
-                            <span style={{ fontWeight: 'bold', marginLeft: '12px' }}>{Number(order.total_price)} ريال</span>
+                            <span style={{ fontWeight: 'bold', marginLeft: '12px' }}>{Number(order.total_price)} ج.م</span>
                             <span className={`badge badge-${order.status.toLowerCase()}`}>{order.status}</span>
                           </div>
                         </div>
@@ -844,7 +863,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                             {item.description && <div style={{ fontSize: '0.75rem', color: '#5E6E85' }}>{item.description}</div>}
                           </td>
                           <td style={styles.tableCell}>{item.category}</td>
-                          <td style={styles.tableCell}>{Number(item.price)} ريال</td>
+                          <td style={styles.tableCell}>{Number(item.price)} ج.م</td>
                           <td style={styles.tableCell}>
                             <span style={{
                               padding: '4px 8px',
@@ -912,7 +931,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                         <div style={styles.formGroup}>
-                          <label style={styles.formLabel}>السعر (ريال)</label>
+                          <label style={styles.formLabel}>السعر (ج.م)</label>
                           <input
                             type="number"
                             step="0.01"
@@ -1042,7 +1061,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                         {renderOrderItems(order.items_json)}
                         <div style={{ borderTop: '1px solid rgba(0,0,0,0.05)', paddingTop: '8px', marginTop: '8px', display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
                           <span>المجموع الكلي:</span>
-                          <span>{Number(order.total_price)} ريال</span>
+                          <span>{Number(order.total_price)} ج.م</span>
                         </div>
                       </div>
 
@@ -1609,7 +1628,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 {/* شات المساعد الذكي لإعداد البوت (يمين) */}
                 <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: 0 }}>
                   {/* رأس الشات */}
-                  <div style={{ padding: '16px 24px', borderBottom: '1px solid rgba(0,0,0,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
                       <h4 style={{ fontWeight: 'bold', margin: 0, fontSize: '1rem' }}>دردشة الضبط والتوجيه المباشر</h4>
                       <span style={{ fontSize: '0.75rem', color: '#10B981' }}>تعديل وتحديث قواعد بوت واتساب بالذكاء الاصطناعي</span>
@@ -1788,409 +1807,450 @@ const Dashboard: React.FC<DashboardProps> = ({
   );
 };
 
-const styles: Record<string, React.CSSProperties> = {
-  loadingContainer: {
-    minHeight: '100vh',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F4F7FE',
-  },
-  errorContainer: {
-    minHeight: '100vh',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F4F7FE',
-    padding: '20px',
-  },
-  dashboardLayout: {
-    display: 'flex',
-    minHeight: '100vh',
-    backgroundColor: '#F4F7FE',
-    color: '#0F1E36',
-  },
-  sidebar: {
-    width: '260px',
-    backgroundColor: '#06122C', // كحلي داكن فاخر
-    color: '#FFFFFF',
-    display: 'flex',
-    flexDirection: 'column',
-    padding: '24px 16px',
-    borderLeft: '1px solid rgba(255,255,255,0.05)',
-  },
-  sidebarHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    marginBottom: '40px',
-  },
-  logoCircle: {
-    width: '36px',
-    height: '36px',
-    borderRadius: '50%',
-    background: 'linear-gradient(135deg, #0066FF 0%, #00D2FF 100%)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: '#FFFFFF',
-    fontWeight: '800',
-  },
-  sidebarTitle: {
-    display: 'flex',
-    flexDirection: 'column',
-    textAlign: 'right',
-  },
-  sidebarNav: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-    flex: 1,
-  },
-  navItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    padding: '12px 16px',
-    borderRadius: '8px',
-    border: 'none',
-    backgroundColor: 'transparent',
-    color: '#8E9FB8',
-    cursor: 'pointer',
-    fontSize: '0.9rem',
-    fontWeight: '600',
-    textAlign: 'right',
-    width: '100%',
-    transition: 'all 0.2s',
-  },
-  navItemActive: {
-    backgroundColor: 'rgba(0, 102, 255, 0.15)',
-    color: '#FFFFFF',
-    borderRight: '4px solid #00D2FF',
-  },
-  sidebarFooter: {
-    borderTop: '1px solid rgba(255,255,255,0.1)',
-    paddingTop: '16px',
-  },
-  logoutButton: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    padding: '12px 16px',
-    borderRadius: '8px',
-    border: 'none',
-    backgroundColor: 'transparent',
-    color: '#FCA5A5',
-    cursor: 'pointer',
-    width: '100%',
-    textAlign: 'right',
-    fontSize: '0.9rem',
-  },
-  mainContent: {
-    flex: 1,
-    padding: '40px',
-    display: 'flex',
-    flexDirection: 'column',
-    overflowY: 'auto',
-  },
-  topBar: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '32px',
-  },
-  contentBody: {
-    flex: 1,
-  },
-  tabContent: {
-    width: '100%',
-  },
-  statsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-    gap: '24px',
-  },
-  statCard: {
-    padding: '24px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '20px',
-    borderRadius: '16px',
-  },
-  statLabel: {
-    fontSize: '0.85rem',
-    color: '#5E6E85',
-  },
-  statVal: {
-    fontSize: '1.75rem',
-    fontWeight: '800',
-  },
-  cardTitle: {
-    fontSize: '1.15rem',
-    fontWeight: '800',
-  },
-  recentList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-    marginTop: '16px',
-  },
-  listItem: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '12px',
-    borderBottom: '1px solid rgba(0,0,0,0.03)',
-  },
-  menuTableContainer: {
-    marginTop: '16px',
-    borderRadius: '12px',
-    overflow: 'hidden',
-    border: '1px solid rgba(0, 102, 255, 0.08)',
-    backgroundColor: '#FFFFFF',
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    textAlign: 'right',
-  },
-  tableHeaderRow: {
-    backgroundColor: '#F8FAFC',
-    borderBottom: '2px solid rgba(0,0,0,0.05)',
-  },
-  tableHeaderCell: {
-    padding: '14px 18px',
-    fontSize: '0.85rem',
-    fontWeight: '700',
-    color: '#5E6E85',
-  },
-  tableRow: {
-    borderBottom: '1px solid rgba(0,0,0,0.03)',
-  },
-  tableCell: {
-    padding: '14px 18px',
-    fontSize: '0.9rem',
-  },
-  actionIconButton: {
-    border: 'none',
-    backgroundColor: 'rgba(0,102,255,0.05)',
-    width: '32px',
-    height: '32px',
-    borderRadius: '6px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-  },
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 100,
-  },
-  modal: {
-    width: '100%',
-    maxWidth: '500px',
-    padding: '32px',
-    backgroundColor: '#FFFFFF',
-    borderRadius: '16px',
-  },
-  formGroup: {
-    marginBottom: '16px',
-    display: 'flex',
-    flexDirection: 'column',
-    textAlign: 'right',
-  },
-  formLabel: {
-    fontSize: '0.85rem',
-    fontWeight: '700',
-    marginBottom: '6px',
-    color: '#5E6E85',
-  },
-  formInput: {
-    padding: '12px',
-    borderRadius: '8px',
-    border: '1px solid rgba(0,0,0,0.1)',
-    outline: 'none',
-    fontSize: '0.9rem',
-    textAlign: 'right',
-  },
-  orderCard: {
-    padding: '24px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-    borderRadius: '16px',
-    backgroundColor: '#FFFFFF',
-  },
-  orderCardHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  orderCardBody: {
-    backgroundColor: '#F8FAFC',
-    padding: '12px',
-    borderRadius: '8px',
-  },
-  orderCardActions: {
-    display: 'flex',
-    gap: '12px',
-  },
-  cancelBtn: {
-    padding: '10px 16px',
-    borderRadius: '8px',
-    border: '1px solid #EF4444',
-    backgroundColor: 'transparent',
-    color: '#EF4444',
-    cursor: 'pointer',
-    fontWeight: 'bold',
-  },
-  actionBtnConfirm: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '6px',
-    backgroundColor: '#10B981',
-    color: '#FFFFFF',
-    border: 'none',
-    padding: '8px 12px',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '0.8rem',
-    fontWeight: '700',
-  },
-  actionBtnCancel: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '6px',
-    backgroundColor: '#EF4444',
-    color: '#FFFFFF',
-    border: 'none',
-    padding: '8px 12px',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '0.8rem',
-    fontWeight: '700',
-  },
-  actionBtnComplete: {
-    backgroundColor: '#0066FF',
-    color: '#FFFFFF',
-    border: 'none',
-    padding: '8px 12px',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '0.8rem',
-    fontWeight: '700',
-  },
-  conversationsLayout: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 2.5fr',
-    height: '100%',
-    borderRadius: '16px',
-    overflow: 'hidden',
-    border: '1px solid rgba(0, 102, 255, 0.08)',
-    backgroundColor: '#FFFFFF',
-  },
-  conversationsListPane: {
-    borderLeft: '1px solid rgba(0,0,0,0.05)',
-    display: 'flex',
-    flexDirection: 'column',
-    textAlign: 'right',
-    backgroundColor: '#F8FAFC',
-  },
-  conversationItem: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '16px',
-    borderBottom: '1px solid rgba(0,0,0,0.03)',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-  },
-  convAvatar: {
-    width: '32px',
-    height: '32px',
-    borderRadius: '50%',
-    backgroundColor: 'rgba(0,102,255,0.05)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  chatPane: {
-    display: 'flex',
-    flexDirection: 'column',
-    height: '100%',
-    backgroundColor: '#FFFFFF',
-  },
-  chatPaneHeader: {
-    padding: '16px',
-    borderBottom: '1px solid rgba(0,0,0,0.05)',
-    textAlign: 'right',
-    backgroundColor: '#F8FAFC',
-  },
-  chatPaneBody: {
-    flex: 1,
-    padding: '20px',
-    overflowY: 'auto',
-    backgroundColor: '#F0F2F5', // لون خلفية واتساب للدردشة الفعلية
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-  },
-  chatPaneMessageRow: {
-    display: 'flex',
-    width: '100%',
-  },
-  chatPaneBubble: {
-    maxWidth: '75%',
-    padding: '10px 14px',
-    boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
-  },
-  chatPaneInputArea: {
-    padding: '12px',
-    borderTop: '1px solid rgba(0,0,0,0.05)',
-    display: 'flex',
-    gap: '10px',
-    backgroundColor: '#F0F0F0',
-  },
-  chatPaneInput: {
-    flex: 1,
-    padding: '12px 16px',
-    borderRadius: '24px',
-    border: '1px solid rgba(0,0,0,0.1)',
-    outline: 'none',
-    textAlign: 'right',
-    fontSize: '0.9rem',
-  },
-  chatPaneSendBtn: {
-    width: '40px',
-    height: '40px',
-    borderRadius: '50%',
-    border: 'none',
-    backgroundColor: '#0066FF',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-  },
-  selectConversationPlaceholder: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '40px',
-    textAlign: 'center',
-    color: '#5E6E85',
-  },
+const getDashboardStyles = (isDark: boolean): Record<string, React.CSSProperties> => {
+  const bg = isDark ? '#060E1E' : '#F4F7FE';
+  const cardBg = isDark ? '#0E1B33' : '#FFFFFF';
+  const sidebarBg = isDark ? '#081427' : '#FFFFFF';
+  const textMain = isDark ? '#FFFFFF' : '#0F1E36';
+  const textMuted = isDark ? '#94A3B8' : '#64748B';
+  const borderColor = isDark ? 'rgba(0, 210, 255, 0.15)' : 'rgba(6, 18, 44, 0.08)';
+  const inputBg = isDark ? '#060E1E' : '#F8FAFC';
+
+  return {
+    loadingContainer: {
+      minHeight: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: bg,
+      color: textMain,
+    },
+    errorContainer: {
+      minHeight: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: bg,
+      color: textMain,
+      padding: '20px',
+    },
+    dashboardLayout: {
+      display: 'flex',
+      minHeight: '100vh',
+      backgroundColor: bg,
+      color: textMain,
+    },
+    sidebar: {
+      width: '260px',
+      backgroundColor: sidebarBg,
+      color: textMain,
+      display: 'flex',
+      flexDirection: 'column',
+      padding: '24px 16px',
+      borderLeft: `1px solid ${borderColor}`,
+    },
+    sidebarHeader: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '12px',
+      marginBottom: '40px',
+    },
+    logoCircle: {
+      width: '36px',
+      height: '36px',
+      borderRadius: '50%',
+      background: 'linear-gradient(135deg, #0066FF 0%, #00D2FF 100%)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      color: '#FFFFFF',
+      fontWeight: '800',
+    },
+    sidebarTitle: {
+      display: 'flex',
+      flexDirection: 'column',
+      textAlign: 'right',
+    },
+    sidebarNav: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '8px',
+      flex: 1,
+    },
+    navItem: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '12px',
+      padding: '12px 16px',
+      borderRadius: '8px',
+      border: 'none',
+      backgroundColor: 'transparent',
+      color: textMuted,
+      cursor: 'pointer',
+      fontSize: '0.9rem',
+      fontWeight: '600',
+      textAlign: 'right',
+      width: '100%',
+      transition: 'all 0.2s',
+    },
+    navItemActive: {
+      backgroundColor: 'rgba(0, 102, 255, 0.2)',
+      color: isDark ? '#00D2FF' : '#0066FF',
+      fontWeight: '700',
+      borderRight: '4px solid #00D2FF',
+    },
+    sidebarFooter: {
+      borderTop: `1px solid ${borderColor}`,
+      paddingTop: '16px',
+    },
+    logoutButton: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '12px',
+      padding: '12px 16px',
+      borderRadius: '8px',
+      border: 'none',
+      backgroundColor: 'transparent',
+      color: '#EF4444',
+      cursor: 'pointer',
+      width: '100%',
+      textAlign: 'right',
+      fontSize: '0.9rem',
+      fontWeight: '700',
+    },
+    mainContent: {
+      flex: 1,
+      padding: '32px 40px',
+      display: 'flex',
+      flexDirection: 'column',
+      overflowY: 'auto',
+      backgroundColor: bg,
+      color: textMain,
+    },
+    topBar: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: '32px',
+    },
+    contentBody: {
+      flex: 1,
+    },
+    tabContent: {
+      width: '100%',
+    },
+    statsGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+      gap: '24px',
+    },
+    statCard: {
+      padding: '24px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '20px',
+      borderRadius: '16px',
+      backgroundColor: cardBg,
+      border: `1px solid ${borderColor}`,
+      boxShadow: isDark ? '0 4px 20px rgba(0, 0, 0, 0.3)' : '0 4px 12px rgba(6, 18, 44, 0.03)',
+    },
+    statLabel: {
+      fontSize: '0.85rem',
+      color: textMuted,
+      fontWeight: '600',
+    },
+    statVal: {
+      fontSize: '1.85rem',
+      fontWeight: '900',
+      color: isDark ? '#00D2FF' : '#06122C',
+      marginTop: '4px',
+    },
+    cardTitle: {
+      fontSize: '1.2rem',
+      fontWeight: '800',
+      color: textMain,
+    },
+    recentList: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '12px',
+      marginTop: '16px',
+    },
+    listItem: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      padding: '14px',
+      borderBottom: `1px solid ${borderColor}`,
+      color: textMain,
+    },
+    menuTableContainer: {
+      marginTop: '16px',
+      borderRadius: '12px',
+      overflow: 'hidden',
+      border: `1px solid ${borderColor}`,
+      backgroundColor: cardBg,
+    },
+    table: {
+      width: '100%',
+      borderCollapse: 'collapse',
+      textAlign: 'right',
+      color: textMain,
+    },
+    tableHeaderRow: {
+      backgroundColor: isDark ? '#132647' : '#F8FAFC',
+      borderBottom: `2px solid ${borderColor}`,
+    },
+    tableHeaderCell: {
+      padding: '14px 18px',
+      fontSize: '0.85rem',
+      fontWeight: '700',
+      color: textMuted,
+    },
+    tableRow: {
+      borderBottom: `1px solid ${borderColor}`,
+    },
+    tableCell: {
+      padding: '14px 18px',
+      fontSize: '0.9rem',
+      color: textMain,
+    },
+    actionIconButton: {
+      border: 'none',
+      backgroundColor: isDark ? 'rgba(0, 210, 255, 0.1)' : 'rgba(0, 102, 255, 0.08)',
+      width: '34px',
+      height: '34px',
+      borderRadius: '8px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      cursor: 'pointer',
+      color: textMain,
+    },
+    modalOverlay: {
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.75)',
+      backdropFilter: 'blur(6px)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000,
+    },
+    modal: {
+      width: '100%',
+      maxWidth: '520px',
+      padding: '32px',
+      backgroundColor: cardBg,
+      color: textMain,
+      borderRadius: '16px',
+      border: `1px solid ${borderColor}`,
+      boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+    },
+    formGroup: {
+      marginBottom: '16px',
+      display: 'flex',
+      flexDirection: 'column',
+      textAlign: 'right',
+    },
+    formLabel: {
+      fontSize: '0.85rem',
+      fontWeight: '700',
+      marginBottom: '6px',
+      color: textMuted,
+    },
+    formInput: {
+      padding: '12px',
+      borderRadius: '8px',
+      border: `1px solid ${borderColor}`,
+      backgroundColor: inputBg,
+      color: textMain,
+      outline: 'none',
+      fontSize: '0.9rem',
+      textAlign: 'right',
+    },
+    orderCard: {
+      padding: '24px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '16px',
+      borderRadius: '16px',
+      backgroundColor: cardBg,
+      border: `1px solid ${borderColor}`,
+      color: textMain,
+    },
+    orderCardHeader: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    orderCardBody: {
+      backgroundColor: inputBg,
+      padding: '14px',
+      borderRadius: '8px',
+      color: textMain,
+      border: `1px solid ${borderColor}`,
+    },
+    orderCardActions: {
+      display: 'flex',
+      gap: '12px',
+    },
+    cancelBtn: {
+      padding: '10px 16px',
+      borderRadius: '8px',
+      border: '1px solid #EF4444',
+      backgroundColor: 'transparent',
+      color: '#EF4444',
+      cursor: 'pointer',
+      fontWeight: 'bold',
+    },
+    actionBtnConfirm: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '6px',
+      backgroundColor: '#10B981',
+      color: '#FFFFFF',
+      border: 'none',
+      padding: '8px 14px',
+      borderRadius: '8px',
+      cursor: 'pointer',
+      fontSize: '0.85rem',
+      fontWeight: '700',
+    },
+    actionBtnCancel: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '6px',
+      backgroundColor: '#EF4444',
+      color: '#FFFFFF',
+      border: 'none',
+      padding: '8px 14px',
+      borderRadius: '8px',
+      cursor: 'pointer',
+      fontSize: '0.85rem',
+      fontWeight: '700',
+    },
+    actionBtnComplete: {
+      backgroundColor: '#0066FF',
+      color: '#FFFFFF',
+      border: 'none',
+      padding: '8px 14px',
+      borderRadius: '8px',
+      cursor: 'pointer',
+      fontSize: '0.85rem',
+      fontWeight: '700',
+    },
+    conversationsLayout: {
+      display: 'grid',
+      gridTemplateColumns: '1fr 2.5fr',
+      height: '100%',
+      borderRadius: '16px',
+      overflow: 'hidden',
+      border: `1px solid ${borderColor}`,
+      backgroundColor: cardBg,
+    },
+    conversationsListPane: {
+      borderLeft: `1px solid ${borderColor}`,
+      display: 'flex',
+      flexDirection: 'column',
+      textAlign: 'right',
+      backgroundColor: isDark ? '#081427' : '#F8FAFC',
+    },
+    conversationItem: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      padding: '16px',
+      borderBottom: `1px solid ${borderColor}`,
+      cursor: 'pointer',
+      transition: 'all 0.2s',
+      color: textMain,
+    },
+    convAvatar: {
+      width: '34px',
+      height: '34px',
+      borderRadius: '50%',
+      backgroundColor: 'rgba(0, 210, 255, 0.12)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    chatPane: {
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%',
+      backgroundColor: cardBg,
+    },
+    chatPaneHeader: {
+      padding: '16px',
+      borderBottom: `1px solid ${borderColor}`,
+      textAlign: 'right',
+      backgroundColor: isDark ? '#081427' : '#F8FAFC',
+      color: textMain,
+    },
+    chatPaneBody: {
+      flex: 1,
+      padding: '20px',
+      overflowY: 'auto',
+      backgroundColor: inputBg,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '12px',
+    },
+    chatPaneMessageRow: {
+      display: 'flex',
+      width: '100%',
+    },
+    chatPaneBubble: {
+      maxWidth: '75%',
+      padding: '12px 16px',
+      boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
+    },
+    chatPaneInputArea: {
+      padding: '14px',
+      borderTop: `1px solid ${borderColor}`,
+      display: 'flex',
+      gap: '10px',
+      backgroundColor: isDark ? '#081427' : '#F8FAFC',
+    },
+    chatPaneInput: {
+      flex: 1,
+      padding: '12px 16px',
+      borderRadius: '24px',
+      border: `1px solid ${borderColor}`,
+      backgroundColor: inputBg,
+      color: textMain,
+      outline: 'none',
+      textAlign: 'right',
+      fontSize: '0.9rem',
+    },
+    chatPaneSendBtn: {
+      width: '42px',
+      height: '42px',
+      borderRadius: '50%',
+      border: 'none',
+      backgroundColor: '#0066FF',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      cursor: 'pointer',
+    },
+    selectConversationPlaceholder: {
+      flex: 1,
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '40px',
+      textAlign: 'center',
+      color: textMuted,
+    },
+  };
 };
 
 export default Dashboard;
