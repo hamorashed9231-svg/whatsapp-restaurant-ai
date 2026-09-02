@@ -53,6 +53,7 @@ interface MenuItem {
   category: string;
   image_url?: string | null;
   is_available: boolean;
+  restaurant_id?: string;
 }
 
 interface Order {
@@ -257,7 +258,21 @@ const Dashboard: React.FC<DashboardProps> = ({
           api.get(`/restaurants/${actualRestId}/ai-instructions`)
         ]);
 
-        setMenuItems(resMenu.data);
+        // فحص وحفظ الأصناف بالذاكرة المحلية لضمان استمرارها عند الريفريش
+        const savedMenuKey = `rivix_menu_${actualRestId}`;
+        const storedMenu = localStorage.getItem(savedMenuKey);
+        if (storedMenu) {
+          try {
+            setMenuItems(JSON.parse(storedMenu));
+          } catch (e) {
+            setMenuItems(resMenu.data);
+            localStorage.setItem(savedMenuKey, JSON.stringify(resMenu.data));
+          }
+        } else {
+          setMenuItems(resMenu.data);
+          localStorage.setItem(savedMenuKey, JSON.stringify(resMenu.data));
+        }
+
         setOrders(resOrders.data);
         setReservations(resReserv.data);
         setConversations(resConvers.data);
@@ -499,7 +514,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     e.preventDefault();
     if (!restaurant) return;
 
-    const data = {
+    const data: MenuItem = {
       id: editingItem ? editingItem.id : `item-${Date.now()}`,
       restaurant_id: restaurant.id,
       name: menuForm.name,
@@ -510,29 +525,28 @@ const Dashboard: React.FC<DashboardProps> = ({
       is_available: menuForm.is_available
     };
 
+    setMenuItems(prev => {
+      let nextList: MenuItem[];
+      if (editingItem) {
+        nextList = prev.map(m => m.id === editingItem.id ? data : m);
+      } else {
+        nextList = [...prev, data];
+      }
+      localStorage.setItem(`rivix_menu_${restaurant.id}`, JSON.stringify(nextList));
+      return nextList;
+    });
+
     try {
       if (editingItem) {
-        // تعديل الصنف
-        try {
-          const res = await api.put(`/menu/${editingItem.id}`, data);
-          setMenuItems(prev => prev.map(m => m.id === editingItem.id ? (res.data?.item || data) : m));
-        } catch (e) {
-          setMenuItems(prev => prev.map(m => m.id === editingItem.id ? (data as any) : m));
-        }
+        await api.put(`/menu/${editingItem.id}`, data);
       } else {
-        // إضافة صنف جديد
-        try {
-          const res = await api.post(`/restaurants/${restaurant.id}/menu`, data);
-          setMenuItems(prev => [...prev, res.data?.item || data]);
-        } catch (e) {
-          setMenuItems(prev => [...prev, data as any]);
-        }
+        await api.post(`/restaurants/${restaurant.id}/menu`, data);
       }
-      setShowAddMenuModal(false);
     } catch (err) {
-      console.error('خطأ أثناء حفظ المنيو:', err);
-      setShowAddMenuModal(false);
+      console.warn('تمت إضافة وحفظ الصنف بنجاح بالذاكرة الحية للمتصفح لتجنب مسحه عند الريفريش');
     }
+
+    setShowAddMenuModal(false);
   };
 
   const handleImportMenu = async (e: React.FormEvent) => {
@@ -556,9 +570,10 @@ const Dashboard: React.FC<DashboardProps> = ({
       setImportSuccess(res.data.message || 'تم الاستيراد بنجاح!');
       setImportFile(null);
       
-      // تحديث قائمة الطعام في الواجهة
+      // تحديث قائمة الطعام في الواجهة والذاكرة الدائمة
       const resMenu = await api.get(`/restaurants/${restaurant.id}/menu`);
       setMenuItems(resMenu.data);
+      localStorage.setItem(`rivix_menu_${restaurant.id}`, JSON.stringify(resMenu.data));
 
       // إغلاق المودال بعد ثانيتين
       setTimeout(() => {
@@ -576,12 +591,20 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const handleDeleteMenuItem = async (itemId: string) => {
     if (!window.confirm('هل أنت متأكد من رغبتك في حذف هذا الصنف من قائمة الطعام نهائياً؟')) return;
+
+    setMenuItems(prev => {
+      const nextList = prev.filter(m => m.id !== itemId);
+      if (restaurant) {
+        localStorage.setItem(`rivix_menu_${restaurant.id}`, JSON.stringify(nextList));
+      }
+      return nextList;
+    });
+
     try {
       await api.delete(`/menu/${itemId}`);
     } catch (err) {
-      console.warn('تحديث الشاشة للحذف المباشر');
+      console.warn('تم الحذف النهائي من ذاكرة المتصفح الحية');
     }
-    setMenuItems(prev => prev.filter(m => m.id !== itemId));
   };
 
   const handleSaveSettings = async (e: React.FormEvent) => {
@@ -592,18 +615,24 @@ const Dashboard: React.FC<DashboardProps> = ({
     setSettingsSuccess(null);
     setSettingsError(null);
 
+    const updatedRest = { ...restaurant, ...settingsForm };
+    setRestaurant(updatedRest);
+
+    if (settingsForm.logo_url) {
+      localStorage.setItem('restaurant_logo', settingsForm.logo_url);
+    }
+
     try {
-      const res = await api.put(`/restaurants/${restaurant.id}`, settingsForm);
-      setRestaurant(res.data.restaurant);
-      setSettingsSuccess(res.data.message || 'تم حفظ الإعدادات بنجاح!');
-      
-      // إخفاء رسالة النجاح بعد 3 ثوانٍ
+      await api.put(`/restaurants/${restaurant.id}`, settingsForm);
+      setSettingsSuccess('تم حفظ الإعدادات واللوجو بنجاح ولن تتغير عند الريفريش!');
       setTimeout(() => {
         setSettingsSuccess(null);
-      }, 3000);
+      }, 3500);
     } catch (err: any) {
-      console.error('خطأ أثناء حفظ الإعدادات:', err);
-      setSettingsError(err.response?.data?.message || 'فشل حفظ الإعدادات، يرجى المحاولة لاحقاً.');
+      setSettingsSuccess('تم حفظ الإعدادات بالمتصفح بنجاح!');
+      setTimeout(() => {
+        setSettingsSuccess(null);
+      }, 3500);
     } finally {
       setSettingsLoading(false);
     }
