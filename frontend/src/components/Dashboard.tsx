@@ -1134,14 +1134,64 @@ const Dashboard: React.FC<DashboardProps> = ({
                       </div>
 
                       <div style={styles.formGroup}>
-                        <label style={styles.formLabel}>رابط صورة الصنف (Image URL)</label>
-                        <input
-                          type="url"
-                          placeholder="https://example.com/photo.jpg"
-                          value={menuForm.image_url}
-                          onChange={e => setMenuForm({ ...menuForm, image_url: e.target.value })}
-                          style={styles.formInput}
-                        />
+                        <label style={styles.formLabel}>صورة الصنف (اختر صورة من جهازك)</label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginTop: '6px' }}>
+                          {menuForm.image_url ? (
+                            <div style={{ position: 'relative', width: '70px', height: '70px', borderRadius: '10px', overflow: 'hidden', border: '2px solid #00D2FF', flexShrink: 0 }}>
+                              <img src={menuForm.image_url} alt="معاينة الصنف" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              <button
+                                type="button"
+                                onClick={() => setMenuForm({ ...menuForm, image_url: '' })}
+                                style={{ position: 'absolute', top: '2px', right: '2px', backgroundColor: 'rgba(239,68,68,0.95)', color: '#FFF', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', fontSize: '0.7rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                title="إزالة الصورة"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ) : null}
+
+                          <div style={{ flex: 1 }}>
+                            <input
+                              type="file"
+                              id="item-file-upload"
+                              accept="image/*"
+                              style={{ display: 'none' }}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  const reader = new FileReader();
+                                  reader.onloadend = () => {
+                                    setMenuForm({ ...menuForm, image_url: reader.result as string });
+                                  };
+                                  reader.readAsDataURL(file);
+                                }
+                              }}
+                            />
+                            <label
+                              htmlFor="item-file-upload"
+                              className="btn btn-secondary"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                cursor: 'pointer',
+                                padding: '10px 16px',
+                                borderRadius: '8px',
+                                backgroundColor: 'rgba(0, 102, 255, 0.12)',
+                                color: '#00D2FF',
+                                border: '1px solid rgba(0, 210, 255, 0.3)',
+                                fontWeight: '700',
+                                fontSize: '0.85rem'
+                              }}
+                            >
+                              <Upload size={18} />
+                              <span>{menuForm.image_url ? 'تغيير صورة الصنف من الجهاز 📁' : 'اختر صورة الصنف من جهازك 📁'}</span>
+                            </label>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '6px', display: 'block' }}>
+                              اختر أي صورة مخزنة على جهازك (موبايل أو كمبيوتر) ليتم عرضها فوراً على الكارت والواتساب!
+                            </span>
+                          </div>
+                        </div>
                       </div>
 
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
@@ -1628,24 +1678,53 @@ const Dashboard: React.FC<DashboardProps> = ({
                     </div>
                     <div style={{ flex: 1, textAlign: 'right' }}>
                       <label style={{ ...styles.formLabel, fontSize: '0.9rem', color: 'var(--text-main)' }}>صورة لوجو المطعم (تظهر للعملاء على واتساب والمنصة)</label>
-                      <input
-                        type="text"
-                        value={settingsForm.logo_url || ''}
-                        onChange={e => {
-                          const newLogo = e.target.value;
-                          setSettingsForm({ ...settingsForm, logo_url: newLogo });
-                          if (restaurant) {
-                            setRestaurant({ ...restaurant, logo_url: newLogo });
-                          }
-                          if (newLogo) {
-                            localStorage.setItem('restaurant_logo', newLogo);
-                          }
-                        }}
-                        placeholder="أدخل رابط صورة اللوجو المباشر (مثال: https://.../logo.jpg)"
-                        style={{ ...styles.formInput, marginTop: '8px' }}
-                      />
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-                        يمكنك تغيير لوجو المطعم في أي وقت ليظهر للعملاء فوراً عند المحادثة عبر واتساب!
+                      
+                      <div style={{ marginTop: '8px', display: 'flex', gap: '12px', alignItems: 'center' }}>
+                        <input
+                          type="file"
+                          id="logo-file-upload"
+                          accept="image/*"
+                          style={{ display: 'none' }}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onloadend = () => {
+                                const newLogo = reader.result as string;
+                                setSettingsForm({ ...settingsForm, logo_url: newLogo });
+                                if (restaurant) {
+                                  setRestaurant({ ...restaurant, logo_url: newLogo });
+                                }
+                                localStorage.setItem('restaurant_logo', newLogo);
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                        <label
+                          htmlFor="logo-file-upload"
+                          className="btn btn-secondary"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            cursor: 'pointer',
+                            padding: '10px 16px',
+                            borderRadius: '8px',
+                            backgroundColor: 'rgba(0, 102, 255, 0.12)',
+                            color: '#00D2FF',
+                            border: '1px solid rgba(0, 210, 255, 0.3)',
+                            fontWeight: '700',
+                            fontSize: '0.85rem'
+                          }}
+                        >
+                          <Upload size={18} />
+                          <span>اختر لوجو المطعم من جهازك 📁</span>
+                        </label>
+                      </div>
+
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '6px', display: 'block' }}>
+                        اختر أي صورة لوجو مخزنة على جهازك (كمبيوتر أو موبايل) ليتم اعتمادها فوراً لمطعمك!
                       </span>
                     </div>
                   </div>
