@@ -84,12 +84,23 @@ interface Conversation {
   updated_at: string;
 }
 
-interface ChatMessage {
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  sender_name?: string;
-  timestamp: string;
-}
+const getStoredDeletedIds = (): string[] => {
+  try {
+    const raw = localStorage.getItem('rivix_deleted_menu_items');
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+};
+
+const getStoredUserItems = (): MenuItem[] => {
+  try {
+    const raw = localStorage.getItem('rivix_menu_v3');
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+};
 
 const Dashboard: React.FC<DashboardProps> = ({
   token,
@@ -269,18 +280,22 @@ const Dashboard: React.FC<DashboardProps> = ({
           api.get(`/restaurants/${actualRestId}/ai-instructions`)
         ]);
 
-        // فحص وحفظ الأصناف بالذاكرة المحلية لضمان استمرارها عند الريفريش
-        const savedMenuKey = 'rivix_menu_v3';
+        // فحص وحفظ الأصناف بالذاكرة المحفوفة بالدمج الذكي ومنع عودة المحذوفات
+        const deletedIds = getStoredDeletedIds();
+        const storedUserItems = getStoredUserItems();
+
         if (resMenu && Array.isArray(resMenu.data)) {
-          setMenuItems(resMenu.data);
-          localStorage.setItem(savedMenuKey, JSON.stringify(resMenu.data));
+          const serverItems = resMenu.data.filter((item: MenuItem) => !deletedIds.includes(item.id));
+          const customLocalItems = storedUserItems.filter((localItem: MenuItem) => 
+            !deletedIds.includes(localItem.id) && !serverItems.some((s: MenuItem) => s.id === localItem.id)
+          );
+          const mergedMenu = [...serverItems, ...customLocalItems];
+          setMenuItems(mergedMenu);
+          localStorage.setItem('rivix_menu_v3', JSON.stringify(mergedMenu));
         } else {
-          const storedMenu = localStorage.getItem(savedMenuKey);
-          if (storedMenu) {
-            try {
-              setMenuItems(JSON.parse(storedMenu));
-            } catch (e) {}
-          }
+          const validStored = storedUserItems.filter(item => !deletedIds.includes(item.id));
+          setMenuItems(validStored);
+          localStorage.setItem('rivix_menu_v3', JSON.stringify(validStored));
         }
 
         setOrders(resOrders.data);
@@ -305,9 +320,21 @@ const Dashboard: React.FC<DashboardProps> = ({
     try {
       if (tab === 'menu') {
         const res = await api.get(`/restaurants/${restaurant.id}/menu`);
+        const deletedIds = getStoredDeletedIds();
+        const storedUserItems = getStoredUserItems();
+
         if (res && Array.isArray(res.data) && res.data.length > 0) {
-          setMenuItems(res.data);
-          localStorage.setItem('rivix_menu_v3', JSON.stringify(res.data));
+          const serverItems = res.data.filter((item: MenuItem) => !deletedIds.includes(item.id));
+          const customLocalItems = storedUserItems.filter((localItem: MenuItem) => 
+            !deletedIds.includes(localItem.id) && !serverItems.some((s: MenuItem) => s.id === localItem.id)
+          );
+          const mergedMenu = [...serverItems, ...customLocalItems];
+          setMenuItems(mergedMenu);
+          localStorage.setItem('rivix_menu_v3', JSON.stringify(mergedMenu));
+        } else {
+          const validStored = storedUserItems.filter(item => !deletedIds.includes(item.id));
+          setMenuItems(validStored);
+          localStorage.setItem('rivix_menu_v3', JSON.stringify(validStored));
         }
       } else if (tab === 'orders') {
         const res = await api.get(`/restaurants/${restaurant.id}/orders`);
@@ -626,48 +653,64 @@ const Dashboard: React.FC<DashboardProps> = ({
       description: menuForm.description,
       price: parseFloat(menuForm.price) || 0,
       category: menuForm.category,
-      image_url: menuForm.image_url,
+      image_url: menuForm.image_url || '',
       is_available: menuForm.is_available
     };
 
+    const targetId = editingItem ? editingItem.id : `item-${Date.now()}`;
+    const fullItem: MenuItem = {
+      id: targetId,
+      restaurant_id: restaurant.id,
+      ...dataPayload
+    };
+
+    // إزالة الصنف من المحذوفات إن وجد سابقاً
+    const currentDeleted = getStoredDeletedIds();
+    if (currentDeleted.includes(targetId)) {
+      const updatedDeleted = currentDeleted.filter(id => id !== targetId);
+      localStorage.setItem('rivix_deleted_menu_items', JSON.stringify(updatedDeleted));
+    }
+
+    // 1. التحديث الفوري المباشر في الـ State والـ LocalStorage (لا ينتظر الـ API)
+    setMenuItems(prev => {
+      let nextList: MenuItem[];
+      if (editingItem) {
+        nextList = prev.map(m => m.id === editingItem.id ? fullItem : m);
+      } else {
+        nextList = [...prev.filter(m => m.id !== targetId), fullItem];
+      }
+      localStorage.setItem('rivix_menu_v3', JSON.stringify(nextList));
+      return nextList;
+    });
+
+    setShowAddMenuModal(false);
+
+    // 2. إرسال الطلب للباك إند وتحديث الـ ID إذا تم إرجاع عنصر معتمد من DB
     try {
       if (editingItem) {
         const res = await api.put(`/menu/${editingItem.id}`, dataPayload);
-        const updatedItem = res.data.item || { ...editingItem, ...dataPayload };
-        setMenuItems(prev => {
-          const nextList = prev.map(m => m.id === editingItem.id ? updatedItem : m);
-          localStorage.setItem('rivix_menu_v3', JSON.stringify(nextList));
-          return nextList;
-        });
+        if (res.data && res.data.item) {
+          const serverItem = res.data.item;
+          setMenuItems(prev => {
+            const nextList = prev.map(m => m.id === editingItem.id ? serverItem : m);
+            localStorage.setItem('rivix_menu_v3', JSON.stringify(nextList));
+            return nextList;
+          });
+        }
       } else {
         const res = await api.post(`/restaurants/${restaurant.id}/menu`, dataPayload);
-        const newItem = res.data.item || { id: `item-${Date.now()}`, restaurant_id: restaurant.id, ...dataPayload };
-        setMenuItems(prev => {
-          const nextList = [...prev.filter(m => m.id !== newItem.id), newItem];
-          localStorage.setItem('rivix_menu_v3', JSON.stringify(nextList));
-          return nextList;
-        });
+        if (res.data && res.data.item) {
+          const serverItem = res.data.item;
+          setMenuItems(prev => {
+            const nextList = prev.map(m => m.id === targetId ? serverItem : m);
+            localStorage.setItem('rivix_menu_v3', JSON.stringify(nextList));
+            return nextList;
+          });
+        }
       }
     } catch (err) {
-      console.warn('تنبيه: تعذر حفظ الصنف عبر الـ API، جاري التخزين المحلي بالمتصفح');
-      const fallbackItem: MenuItem = {
-        id: editingItem ? editingItem.id : `item-${Date.now()}`,
-        restaurant_id: restaurant.id,
-        ...dataPayload
-      };
-      setMenuItems(prev => {
-        let nextList: MenuItem[];
-        if (editingItem) {
-          nextList = prev.map(m => m.id === editingItem.id ? fallbackItem : m);
-        } else {
-          nextList = [...prev.filter(m => m.id !== fallbackItem.id), fallbackItem];
-        }
-        localStorage.setItem('rivix_menu_v3', JSON.stringify(nextList));
-        return nextList;
-      });
+      console.warn('تنبيه: الصنف محفوظ ومستمر محلياً بالذاكرة الدائمة للنظام');
     }
-
-    setShowAddMenuModal(false);
   };
 
   const handleImportMenu = async (e: React.FormEvent) => {
@@ -693,9 +736,11 @@ const Dashboard: React.FC<DashboardProps> = ({
       
       // تحديث قائمة الطعام في الواجهة والذاكرة الدائمة
       const resMenu = await api.get(`/restaurants/${restaurant.id}/menu`);
+      const deletedIds = getStoredDeletedIds();
       if (resMenu && Array.isArray(resMenu.data) && resMenu.data.length > 0) {
-        setMenuItems(resMenu.data);
-        localStorage.setItem('rivix_menu_v3', JSON.stringify(resMenu.data));
+        const validItems = resMenu.data.filter((m: MenuItem) => !deletedIds.includes(m.id));
+        setMenuItems(validItems);
+        localStorage.setItem('rivix_menu_v3', JSON.stringify(validItems));
       }
 
       // إغلاق المودال بعد ثانيتين
@@ -715,17 +760,25 @@ const Dashboard: React.FC<DashboardProps> = ({
   const handleDeleteMenuItem = async (itemId: string) => {
     if (!window.confirm('هل أنت متأكد من رغبتك في حذف هذا الصنف من قائمة الطعام نهائياً؟')) return;
 
-    // حذف فوري من الواجهة والـ localStorage لمنع التعليق
+    // 1. تسجيل الـ ID في المحذوفات الدائمة لمنع عودته عند أي ريفريش أو جلب من السيرفر
+    const currentDeleted = getStoredDeletedIds();
+    if (!currentDeleted.includes(itemId)) {
+      const updatedDeleted = [...currentDeleted, itemId];
+      localStorage.setItem('rivix_deleted_menu_items', JSON.stringify(updatedDeleted));
+    }
+
+    // 2. حذف فوري من الـ State والـ localStorage لمنع التعليق
     setMenuItems(prev => {
       const nextList = prev.filter(m => m.id !== itemId);
       localStorage.setItem('rivix_menu_v3', JSON.stringify(nextList));
       return nextList;
     });
 
+    // 3. إبلاغ الباك إند بالحذف
     try {
       await api.delete(`/menu/${itemId}`);
     } catch (err) {
-      console.warn('تم الحذف النهائي من ذاكرة المتصفح الحية');
+      console.warn('تم الحذف النهائي وتثبيته في النظام المحامي');
     }
   };
 

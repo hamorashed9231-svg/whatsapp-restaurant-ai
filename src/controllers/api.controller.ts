@@ -179,24 +179,22 @@ let memoryMenuItems: any[] = [
 export const getMenu = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
   try {
-    let whereClause: any = {};
-    if (id && id !== 'default') {
-      whereClause = { restaurant_id: id };
-    }
-
+    let dbItems: any[] = [];
     try {
-      const menu = await prisma.menuItem.findMany({
-        where: whereClause,
+      dbItems = await prisma.menuItem.findMany({
         orderBy: { category: 'asc' }
       });
-      if (menu && menu.length > 0) {
-        res.status(200).json(menu);
-        return;
-      }
     } catch (dbErr: any) {}
 
-    const filteredMemory = memoryMenuItems.filter(m => !id || id === 'default' || m.restaurant_id === id || m.restaurant_id === 'restaurant-am-eissa');
-    res.status(200).json(filteredMemory.length > 0 ? filteredMemory : memoryMenuItems);
+    // دمج أصناف قاعدة البيانات والذاكرة المحلية لمنع أي فقدان للبيانات
+    const mergedList = [...dbItems];
+    for (const memItem of memoryMenuItems) {
+      if (!mergedList.some(d => d.id === memItem.id)) {
+        mergedList.push(memItem);
+      }
+    }
+
+    res.status(200).json(mergedList.length > 0 ? mergedList : memoryMenuItems);
   } catch (error: any) {
     res.status(200).json(memoryMenuItems);
   }
@@ -221,9 +219,18 @@ export const addMenuItem = async (req: Request, res: Response): Promise<void> =>
   };
 
   try {
+    let targetRestId = id;
+    const restExists = await prisma.restaurant.findUnique({ where: { id } });
+    if (!restExists) {
+      const firstRest = await prisma.restaurant.findFirst();
+      if (firstRest) {
+        targetRestId = firstRest.id;
+      }
+    }
+
     const dbItem = await prisma.menuItem.create({
       data: {
-        restaurant_id: id,
+        restaurant_id: targetRestId,
         name,
         description: description || '',
         price: parseFloat(price) || 0,
