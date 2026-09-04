@@ -89,42 +89,69 @@ export const login = async (req: Request, res: Response): Promise<void> => {
  * 2. جلب بيانات المطعم
  * يدعم المعرف الخاص 'default' لجلب أول مطعم في قاعدة البيانات لتسهيل تجربة العميل
  */
+/**
+ * دالة مساعدة لضمان وجود سجل للمطعم في قاعدة البيانات دائماً
+ * تمنع فشل إنشاء عناصر المنيو بسبب قيود المفتاح الأجنبي (Foreign Key Constraint)
+ */
+const getOrCreateDefaultRestaurant = async (id?: string) => {
+  try {
+    if (id && id !== 'default') {
+      const existing = await prisma.restaurant.findUnique({ where: { id } });
+      if (existing) return existing;
+    }
+    const first = await prisma.restaurant.findFirst();
+    if (first) return first;
+
+    const oneYearFromNow = new Date();
+    oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
+
+    return await prisma.restaurant.create({
+      data: {
+        id: (id && id !== 'default') ? id : 'restaurant-am-eissa',
+        name: 'مطعم عم عيسى',
+        phone_number: '+201012345678',
+        whatsapp_number_id: '100020003000',
+        subscription_tier: 'PREMIUM',
+        subscription_status: 'ACTIVE',
+        subscription_expires_at: oneYearFromNow,
+        ai_instructions: 'توصيل الطلبات مجاناً للطلبات الأكثر من 150 ج.م'
+      }
+    });
+  } catch (e) {
+    console.error('خطأ أثناء فحص أو إنشاء سجل المطعم في DB:', e);
+    return null;
+  }
+};
+
+/**
+ * 2. جلب بيانات المطعم
+ * يدعم المعرف الخاص 'default' لجلب أول مطعم في قاعدة البيانات لتسهيل تجربة العميل
+ */
 export const getRestaurant = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
   
   try {
-    let restaurant;
-    try {
-      if (id === 'default') {
-        restaurant = await prisma.restaurant.findFirst();
-      } else {
-        restaurant = await prisma.restaurant.findUnique({
-          where: { id }
-        });
-      }
-    } catch (dbErr) {
-      console.warn('تنبيه: تعذر الوصول لقاعدة البيانات، سيتم التراجع للبيانات المفتراضية.');
+    const restaurant = await getOrCreateDefaultRestaurant(id);
+    if (restaurant) {
+      res.status(200).json(restaurant);
+      return;
     }
 
-    if (!restaurant) {
-      const oneYearFromNow = new Date();
-      oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
-      
-      restaurant = {
-        id: 'restaurant-am-eissa',
-        name: 'مطعم عم عيسى',
-        phone_number: '+201012345678',
-        whatsapp_number_id: '100020003000',
-        whatsapp_access_token: null,
-        subscription_tier: 'PREMIUM',
-        subscription_status: 'ACTIVE',
-        subscription_expires_at: oneYearFromNow,
-        ai_instructions: 'توصيل الطلبات مجاناً للطلبات الأكثر من 150 ج.م',
-        created_at: new Date()
-      };
-    }
-
-    res.status(200).json(restaurant);
+    const oneYearFromNow = new Date();
+    oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
+    
+    res.status(200).json({
+      id: 'restaurant-am-eissa',
+      name: 'مطعم عم عيسى',
+      phone_number: '+201012345678',
+      whatsapp_number_id: '100020003000',
+      whatsapp_access_token: null,
+      subscription_tier: 'PREMIUM',
+      subscription_status: 'ACTIVE',
+      subscription_expires_at: oneYearFromNow,
+      ai_instructions: 'توصيل الطلبات مجاناً للطلبات الأكثر من 150 ج.م',
+      created_at: new Date()
+    });
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message });
   }
@@ -175,26 +202,63 @@ let memoryMenuItems: any[] = [
 
 /**
  * 3. جلب قائمة الطعام (المنيو) للمطعم
+ * قاعدة البيانات هي المصدر الرئيسي الوحيد - لا يتم دمج الذاكرة المؤقتة
  */
 export const getMenu = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
   try {
+    const rest = await getOrCreateDefaultRestaurant(id);
+    const targetRestId = rest ? rest.id : id;
+
     let dbItems: any[] = [];
     try {
       dbItems = await prisma.menuItem.findMany({
+        where: targetRestId && targetRestId !== 'default' ? { restaurant_id: targetRestId } : undefined,
         orderBy: { category: 'asc' }
       });
-    } catch (dbErr: any) {}
 
-    // دمج أصناف قاعدة البيانات والذاكرة المحلية لمنع أي فقدان للبيانات
-    const mergedList = [...dbItems];
-    for (const memItem of memoryMenuItems) {
-      if (!mergedList.some(d => d.id === memItem.id)) {
-        mergedList.push(memItem);
+      if (dbItems.length === 0) {
+        dbItems = await prisma.menuItem.findMany({
+          orderBy: { category: 'asc' }
+        });
+      }
+    } catch (dbErr: any) {
+      console.warn('تنبيه: تعذر الوصول لقاعدة البيانات، يتم إرجاع البيانات المؤقتة.');
+      res.status(200).json(memoryMenuItems);
+      return;
+    }
+
+    if (dbItems.length > 0) {
+      res.status(200).json(dbItems);
+      return;
+    }
+
+    // لو قاعدة البيانات فاضية → أدخل الأصناف الافتراضية كـ seed لمرة واحدة
+    if (rest) {
+      const seededItems = [];
+      for (const item of memoryMenuItems) {
+        try {
+          const created = await prisma.menuItem.create({
+            data: {
+              restaurant_id: rest.id,
+              name: item.name,
+              description: item.description || '',
+              price: item.price,
+              category: item.category,
+              image_url: item.image_url || '',
+              is_available: item.is_available !== undefined ? item.is_available : true
+            }
+          });
+          seededItems.push(created);
+        } catch (e) {}
+      }
+      if (seededItems.length > 0) {
+        res.status(200).json(seededItems);
+        return;
       }
     }
 
-    res.status(200).json(mergedList.length > 0 ? mergedList : memoryMenuItems);
+    res.status(200).json(memoryMenuItems);
   } catch (error: any) {
     res.status(200).json(memoryMenuItems);
   }
@@ -207,26 +271,9 @@ export const addMenuItem = async (req: Request, res: Response): Promise<void> =>
   const { id } = req.params; // restaurant_id
   const { name, description, price, category, is_available, image_url } = req.body;
 
-  let newItem: any = {
-    id: `item-${Date.now()}`,
-    restaurant_id: id,
-    name,
-    description: description || '',
-    price: parseFloat(price) || 0,
-    category: category || 'وجبات رئيسية',
-    image_url: image_url || '',
-    is_available: is_available !== undefined ? is_available : true
-  };
-
   try {
-    let targetRestId = id;
-    const restExists = await prisma.restaurant.findUnique({ where: { id } });
-    if (!restExists) {
-      const firstRest = await prisma.restaurant.findFirst();
-      if (firstRest) {
-        targetRestId = firstRest.id;
-      }
-    }
+    const rest = await getOrCreateDefaultRestaurant(id);
+    const targetRestId = rest ? rest.id : (id !== 'default' ? id : 'restaurant-am-eissa');
 
     const dbItem = await prisma.menuItem.create({
       data: {
@@ -239,22 +286,37 @@ export const addMenuItem = async (req: Request, res: Response): Promise<void> =>
         is_available: is_available !== undefined ? is_available : true
       }
     });
-    if (dbItem) {
-      newItem = dbItem;
-    }
-  } catch (e) {
-    console.warn('Prisma create failed, fallback to memoryMenuItems:', e);
+
+    memoryMenuItems = memoryMenuItems.filter(m => m.id !== dbItem.id);
+    memoryMenuItems.push(dbItem);
+
+    res.status(201).json({
+      status: 'success',
+      item: dbItem,
+      message: 'تم إضافة الصنف بنجاح!'
+    });
+  } catch (e: any) {
+    console.error('خطأ أثناء حفظ الصنف في DB:', e);
+    const fallbackItem = {
+      id: `item-${Date.now()}`,
+      restaurant_id: id,
+      name,
+      description: description || '',
+      price: parseFloat(price) || 0,
+      category: category || 'وجبات رئيسية',
+      image_url: image_url || '',
+      is_available: is_available !== undefined ? is_available : true
+    };
+
+    memoryMenuItems = memoryMenuItems.filter(m => m.id !== fallbackItem.id);
+    memoryMenuItems.push(fallbackItem);
+
+    res.status(201).json({
+      status: 'success',
+      item: fallbackItem,
+      message: 'تم إضافة الصنف بنجاح!'
+    });
   }
-
-  // تجنب تكرار الصنف بالذاكرة إذا كان موجوداً
-  memoryMenuItems = memoryMenuItems.filter(m => m.id !== newItem.id);
-  memoryMenuItems.push(newItem);
-
-  res.status(201).json({
-    status: 'success',
-    item: newItem,
-    message: 'تم إضافة الصنف بنجاح!'
-  });
 };
 
 /**
@@ -292,30 +354,27 @@ export const updateMenuItem = async (req: Request, res: Response): Promise<void>
 
 /**
  * 6. حذف صنف من المنيو
+ * يحذف من قاعدة البيانات والذاكرة المؤقتة معاً
  */
 export const deleteMenuItem = async (req: Request, res: Response): Promise<void> => {
   const { itemId } = req.params;
 
-  try {
-    try {
-      await prisma.menuItem.delete({
-        where: { id: itemId }
-      });
-    } catch (e) {}
-    
-    memoryMenuItems = memoryMenuItems.filter(m => m.id !== itemId);
+  // حذف من الذاكرة المؤقتة دائماً لمنع عودة الصنف
+  memoryMenuItems = memoryMenuItems.filter(m => m.id !== itemId);
 
-    res.status(200).json({
-      status: 'success',
-      message: 'تم حذف الصنف بنجاح!'
+  try {
+    await prisma.menuItem.delete({
+      where: { id: itemId }
     });
-  } catch (error: any) {
-    memoryMenuItems = memoryMenuItems.filter(m => m.id !== itemId);
-    res.status(200).json({
-      status: 'success',
-      message: 'تم حذف الصنف بنجاح!'
-    });
+  } catch (e: any) {
+    // لو الصنف مش موجود في DB أصلاً - مش مشكلة
+    console.warn('تنبيه حذف المنيو:', e.code === 'P2025' ? 'الصنف غير موجود في DB' : e.message);
   }
+
+  res.status(200).json({
+    status: 'success',
+    message: 'تم حذف الصنف بنجاح!'
+  });
 };
 
 /**

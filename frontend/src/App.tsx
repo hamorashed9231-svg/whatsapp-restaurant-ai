@@ -5,7 +5,9 @@ import Dashboard from './components/Dashboard';
 
 function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
-  const [view, setView] = useState<'landing' | 'login' | 'dashboard'>('landing');
+  const [view, setView] = useState<'landing' | 'login' | 'dashboard'>(() => {
+    return localStorage.getItem('token') ? 'dashboard' : 'landing';
+  });
   const [restaurantId] = useState<string>('default');
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     const savedTheme = localStorage.getItem('theme');
@@ -24,13 +26,8 @@ function App() {
     }
   }, [darkMode]);
 
-  // التحقق من حالة الدخول عند بدء التشغيل
-  useEffect(() => {
-    const savedToken = localStorage.getItem('token');
-    if (savedToken) {
-      setToken(savedToken);
-    }
-  }, []);
+
+
 
   const toggleTheme = () => {
     setDarkMode(prev => !prev);

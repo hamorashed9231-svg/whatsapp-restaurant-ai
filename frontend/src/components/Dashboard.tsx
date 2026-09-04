@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import * as XLSX from 'xlsx';
 import {
   LayoutDashboard,
   Utensils,
@@ -19,7 +20,11 @@ import {
   Users,
   Sparkles,
   Sun,
-  Moon
+  Moon,
+  Menu,
+  X,
+  Copy,
+  Download
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -77,7 +82,9 @@ interface Conversation {
   id: string;
   customer_phone: string;
   status: string;
-  category: 'INQUIRY' | 'ORDER' | 'COMPLAINT';
+  category: 'INQUIRY' | 'ORDER' | 'COMPLAINT' | 'GROUP';
+  is_group?: boolean;
+  group_name?: string;
   assigned_to?: string | null;
   closed_by?: string | null;
   is_archived?: boolean;
@@ -102,6 +109,48 @@ const getStoredUserItems = (): MenuItem[] => {
   }
 };
 
+const saveMenuItemsToStorage = (items: MenuItem[]) => {
+  try {
+    localStorage.setItem('rivix_menu_v3', JSON.stringify(items));
+  } catch (e) {}
+};
+
+const saveDeletedIdsToStorage = (ids: string[]) => {
+  try {
+    localStorage.setItem('rivix_deleted_menu_items', JSON.stringify(ids));
+  } catch (e) {}
+};
+
+const syncMenuItemsWithStorage = (serverItems?: MenuItem[]): MenuItem[] => {
+  const deletedIds = getStoredDeletedIds();
+  const storedItems = getStoredUserItems();
+
+  const validStored = storedItems.filter(item => !deletedIds.includes(item.id));
+
+  if (serverItems && Array.isArray(serverItems) && serverItems.length > 0) {
+    const validServer = serverItems.filter(item => !deletedIds.includes(item.id));
+    const mergedMap = new Map<string, MenuItem>();
+
+    validServer.forEach(item => mergedMap.set(item.id, item));
+    validStored.forEach(item => mergedMap.set(item.id, item));
+
+    const finalResult = Array.from(mergedMap.values()).filter(item => !deletedIds.includes(item.id));
+    saveMenuItemsToStorage(finalResult);
+    return finalResult;
+  }
+
+  saveMenuItemsToStorage(validStored);
+  return validStored;
+};
+
+interface ChatMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  image_url?: string;
+  sender_name?: string;
+  timestamp?: string;
+}
+
 const Dashboard: React.FC<DashboardProps> = ({
   token,
   restaurantId,
@@ -113,6 +162,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 }) => {
   const styles = getDashboardStyles(darkMode);
   const [activeTab, setActiveTab] = useState<'overview' | 'menu' | 'orders' | 'reservations' | 'conversations' | 'settings' | 'users' | 'ai-assistant'>('overview');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
   
   // حالات تحميل البيانات العامة
@@ -128,12 +178,11 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [chatImageUrl, setChatImageUrl] = useState('');
-  const [showImageInput, setShowImageInput] = useState(false);
 
   // إعدادات وتصنيفات المستخدمين والمحادثات
   const [userRole, setUserRole] = useState<'admin' | 'staff'>('staff');
   const [currentUsername, setCurrentUsername] = useState<string>('موظف الخدمة');
-  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<'ALL' | 'ORDER' | 'COMPLAINT' | 'INQUIRY'>('ALL');
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<'ALL' | 'ORDER' | 'COMPLAINT' | 'INQUIRY' | 'GROUP'>('ALL');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<'ALL' | 'UNANSWERED' | 'IN_PROGRESS' | 'CLOSED'>('ALL');
   const [viewArchived, setViewArchived] = useState(false);
   const [usersList, setUsersList] = useState<{ id: string; username: string; role: string; created_at: string }[]>([]);
@@ -215,8 +264,64 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [settingsSuccess, setSettingsSuccess] = useState<string | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [showToken, setShowToken] = useState(false);
-
+  const [copySuccess, setCopySuccess] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatFileInputRef = useRef<HTMLInputElement>(null);
+
+  // تصدير قائمة الطعام (المنيو) كملف إكسيل Excel (.xlsx)
+  const handleExportMenuExcel = () => {
+    if (!menuItems || menuItems.length === 0) {
+      alert('لا توجد عناصر في المنيو لتصديرها.');
+      return;
+    }
+
+    try {
+      const dataToExport = menuItems.map((item, index) => ({
+        'م': index + 1,
+        'اسم الصنف': item.name,
+        'الوصف': item.description || '',
+        'السعر (ج.م)': Number(item.price),
+        'التصنيف': item.category,
+        'حالة التوفر': item.is_available ? 'متوفر' : 'غير متوفر',
+        'رابط الصورة': item.image_url || ''
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+
+      worksheet['!cols'] = [
+        { wch: 6 },
+        { wch: 25 },
+        { wch: 35 },
+        { wch: 15 },
+        { wch: 20 },
+        { wch: 15 },
+        { wch: 45 }
+      ];
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'قائمة الطعام');
+
+      const restName = (restaurant?.name || 'مطعم_عم_عيسى').replace(/\s+/g, '_');
+      const fileName = `منيو_${restName}_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+      XLSX.writeFile(workbook, fileName);
+    } catch (err) {
+      console.error('فشل تصدير ملف الإكسيل:', err);
+      alert('حدث خطأ أثناء تصدير ملف الإكسيل.');
+    }
+  };
+
+  const handleChatImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setChatImageUrl(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
   // إنشاء أكسيوس مخصص مع رأس التفويض ومعالجة 401 تلقائياً
@@ -281,22 +386,8 @@ const Dashboard: React.FC<DashboardProps> = ({
         ]);
 
         // فحص وحفظ الأصناف بالذاكرة المحفوفة بالدمج الذكي ومنع عودة المحذوفات
-        const deletedIds = getStoredDeletedIds();
-        const storedUserItems = getStoredUserItems();
-
-        if (resMenu && Array.isArray(resMenu.data)) {
-          const serverItems = resMenu.data.filter((item: MenuItem) => !deletedIds.includes(item.id));
-          const customLocalItems = storedUserItems.filter((localItem: MenuItem) => 
-            !deletedIds.includes(localItem.id) && !serverItems.some((s: MenuItem) => s.id === localItem.id)
-          );
-          const mergedMenu = [...serverItems, ...customLocalItems];
-          setMenuItems(mergedMenu);
-          localStorage.setItem('rivix_menu_v3', JSON.stringify(mergedMenu));
-        } else {
-          const validStored = storedUserItems.filter(item => !deletedIds.includes(item.id));
-          setMenuItems(validStored);
-          localStorage.setItem('rivix_menu_v3', JSON.stringify(validStored));
-        }
+        const syncedMenu = syncMenuItemsWithStorage(resMenu?.data);
+        setMenuItems(syncedMenu);
 
         setOrders(resOrders.data);
         setReservations(resReserv.data);
@@ -316,26 +407,13 @@ const Dashboard: React.FC<DashboardProps> = ({
   // تحديث التبويب النشط أو تنشيط جلب بيانات إضافية
   const changeTab = async (tab: typeof activeTab) => {
     setActiveTab(tab);
+    setIsSidebarOpen(false);
     if (!restaurant) return;
     try {
       if (tab === 'menu') {
         const res = await api.get(`/restaurants/${restaurant.id}/menu`);
-        const deletedIds = getStoredDeletedIds();
-        const storedUserItems = getStoredUserItems();
-
-        if (res && Array.isArray(res.data) && res.data.length > 0) {
-          const serverItems = res.data.filter((item: MenuItem) => !deletedIds.includes(item.id));
-          const customLocalItems = storedUserItems.filter((localItem: MenuItem) => 
-            !deletedIds.includes(localItem.id) && !serverItems.some((s: MenuItem) => s.id === localItem.id)
-          );
-          const mergedMenu = [...serverItems, ...customLocalItems];
-          setMenuItems(mergedMenu);
-          localStorage.setItem('rivix_menu_v3', JSON.stringify(mergedMenu));
-        } else {
-          const validStored = storedUserItems.filter(item => !deletedIds.includes(item.id));
-          setMenuItems(validStored);
-          localStorage.setItem('rivix_menu_v3', JSON.stringify(validStored));
-        }
+        const syncedMenu = syncMenuItemsWithStorage(res?.data);
+        setMenuItems(syncedMenu);
       } else if (tab === 'orders') {
         const res = await api.get(`/restaurants/${restaurant.id}/orders`);
         setOrders(res.data);
@@ -415,7 +493,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   };
 
   // تحديث تصنيف المحادثة يدوياً
-  const handleUpdateCategory = async (conversationId: string, category: 'INQUIRY' | 'ORDER' | 'COMPLAINT') => {
+  const handleUpdateCategory = async (conversationId: string, category: 'INQUIRY' | 'ORDER' | 'COMPLAINT' | 'GROUP') => {
     try {
       await api.put(`/conversations/${conversationId}/category`, { category });
       setConversations(prev => prev.map(c => c.id === conversationId ? { ...c, category } : c));
@@ -583,7 +661,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     const imgToSend = chatImageUrl;
     setChatInput('');
     setChatImageUrl('');
-    setShowImageInput(false);
+    if (chatFileInputRef.current) chatFileInputRef.current.value = '';
 
     const newMsg: ChatMessage = {
       role: 'assistant',
@@ -664,12 +742,8 @@ const Dashboard: React.FC<DashboardProps> = ({
       ...dataPayload
     };
 
-    // إزالة الصنف من المحذوفات إن وجد سابقاً
-    const currentDeleted = getStoredDeletedIds();
-    if (currentDeleted.includes(targetId)) {
-      const updatedDeleted = currentDeleted.filter(id => id !== targetId);
-      localStorage.setItem('rivix_deleted_menu_items', JSON.stringify(updatedDeleted));
-    }
+
+
 
     // 1. التحديث الفوري المباشر في الـ State والـ LocalStorage (لا ينتظر الـ API)
     setMenuItems(prev => {
@@ -679,7 +753,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       } else {
         nextList = [...prev.filter(m => m.id !== targetId), fullItem];
       }
-      localStorage.setItem('rivix_menu_v3', JSON.stringify(nextList));
+      saveMenuItemsToStorage(nextList);
       return nextList;
     });
 
@@ -693,7 +767,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           const serverItem = res.data.item;
           setMenuItems(prev => {
             const nextList = prev.map(m => m.id === editingItem.id ? serverItem : m);
-            localStorage.setItem('rivix_menu_v3', JSON.stringify(nextList));
+            saveMenuItemsToStorage(nextList);
             return nextList;
           });
         }
@@ -702,8 +776,8 @@ const Dashboard: React.FC<DashboardProps> = ({
         if (res.data && res.data.item) {
           const serverItem = res.data.item;
           setMenuItems(prev => {
-            const nextList = prev.map(m => m.id === targetId ? serverItem : m);
-            localStorage.setItem('rivix_menu_v3', JSON.stringify(nextList));
+            const nextList = prev.map(m => (m.id === targetId || m.id === serverItem.id) ? serverItem : m);
+            saveMenuItemsToStorage(nextList);
             return nextList;
           });
         }
@@ -734,14 +808,10 @@ const Dashboard: React.FC<DashboardProps> = ({
       setImportSuccess(res.data.message || 'تم الاستيراد بنجاح!');
       setImportFile(null);
       
-      // تحديث قائمة الطعام في الواجهة والذاكرة الدائمة
+      // تحديث قائمة الطعام من السيرفر ومزامنتها
       const resMenu = await api.get(`/restaurants/${restaurant.id}/menu`);
-      const deletedIds = getStoredDeletedIds();
-      if (resMenu && Array.isArray(resMenu.data) && resMenu.data.length > 0) {
-        const validItems = resMenu.data.filter((m: MenuItem) => !deletedIds.includes(m.id));
-        setMenuItems(validItems);
-        localStorage.setItem('rivix_menu_v3', JSON.stringify(validItems));
-      }
+      const syncedMenu = syncMenuItemsWithStorage(resMenu?.data);
+      setMenuItems(syncedMenu);
 
       // إغلاق المودال بعد ثانيتين
       setTimeout(() => {
@@ -763,14 +833,13 @@ const Dashboard: React.FC<DashboardProps> = ({
     // 1. تسجيل الـ ID في المحذوفات الدائمة لمنع عودته عند أي ريفريش أو جلب من السيرفر
     const currentDeleted = getStoredDeletedIds();
     if (!currentDeleted.includes(itemId)) {
-      const updatedDeleted = [...currentDeleted, itemId];
-      localStorage.setItem('rivix_deleted_menu_items', JSON.stringify(updatedDeleted));
+      saveDeletedIdsToStorage([...currentDeleted, itemId]);
     }
 
     // 2. حذف فوري من الـ State والـ localStorage لمنع التعليق
     setMenuItems(prev => {
       const nextList = prev.filter(m => m.id !== itemId);
-      localStorage.setItem('rivix_menu_v3', JSON.stringify(nextList));
+      saveMenuItemsToStorage(nextList);
       return nextList;
     });
 
@@ -778,7 +847,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     try {
       await api.delete(`/menu/${itemId}`);
     } catch (err) {
-      console.warn('تم الحذف النهائي وتثبيته في النظام المحامي');
+      console.warn('تم الحذف النهائي وتثبيته في الذاكرة الدائمة للنظام');
     }
   };
 
@@ -872,18 +941,82 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   return (
     <div style={styles.dashboardLayout}>
-      {/* شريط التنقل الجانبي (Sidebar) */}
-      <aside style={styles.sidebar}>
+      {/* خلفية مظلمة شفافة للتغطية عند فتح القائمة */}
+      {isSidebarOpen && (
         <div 
-          style={{ ...styles.sidebarHeader, cursor: onToggleTheme ? 'pointer' : 'default' }}
-          onClick={onToggleTheme}
-          title="اضغط على اللوجو لتبديل المظهر (داكن / مضيء)"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(6, 14, 30, 0.65)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 998,
+            transition: 'opacity 0.3s ease',
+          }}
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
+      {/* شريط التنقل الجانبي المنزلق (Sidebar Drawer) */}
+      <aside 
+        style={{
+          ...styles.sidebar,
+          position: 'fixed',
+          top: 0,
+          right: isSidebarOpen ? 0 : '-320px',
+          bottom: 0,
+          width: '300px',
+          zIndex: 999,
+          boxShadow: isSidebarOpen ? '-8px 0 30px rgba(0,0,0,0.5)' : 'none',
+          transition: 'right 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflowY: 'auto',
+        }}
+      >
+        <div 
+          style={{ 
+            ...styles.sidebarHeader, 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between',
+            marginBottom: '24px',
+            paddingBottom: '16px',
+            borderBottom: `1px solid ${darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`
+          }}
         >
-          <img src="/logo.jpg" alt="RIVIX SYSTEM" style={{ width: '42px', height: '42px', borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(0, 210, 255, 0.4)' }} />
-          <div style={styles.sidebarTitle}>
-            <div style={{ fontWeight: '800', fontSize: '1.2rem', color: '#FFFFFF' }}>Rivix System</div>
-            <div style={{ fontSize: '0.7rem', color: '#00D2FF' }}>تبديل المظهر 🌙/☀️</div>
+          <div 
+            style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: onToggleTheme ? 'pointer' : 'default' }}
+            onClick={onToggleTheme}
+            title="اضغط على اللوجو لتبديل المظهر (داكن / مضيء)"
+          >
+            <img src="/logo.jpg" alt="RIVIX SYSTEM" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(0, 210, 255, 0.4)' }} />
+            <div style={styles.sidebarTitle}>
+              <div style={{ fontWeight: '800', fontSize: '1.15rem', color: darkMode ? '#FFFFFF' : '#0F1E36' }}>Rivix System</div>
+              <div style={{ fontSize: '0.7rem', color: '#00D2FF' }}>تبديل المظهر 🌙/☀️</div>
+            </div>
           </div>
+          <button
+            onClick={() => setIsSidebarOpen(false)}
+            style={{
+              background: darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
+              border: 'none',
+              color: darkMode ? '#FFFFFF' : '#0F1E36',
+              borderRadius: '50%',
+              width: '36px',
+              height: '36px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+            }}
+            title="إغلاق القائمة"
+          >
+            <X size={20} />
+          </button>
         </div>
 
         <nav style={styles.sidebarNav}>
@@ -979,14 +1112,101 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </aside>
 
+      {/* زر القائمة العائم (Floating Menu Toggle Button) */}
+      {!isSidebarOpen && (
+        <button
+          onClick={() => setIsSidebarOpen(true)}
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            right: '24px',
+            zIndex: 990,
+            backgroundColor: '#0066FF',
+            color: '#FFFFFF',
+            border: 'none',
+            borderRadius: '50px',
+            padding: '12px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            boxShadow: '0 8px 25px rgba(0, 102, 255, 0.45)',
+            cursor: 'pointer',
+            fontWeight: 'bold',
+            fontSize: '0.9rem',
+            transition: 'all 0.2s ease',
+          }}
+          title="فتح قائمة الاختيارات والتبويبات"
+        >
+          <Menu size={22} />
+          <span>القائمة</span>
+          {conversations.filter(c => c.category === 'COMPLAINT').length > 0 && (
+            <span style={{
+              backgroundColor: '#EF4444',
+              color: '#FFFFFF',
+              fontSize: '0.7rem',
+              fontWeight: 'bold',
+              padding: '2px 6px',
+              borderRadius: '10px',
+            }}>
+              {conversations.filter(c => c.category === 'COMPLAINT').length}
+            </span>
+          )}
+        </button>
+      )}
+
       {/* محتوى لوحة التحكم الأساسي (Main Content) */}
-      <main style={styles.mainContent}>
+      <main style={{ ...styles.mainContent, width: '100%' }}>
         {/* الهيدر العلوي */}
         <header style={styles.topBar}>
-          <div>
-            <h2 style={{ fontSize: '1.5rem', fontWeight: '800' }}>مرحباً، {restaurant?.name}</h2>
-            <p style={{ fontSize: '0.85rem', color: '#5E6E85' }}>مستوى الاشتراك: {restaurant?.subscription_tier}</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <button
+              onClick={() => setIsSidebarOpen(prev => !prev)}
+              className="btn btn-primary"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '10px 18px',
+                borderRadius: '12px',
+                fontSize: '0.95rem',
+                fontWeight: '700',
+                cursor: 'pointer',
+                border: 'none',
+                boxShadow: '0 4px 14px rgba(0, 102, 255, 0.35)',
+              }}
+              title="فتح قائمة الاختيارات والتبويبات"
+            >
+              <Menu size={22} />
+              <span>زر القائمة</span>
+              {conversations.filter(c => c.category === 'COMPLAINT').length > 0 && (
+                <span style={{
+                  backgroundColor: '#EF4444',
+                  color: '#FFFFFF',
+                  fontSize: '0.75rem',
+                  fontWeight: '800',
+                  padding: '2px 7px',
+                  borderRadius: '10px',
+                  marginRight: '4px'
+                }}>
+                  {conversations.filter(c => c.category === 'COMPLAINT').length}
+                </span>
+              )}
+            </button>
+
+            <div>
+              <h2 style={{ fontSize: '1.5rem', fontWeight: '800', color: darkMode ? '#FFFFFF' : '#0F1E36' }}>
+                {activeTab === 'overview'
+                  ? `مرحباً، ${restaurant?.name || 'مطعم عم عيسى'}`
+                  : `مرحباً، ${currentUsername}`}
+              </h2>
+              <p style={{ fontSize: '0.85rem', color: darkMode ? '#94A3B8' : '#5E6E85' }}>
+                {activeTab === 'overview'
+                  ? `مستوى الاشتراك: ${restaurant?.subscription_tier || 'نشط'}`
+                  : `حساب المستخدم: ${currentUsername} (${userRole === 'admin' ? 'مدير النظام' : 'موظف الخدمة'})`}
+              </p>
+            </div>
           </div>
+
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             {onToggleTheme && (
               <button onClick={onToggleTheme} className="theme-toggle-btn" title="تبديل مظهر اللوحة">
@@ -1143,6 +1363,10 @@ const Dashboard: React.FC<DashboardProps> = ({
                   <button onClick={() => setShowImportModal(true)} className="btn btn-secondary">
                     <Upload size={18} />
                     <span>استيراد Excel</span>
+                  </button>
+                  <button onClick={handleExportMenuExcel} className="btn btn-secondary" style={{ backgroundColor: '#10B981', color: '#FFFFFF', border: 'none' }} title="تصدير جميع عناصر المنيو في ملف إكسيل جاهز">
+                    <Download size={18} />
+                    <span>تصدير Excel</span>
                   </button>
                   <button onClick={handleOpenAddModal} className="btn btn-primary">
                     <Plus size={18} />
@@ -1774,6 +1998,24 @@ const Dashboard: React.FC<DashboardProps> = ({
                     >
                       ❓ استفسار
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCategoryFilter('GROUP')}
+                      style={{
+                        flex: 1,
+                        padding: '5px 2px',
+                        fontSize: '0.65rem',
+                        fontWeight: 'bold',
+                        border: 'none',
+                        borderRadius: '6px',
+                        backgroundColor: selectedCategoryFilter === 'GROUP' ? '#8B5CF6' : 'transparent',
+                        color: selectedCategoryFilter === 'GROUP' ? '#FFFFFF' : '#64748B',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      👥 الجروبات ({conversations.filter(c => (viewArchived ? Boolean(c.is_archived) : !c.is_archived) && (c.category === 'GROUP' || c.is_group || c.customer_phone.includes('g.us') || c.customer_phone.includes('جروب'))).length})
+                    </button>
                   </div>
 
                   {/* شريط فلترة الحالات الـ 3 (لم يتم الرد / جاري المتابعة / مغلقة) */}
@@ -1850,7 +2092,13 @@ const Dashboard: React.FC<DashboardProps> = ({
 
                   {conversations
                     .filter(c => viewArchived ? Boolean(c.is_archived) : !c.is_archived)
-                    .filter(c => selectedCategoryFilter === 'ALL' || c.category === selectedCategoryFilter)
+                    .filter(c => {
+                      if (selectedCategoryFilter === 'ALL') return true;
+                      if (selectedCategoryFilter === 'GROUP') {
+                        return c.category === 'GROUP' || Boolean(c.is_group) || c.customer_phone.includes('g.us') || c.customer_phone.includes('جروب');
+                      }
+                      return c.category === selectedCategoryFilter;
+                    })
                     .filter(c => {
                       const s = (c.status || 'UNANSWERED').toUpperCase();
                       if (selectedStatusFilter === 'UNANSWERED') return s === 'UNANSWERED';
@@ -1865,7 +2113,13 @@ const Dashboard: React.FC<DashboardProps> = ({
                     <div style={{ overflowY: 'auto', flex: 1, padding: '6px' }}>
                       {conversations
                         .filter(c => viewArchived ? Boolean(c.is_archived) : !c.is_archived)
-                        .filter(c => selectedCategoryFilter === 'ALL' || c.category === selectedCategoryFilter)
+                        .filter(c => {
+                          if (selectedCategoryFilter === 'ALL') return true;
+                          if (selectedCategoryFilter === 'GROUP') {
+                            return c.category === 'GROUP' || Boolean(c.is_group) || c.customer_phone.includes('g.us') || c.customer_phone.includes('جروب');
+                          }
+                          return c.category === selectedCategoryFilter;
+                        })
                         .filter(c => {
                           const s = (c.status || 'UNANSWERED').toUpperCase();
                           if (selectedStatusFilter === 'UNANSWERED') return s === 'UNANSWERED';
@@ -1874,8 +2128,9 @@ const Dashboard: React.FC<DashboardProps> = ({
                           return true;
                         })
                         .map(conv => {
-                          const catColor = conv.category === 'ORDER' ? '#10B981' : conv.category === 'COMPLAINT' ? '#EF4444' : '#3B82F6';
-                          const catLabel = conv.category === 'ORDER' ? 'طلب' : conv.category === 'COMPLAINT' ? 'شكوى' : 'استفسار';
+                          const isGroupConv = conv.category === 'GROUP' || Boolean(conv.is_group) || conv.customer_phone.includes('g.us') || conv.customer_phone.includes('جروب');
+                          const catColor = conv.category === 'ORDER' ? '#10B981' : conv.category === 'COMPLAINT' ? '#EF4444' : isGroupConv ? '#8B5CF6' : '#3B82F6';
+                          const catLabel = conv.category === 'ORDER' ? 'طلب' : conv.category === 'COMPLAINT' ? 'شكوى' : isGroupConv ? '👥 مجموعة' : 'استفسار';
                           const statusInfo = getStatusInfo(conv);
                           const isSelected = selectedConversation?.id === conv.id;
 
@@ -1943,8 +2198,47 @@ const Dashboard: React.FC<DashboardProps> = ({
                       <div style={{ ...styles.chatPaneHeader, padding: '12px 16px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', flexWrap: 'wrap', gap: '10px' }}>
                           <div>
-                            <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>
-                              مراقبة العميل: {selectedConversation.customer_phone}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              <span style={{ fontWeight: 'bold', fontSize: '0.95rem', color: darkMode ? '#FFFFFF' : '#0F1E36' }}>
+                                {selectedConversation.category === 'GROUP' || Boolean(selectedConversation.is_group) || selectedConversation.customer_phone.includes('g.us')
+                                  ? `👥 مجموعة: ${selectedConversation.customer_phone}`
+                                  : `📱 رقم العميل: ${selectedConversation.customer_phone}`}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(selectedConversation.customer_phone);
+                                  setCopySuccess(true);
+                                  setTimeout(() => setCopySuccess(false), 2000);
+                                }}
+                                style={{
+                                  border: '1px solid #CBD5E1',
+                                  backgroundColor: copySuccess ? '#10B981' : '#FFFFFF',
+                                  color: copySuccess ? '#FFFFFF' : '#0F1E36',
+                                  borderRadius: '6px',
+                                  padding: '3px 8px',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 'bold',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  transition: 'all 0.2s'
+                                }}
+                                title="نسخ رقم الهاتف للحافظة"
+                              >
+                                {copySuccess ? (
+                                  <>
+                                    <CheckCircle size={13} color="#FFFFFF" />
+                                    <span>تم النسخ!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy size={13} color="#0066FF" />
+                                    <span>نسخ الرقم</span>
+                                  </>
+                                )}
+                              </button>
                             </div>
                             
                             {/* عرض هوية الموظف المتابع أو مغلق الشات */}
@@ -2046,7 +2340,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', borderRight: '1px solid #E2E8F0', paddingRight: '10px' }}>
                               <span style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 'bold' }}>التصنيف:</span>
                               <select
-                                value={selectedConversation.category || 'INQUIRY'}
+                                value={selectedConversation.category || (selectedConversation.customer_phone.includes('g.us') ? 'GROUP' : 'INQUIRY')}
                                 onChange={(e) => handleUpdateCategory(selectedConversation.id, e.target.value as any)}
                                 style={{
                                   padding: '4px 8px',
@@ -2056,12 +2350,13 @@ const Dashboard: React.FC<DashboardProps> = ({
                                   backgroundColor: '#FFFFFF',
                                   fontWeight: 'bold',
                                   cursor: 'pointer',
-                                  color: selectedConversation.category === 'ORDER' ? '#10B981' : selectedConversation.category === 'COMPLAINT' ? '#EF4444' : '#3B82F6'
+                                  color: selectedConversation.category === 'ORDER' ? '#10B981' : selectedConversation.category === 'COMPLAINT' ? '#EF4444' : selectedConversation.category === 'GROUP' ? '#8B5CF6' : '#3B82F6'
                                 }}
                               >
                                 <option value="INQUIRY">❓ استفسارات</option>
                                 <option value="ORDER">📦 طلبات</option>
                                 <option value="COMPLAINT">⚠️ شكاوى</option>
+                                <option value="GROUP">👥 مجموعات الواتساب (API Group)</option>
                               </select>
                             </div>
                           </div>
@@ -2107,7 +2402,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                                 )}
                                 {msg.content && <p style={{ fontSize: '0.85rem', color: '#0F172A', margin: 0, whiteSpace: 'pre-wrap' }}>{msg.content}</p>}
                                 <div style={{ fontSize: '0.6rem', color: '#94A3B8', marginTop: '4px', textAlign: 'left' }}>
-                                  {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  {new Date(msg.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                 </div>
                               </div>
                             </div>
@@ -2117,45 +2412,83 @@ const Dashboard: React.FC<DashboardProps> = ({
                       </div>
 
                       <form onSubmit={handleSendManualMessage} style={{ ...styles.chatPaneInputArea, flexDirection: 'column', gap: '8px' }}>
-                        {showImageInput && (
-                          <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
-                            <input
-                              type="text"
-                              value={chatImageUrl}
-                              onChange={e => setChatImageUrl(e.target.value)}
-                              placeholder="ضع رابط الصورة (Image URL) التي تريد إرسالها للعميل..."
-                              style={{ ...styles.chatPaneInput, fontSize: '0.8rem', border: '1px dashed #3B82F6' }}
+                        {/* معاينة الصورة المرفقة من الجهاز قبل الإرسال */}
+                        {chatImageUrl && (
+                          <div style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '12px', 
+                            backgroundColor: '#EFF6FF', 
+                            padding: '8px 12px', 
+                            borderRadius: '10px', 
+                            border: '1px solid #BFDBFE',
+                            width: '100%' 
+                          }}>
+                            <img 
+                              src={chatImageUrl} 
+                              alt="معاينة الصورة" 
+                              style={{ width: '44px', height: '44px', borderRadius: '8px', objectFit: 'cover', border: '1px solid #93C5FD' }} 
                             />
+                            <div style={{ flex: 1, fontSize: '0.8rem', color: '#1E40AF', fontWeight: 'bold' }}>
+                              🖼️ تم اختيار صورة من الجهاز للرفع والإرسال
+                            </div>
                             <button
                               type="button"
-                              onClick={() => { setChatImageUrl(''); setShowImageInput(false); }}
-                              style={{ border: 'none', backgroundColor: '#EF4444', color: '#FFF', borderRadius: '6px', padding: '0 12px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' }}
+                              onClick={() => {
+                                setChatImageUrl('');
+                                if (chatFileInputRef.current) chatFileInputRef.current.value = '';
+                              }}
+                              style={{
+                                border: 'none',
+                                backgroundColor: '#EF4444',
+                                color: '#FFFFFF',
+                                borderRadius: '50%',
+                                width: '26px',
+                                height: '26px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer'
+                              }}
+                              title="إلغاء الصورة المرفقة"
                             >
-                              إلغاء
+                              <X size={14} />
                             </button>
                           </div>
                         )}
 
                         <div style={{ display: 'flex', gap: '8px', width: '100%', alignItems: 'center' }}>
+                          {/* مدخل مجهّز لاختيار الصور المباشرة من جهاز الكمبيوتر/الموبايل */}
+                          <input
+                            type="file"
+                            ref={chatFileInputRef}
+                            accept="image/*"
+                            style={{ display: 'none' }}
+                            onChange={handleChatImageFileChange}
+                          />
+
                           <button
                             type="button"
-                            onClick={() => setShowImageInput(!showImageInput)}
+                            onClick={() => chatFileInputRef.current?.click()}
                             style={{
                               border: '1px solid #CBD5E1',
-                              backgroundColor: showImageInput ? '#EFF6FF' : '#FFFFFF',
+                              backgroundColor: chatImageUrl ? '#EFF6FF' : '#FFFFFF',
                               color: '#3B82F6',
                               borderRadius: '8px',
-                              padding: '8px 12px',
-                              fontSize: '0.8rem',
+                              padding: '8px 14px',
+                              fontSize: '0.85rem',
                               fontWeight: 'bold',
                               cursor: 'pointer',
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '4px'
+                              gap: '6px',
+                              transition: 'all 0.2s',
+                              whiteSpace: 'nowrap'
                             }}
-                            title="إرفاق صورة للعميل"
+                            title="اختيار صورة مباشرة من الجهاز"
                           >
-                            📸 <span>صورة</span>
+                            <Upload size={18} />
+                            <span>رفع صورة من الجهاز</span>
                           </button>
 
                           <input
@@ -2555,7 +2888,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                           >
                             <p style={{ fontSize: '0.85rem', margin: 0, whiteSpace: 'pre-line', lineHeight: '1.5' }}>{msg.content}</p>
                             <span style={{ fontSize: '0.6rem', opacity: 0.7, marginTop: '4px', display: 'block', textAlign: msg.role === 'user' ? 'left' : 'right' }}>
-                              {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              {new Date(msg.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>
                           </div>
                         </div>

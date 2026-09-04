@@ -43,8 +43,11 @@ class WhatsAppService {
     customToken?: string
   ): Promise<any> {
     const token = customToken || this.token;
-    if (!token) {
-      console.warn('[WhatsApp Mock] لم يتم ضبط التوكين. إرسال وهمي إلى', to, ':', text);
+    if (!token || token.includes('ضع_توكين') || token === 'mock-token' || token.startsWith('EAAG...')) {
+      console.log('-----------------------------------------------------------');
+      console.log(`💬 [WhatsApp Mock Sent] إلى: ${to}`);
+      console.log(`📝 [الرسالة]:\n${text}`);
+      console.log('-----------------------------------------------------------');
       return { mock: true, success: true };
     }
 
