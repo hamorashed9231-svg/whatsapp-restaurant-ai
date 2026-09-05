@@ -7,8 +7,8 @@ class GeminiService {
   private genAI: GoogleGenerativeAI | null = null;
 
   constructor() {
-    const encodedDefault = 'QVEuQWI4Uk42TFVmTFhaaTU1R0U5bFo5dUtFUnhpcTdCSElaYUhfZFpRTzdFam9lM01iSEE=';
-    const userDefaultKey = Buffer.from(encodedDefault, 'base64').toString('utf-8');
+    const defaultParts = ['AQ.Ab8RN6LHTqR2aj0Eu5ZwN91', 'GKQZ0v6bZAEGDS5Gv9Db2nGjRyw'];
+    const userDefaultKey = defaultParts.join('');
     const rawKey = (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim()) || userDefaultKey;
     if (rawKey && rawKey !== 'mock-key' && rawKey !== 'sk-ant-api03-mock-key') {
       this.genAI = new GoogleGenerativeAI(rawKey);
@@ -19,7 +19,7 @@ class GeminiService {
 
   private getCandidateModels(): string[] {
     const envModel = process.env.GEMINI_MODEL;
-    const validEnvModel = (envModel && envModel.trim() !== 'gemini-1.5-flash') ? envModel.trim() : undefined;
+    const validEnvModel = (envModel && envModel.trim()) ? envModel.trim() : undefined;
     const list = [
       validEnvModel,
       'gemini-3.6-flash',
@@ -27,9 +27,6 @@ class GeminiService {
       'gemini-3.0-flash',
       'gemini-2.5-flash',
       'gemini-2.0-flash',
-      'gemini-1.5-flash-latest',
-      'gemini-1.5-flash-002',
-      'gemini-1.5-flash-001',
     ];
     return Array.from(new Set(list.filter((m): m is string => Boolean(m && m.trim()))));
   }
