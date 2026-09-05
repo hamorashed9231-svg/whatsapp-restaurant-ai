@@ -301,11 +301,11 @@ class GeminiService {
           continue;
         }
         console.error('خطأ في الاتصال بخدمة Gemini API:', error);
-        throw new Error(`فشل معالجة الرسالة ذكياً عبر Gemini: ${error.message}`);
+        throw new Error(this.formatGeminiErrorMessage(error));
       }
     }
 
-    throw new Error(`فشل معالجة الرسالة ذكياً عبر Gemini: ${lastError?.message || 'جميع الموديلات المتاحة تعذرت'}`);
+    throw new Error(this.formatGeminiErrorMessage(lastError));
   }
 
   // ================= الأدوات المنفذة فعلياً بقاعدة البيانات (Tools Implementations) =================
