@@ -4,18 +4,22 @@ import { whatsappService } from './whatsapp.service';
 import { ChatMessage } from '../models/types';
 
 class GeminiService {
-  private genAI: GoogleGenerativeAI | null = null;
 
-  constructor() {
+  private getCandidateKeys(): string[] {
     const defaultParts = ['AQ.Ab8RN6LHTqR2aj0Eu5ZwN91', 'GKQZ0v6bZAEGDS5Gv9Db2nGjRyw'];
     const userDefaultKey = defaultParts.join('');
-    let rawKey = (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim()) || userDefaultKey;
-    rawKey = rawKey.replace(/^["']|["']$/g, '').trim();
-    if (rawKey && rawKey !== 'mock-key' && rawKey !== 'sk-ant-api03-mock-key') {
-      this.genAI = new GoogleGenerativeAI(rawKey);
-    } else {
-      this.genAI = null;
+    const keys: string[] = [];
+
+    if (process.env.GEMINI_API_KEY) {
+      const envKey = process.env.GEMINI_API_KEY.replace(/^["']|["']$/g, '').trim();
+      if (envKey && envKey !== 'mock-key' && envKey !== 'sk-ant-api03-mock-key') {
+        keys.push(envKey);
+      }
     }
+    if (!keys.includes(userDefaultKey)) {
+      keys.push(userDefaultKey);
+    }
+    return keys;
   }
 
   private getCandidateModels(): string[] {
@@ -79,20 +83,6 @@ class GeminiService {
 - تجنب الردود الطويلة جداً.
 - الوقت الحالي للنظام هو: ${new Date().toISOString()}. استخدم هذا المرجع لتحديد الأوقات النسبية (مثل اليوم، غداً، إلخ).` + customInstructions;
 
-    // إذا لم يتم ضبط مفتاح SDK، يتم استخدام محاكاة الرد لأغراض الفحص والاختبار
-    if (!this.genAI) {
-      console.warn('تنبيه: GEMINI_API_KEY غير متوفر. سيتم استخدام محاكاة للرد الذكي.');
-      const mockResponse = this.generateMockResponse(newMessage, restaurantName);
-      
-      const newHistory = [
-        ...history,
-        { role: 'user', content: newMessage, timestamp: new Date().toISOString() },
-        { role: 'assistant', content: mockResponse, timestamp: new Date().toISOString() }
-      ] as ChatMessage[];
-      
-      return { responseText: mockResponse, updatedHistory: newHistory };
-    }
-
     // تحويل السجل الداخلي لتنسيق متوافق مع متطلبات Gemini SDK
     const geminiHistory: any[] = [];
     for (const msg of history) {
@@ -103,190 +93,191 @@ class GeminiService {
       });
     }
 
+    const candidateKeys = this.getCandidateKeys();
     const candidateModels = this.getCandidateModels();
     let lastError: any = null;
 
-    for (const targetModelName of candidateModels) {
-      try {
-        console.log(`[Gemini AI] المحاولة باستخدام الموديل: ${targetModelName}`);
-        const model = this.genAI.getGenerativeModel({
-          model: targetModelName,
-          systemInstruction: systemPrompt,
-          tools: [
-            {
-              functionDeclarations: [
-                {
-                  name: 'get_menu',
-                  description: 'استرجاع قائمة المأكولات والمشروبات المتاحة في المطعم بمجرد طلب العميل للمنيو أو الأكل أو الطعام',
-                  parameters: {
-                    type: SchemaType.OBJECT,
-                    properties: {
-                      restaurant_id: { type: SchemaType.STRING, description: 'المعرف الفريد للمطعم' },
+    for (const apiKey of candidateKeys) {
+      const genAI = new GoogleGenerativeAI(apiKey);
+
+      for (const targetModelName of candidateModels) {
+        try {
+          console.log(`[Gemini AI] المحاولة باستخدام الموديل: ${targetModelName} والرمز المفتاحي...`);
+          const model = genAI.getGenerativeModel({
+            model: targetModelName,
+            systemInstruction: systemPrompt,
+            tools: [
+              {
+                functionDeclarations: [
+                  {
+                    name: 'get_menu',
+                    description: 'استرجاع قائمة المأكولات والمشروبات المتاحة في المطعم بمجرد طلب العميل للمنيو أو الأكل أو الطعام',
+                    parameters: {
+                      type: SchemaType.OBJECT,
+                      properties: {
+                        restaurant_id: { type: SchemaType.STRING, description: 'المعرف الفريد للمطعم' },
+                      },
+                      required: ['restaurant_id'],
                     },
-                    required: ['restaurant_id'],
                   },
-                },
-                {
-                  name: 'create_order',
-                  description: 'إنشاء طلب طعام جديد للزبون وحفظه في قاعدة البيانات',
-                  parameters: {
-                    type: SchemaType.OBJECT,
-                    properties: {
-                      restaurant_id: { type: SchemaType.STRING, description: 'المعرف الفريد للمطعم' },
-                      customer_phone: { type: SchemaType.STRING, description: 'رقم هاتف الزبون' },
-                      items: {
-                        type: SchemaType.ARRAY,
+                  {
+                    name: 'create_order',
+                    description: 'إنشاء طلب طعام جديد للزبون وحفظه في قاعدة البيانات',
+                    parameters: {
+                      type: SchemaType.OBJECT,
+                      properties: {
+                        restaurant_id: { type: SchemaType.STRING, description: 'المعرف الفريد للمطعم' },
+                        customer_phone: { type: SchemaType.STRING, description: 'رقم هاتف الزبون' },
                         items: {
-                          type: SchemaType.OBJECT,
-                          properties: {
-                            name: { type: SchemaType.STRING, description: 'اسم الوجبة أو المشروب بدقة كما في المنيو' },
-                            quantity: { type: SchemaType.INTEGER, description: 'الكمية المطلوبة (يجب أن تكون 1 أو أكثر)' },
+                          type: SchemaType.ARRAY,
+                          items: {
+                            type: SchemaType.OBJECT,
+                            properties: {
+                              name: { type: SchemaType.STRING, description: 'اسم الوجبة أو المشروب بدقة كما في المنيو' },
+                              quantity: { type: SchemaType.INTEGER, description: 'الكمية المطلوبة (يجب أن تكون 1 أو أكثر)' },
+                            },
+                            required: ['name', 'quantity'],
                           },
-                          required: ['name', 'quantity'],
+                          description: 'قائمة الأصناف المطلوبة وكمياتها',
                         },
-                        description: 'قائمة الأصناف المطلوبة وكمياتها',
                       },
+                      required: ['restaurant_id', 'customer_phone', 'items'],
                     },
-                    required: ['restaurant_id', 'customer_phone', 'items'],
                   },
-                },
-                {
-                  name: 'create_reservation',
-                  description: 'إنشاء حجز طاولة جديد للزبون في المطعم',
-                  parameters: {
-                    type: SchemaType.OBJECT,
-                    properties: {
-                      restaurant_id: { type: SchemaType.STRING, description: 'المعرف الفريد للمطعم' },
-                      customer_phone: { type: SchemaType.STRING, description: 'رقم هاتف الزبون' },
-                      date_time: { type: SchemaType.STRING, description: 'تاريخ ووقت الحجز بصيغة ISO 8601 (مثال: 2026-08-25T20:00:00)' },
-                      party_size: { type: SchemaType.INTEGER, description: 'عدد الأشخاص للحجز' },
-                    },
-                    required: ['restaurant_id', 'customer_phone', 'date_time', 'party_size'],
-                  },
-                },
-                {
-                  name: 'send_interactive_menu',
-                  description: 'إرسال قائمة الطعام (المنيو) كقائمة تفاعلية بالصور والأصناف للعميل على واتساب مباشرة بمجرد طلبه استعراض المنيو أو الطعام',
-                  parameters: {
-                    type: SchemaType.OBJECT,
-                    properties: {
-                      restaurant_id: { type: SchemaType.STRING, description: 'المعرف الفريد للمطعم' },
-                    },
-                    required: ['restaurant_id'],
-                  },
-                },
-                {
-                  name: 'set_conversation_category',
-                  description: 'تغيير تصنيف المحادثة الحالية بناءً على موضوع كلام العميل (طلب طعام، شكوى، أو استفسار عام)',
-                  parameters: {
-                    type: SchemaType.OBJECT,
-                    properties: {
-                      category: {
-                        type: SchemaType.STRING,
-                        description: 'التصنيف المناسب للموضوع الحالي للمحادثة: ORDER للطلبات، COMPLAINT للشكاوى، أو INQUIRY للاستفسارات العامة',
+                  {
+                    name: 'create_reservation',
+                    description: 'إنشاء حجز طاولة جديد للزبون في المطعم',
+                    parameters: {
+                      type: SchemaType.OBJECT,
+                      properties: {
+                        restaurant_id: { type: SchemaType.STRING, description: 'المعرف الفريد للمطعم' },
+                        customer_phone: { type: SchemaType.STRING, description: 'رقم هاتف الزبون' },
+                        date_time: { type: SchemaType.STRING, description: 'تاريخ ووقت الحجز بصيغة ISO 8601 (مثال: 2026-08-25T20:00:00)' },
+                        party_size: { type: SchemaType.INTEGER, description: 'عدد الأشخاص للحجز' },
                       },
+                      required: ['restaurant_id', 'customer_phone', 'date_time', 'party_size'],
                     },
-                    required: ['category'],
                   },
-                },
-              ],
-            },
-          ],
-        });
+                  {
+                    name: 'send_interactive_menu',
+                    description: 'إرسال قائمة الطعام (المنيو) كقائمة تفاعلية بالصور والأصناف للعميل على واتساب مباشرة بمجرد طلبه استعراض المنيو أو الطعام',
+                    parameters: {
+                      type: SchemaType.OBJECT,
+                      properties: {
+                        restaurant_id: { type: SchemaType.STRING, description: 'المعرف الفريد للمطعم' },
+                      },
+                      required: ['restaurant_id'],
+                    },
+                  },
+                  {
+                    name: 'set_conversation_category',
+                    description: 'تغيير تصنيف المحادثة الحالية بناءً على موضوع كلام العميل (طلب طعام، شكوى، أو استفسار عام)',
+                    parameters: {
+                      type: SchemaType.OBJECT,
+                      properties: {
+                        category: {
+                          type: SchemaType.STRING,
+                          description: 'التصنيف المناسب للموضوع الحالي للمحادثة: ORDER للطلبات، COMPLAINT للشكاوى، أو INQUIRY للاستفسارات العامة',
+                        },
+                      },
+                      required: ['category'],
+                    },
+                  },
+                ],
+              },
+            ],
+          });
 
-        // بدء جلسة المحادثة مع التاريخ السابق
-        const chat = model.startChat({
-          history: geminiHistory,
-        });
+          // بدء جلسة المحادثة مع التاريخ السابق
+          const chat = model.startChat({
+            history: geminiHistory,
+          });
 
-        // إرسال رسالة المستخدم الجديدة
-        let result = await chat.sendMessage(newMessage);
-        let response = result.response;
+          // إرسال رسالة المستخدم الجديدة
+          let result = await chat.sendMessage(newMessage);
+          let response = result.response;
 
-        // حلقة تكرارية لمعالجة استدعاء الدوال المتعددة أو المتتالية
-        const maxLoops = 5;
-        let loopCount = 0;
-        let functionCalls = response.functionCalls();
+          // حلقة تكرارية لمعالجة استدعاء الدوال المتعددة أو المتتالية
+          const maxLoops = 5;
+          let loopCount = 0;
+          let functionCalls = response.functionCalls();
 
-        while (functionCalls && functionCalls.length > 0 && loopCount < maxLoops) {
-          loopCount++;
-          const functionResponses: any[] = [];
+          while (functionCalls && functionCalls.length > 0 && loopCount < maxLoops) {
+            loopCount++;
+            const functionResponses: any[] = [];
 
-          for (const call of functionCalls) {
-            const { name, args } = call;
-            const toolInput = args as any;
+            for (const call of functionCalls) {
+              const { name, args } = call;
+              const toolInput = args as any;
 
-            console.log(`[Gemini AI] طلب تشغيل الأداة: ${name} بمدخلات:`, toolInput);
+              console.log(`[Gemini AI] طلب تشغيل الأداة: ${name} بمدخلات:`, toolInput);
 
-            let resultData;
-            try {
-              if (name === 'get_menu') {
-                resultData = await this.executeGetMenu(restaurantId);
-              } else if (name === 'create_order') {
-                resultData = await this.executeCreateOrder(
-                  toolInput.restaurant_id || restaurantId,
-                  toolInput.customer_phone || customerPhone,
-                  toolInput.items
-                );
-              } else if (name === 'create_reservation') {
-                resultData = await this.executeCreateReservation(
-                  toolInput.restaurant_id || restaurantId,
-                  toolInput.customer_phone || customerPhone,
-                  toolInput.date_time,
-                  toolInput.party_size
-                );
-              } else if (name === 'send_interactive_menu') {
-                resultData = await this.executeSendInteractiveMenu(
-                  toolInput.restaurant_id || restaurantId,
-                  restaurantName,
-                  customerPhone
-                );
-              } else if (name === 'set_conversation_category') {
-                resultData = await this.executeSetConversationCategory(
-                  conversationId,
-                  toolInput.category
-                );
-              } else {
-                resultData = { error: `الأداة ${name} غير معرفة.` };
+              let resultData;
+              try {
+                if (name === 'get_menu') {
+                  resultData = await this.executeGetMenu(restaurantId);
+                } else if (name === 'create_order') {
+                  resultData = await this.executeCreateOrder(
+                    toolInput.restaurant_id || restaurantId,
+                    toolInput.customer_phone || customerPhone,
+                    toolInput.items
+                  );
+                } else if (name === 'create_reservation') {
+                  resultData = await this.executeCreateReservation(
+                    toolInput.restaurant_id || restaurantId,
+                    toolInput.customer_phone || customerPhone,
+                    toolInput.date_time,
+                    toolInput.party_size
+                  );
+                } else if (name === 'send_interactive_menu') {
+                  resultData = await this.executeSendInteractiveMenu(
+                    toolInput.restaurant_id || restaurantId,
+                    restaurantName,
+                    customerPhone
+                  );
+                } else if (name === 'set_conversation_category') {
+                  resultData = await this.executeSetConversationCategory(
+                    conversationId,
+                    toolInput.category
+                  );
+                } else {
+                  resultData = { error: `الأداة ${name} غير معرفة.` };
+                }
+              } catch (err: any) {
+                console.error(`خطأ أثناء تشغيل الأداة ${name}:`, err);
+                resultData = { error: `حدث خطأ أثناء معالجة طلبك: ${err.message}` };
               }
-            } catch (err: any) {
-              console.error(`خطأ أثناء تشغيل الأداة ${name}:`, err);
-              resultData = { error: `حدث خطأ أثناء معالجة طلبك: ${err.message}` };
+
+              functionResponses.push({
+                functionResponse: {
+                  name,
+                  response: { result: resultData }
+                }
+              });
             }
 
-            functionResponses.push({
-              functionResponse: {
-                name,
-                response: { result: resultData }
-              }
-            });
+            // إرجاع نتائج الأدوات لـ Gemini لإكمال المحادثة وصياغة الرد
+            result = await chat.sendMessage(functionResponses);
+            response = result.response;
+            functionCalls = response.functionCalls();
           }
 
-          // إرجاع نتائج الأدوات لـ Gemini لإكمال المحادثة وصياغة الرد
-          result = await chat.sendMessage(functionResponses);
-          response = result.response;
-          functionCalls = response.functionCalls();
-        }
+          const finalResponseText = response.text() || 'عذراً، لم أستطع معالجة طلبك حالياً.';
 
-        const finalResponseText = response.text() || 'عذراً، لم أستطع معالجة طلبك حالياً.';
+          // تحديث وحفظ سجل الرسائل بصيغتنا المخصصة لحفظه في قاعدة البيانات
+          const updatedHistory: ChatMessage[] = [
+            ...history,
+            { role: 'user', content: newMessage, timestamp: new Date().toISOString() },
+            { role: 'assistant', content: finalResponseText, timestamp: new Date().toISOString() },
+          ];
 
-        // تحديث وحفظ سجل الرسائل بصيغتنا المخصصة لحفظه في قاعدة البيانات
-        const updatedHistory: ChatMessage[] = [
-          ...history,
-          { role: 'user', content: newMessage, timestamp: new Date().toISOString() },
-          { role: 'assistant', content: finalResponseText, timestamp: new Date().toISOString() },
-        ];
+          return { responseText: finalResponseText, updatedHistory };
 
-        return { responseText: finalResponseText, updatedHistory };
-
-      } catch (error: any) {
-        lastError = error;
-        console.warn(`[Gemini AI] الموديل ${targetModelName} فشل (${error?.message || error}). تجربة الموديل التالي...`);
-        if (targetModelName !== candidateModels[candidateModels.length - 1]) {
+        } catch (error: any) {
+          lastError = error;
+          console.warn(`[Gemini AI] الموديل ${targetModelName} فشل (${error?.message || error}). تجربة الموديل/المفتاح التالي...`);
           continue;
         }
-        console.error('خطأ في الاتصال بخدمة Gemini API:', error);
-        throw new Error(this.formatGeminiErrorMessage(error));
       }
     }
 
@@ -572,28 +563,6 @@ ${currentInstructions}
 
 تنبيه: يجب دائماً استدعاء أداة "update_restaurant_instructions" عند حدوث أي تعديل في القواعد لضمان حفظها في قاعدة البيانات.`;
 
-    if (!this.genAI) {
-      try {
-        await prisma.restaurant.upsert({
-          where: { id: restaurantId },
-          update: { ai_instructions: newMessage },
-          create: {
-            id: restaurantId,
-            name: restaurantName || 'مطعم عم عيسى',
-            phone_number: '+201012345678',
-            whatsapp_number_id: '100020003000',
-            subscription_tier: 'PREMIUM',
-            subscription_status: 'ACTIVE',
-            subscription_expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
-            ai_instructions: newMessage
-          }
-        });
-      } catch (dbErr) {
-        console.warn('تنبيه: فشل حفظ التوجيهات في DB:', dbErr);
-      }
-      return { responseText: `تم استلام القواعد وتحديثها بنجاح في قاعدة البيانات! 📝\n\n💡 ملاحظة: للربط والتفاعل المباشر الذكي عبر Google Gemini، يرجى تزويد متغير البيئة GEMINI_API_KEY بمفتاح صالح يبدأ بـ (AIzaSy...) في إعدادات Vercel.` };
-    }
-
     const geminiHistory: any[] = [];
     let lastRole: string | null = null;
     for (const msg of history) {
@@ -614,91 +583,92 @@ ${currentInstructions}
       geminiHistory.pop();
     }
 
+    const candidateKeys = this.getCandidateKeys();
     const candidateModels = this.getCandidateModels();
     let lastError: any = null;
 
-    for (const targetModelName of candidateModels) {
-      try {
-        console.log(`[Gemini Admin Config] المحاولة باستخدام الموديل: ${targetModelName}`);
-        const model = this.genAI.getGenerativeModel({
-          model: targetModelName,
-          systemInstruction: systemPrompt,
-          tools: [
-            {
-              functionDeclarations: [
+    for (const apiKey of candidateKeys) {
+      const genAI = new GoogleGenerativeAI(apiKey);
+
+      for (const targetModelName of candidateModels) {
+        try {
+          console.log(`[Gemini Admin Config] المحاولة باستخدام الموديل: ${targetModelName}`);
+          const model = genAI.getGenerativeModel({
+            model: targetModelName,
+            systemInstruction: systemPrompt,
+            tools: [
+              {
+                functionDeclarations: [
+                  {
+                    name: 'update_restaurant_instructions',
+                    description: 'حفظ وتحديث القائمة الكاملة للتعليمات والقواعد المخصصة لبوت المطعم في قاعدة البيانات فوراً',
+                    parameters: {
+                      type: SchemaType.OBJECT,
+                      properties: {
+                        instructions: {
+                          type: SchemaType.STRING,
+                          description: 'القائمة الكاملة المحدثة للتعليمات المنسقة بنقاط Markdown (Bulleted List)'
+                        }
+                      },
+                      required: ['instructions']
+                    }
+                  }
+                ]
+              }
+            ]
+          });
+
+          const chat = model.startChat({ history: geminiHistory });
+          let result = await chat.sendMessage(newMessage);
+          let response = result.response;
+
+          let functionCalls = response.functionCalls();
+          if (functionCalls && functionCalls.length > 0) {
+            const call = functionCalls[0];
+            if (call.name === 'update_restaurant_instructions') {
+              const toolInput = call.args as any;
+
+              // تشغيل الأداة وحفظ البيانات بـ upsert لتفادي خطأ السجل غير الموجود
+              try {
+                await prisma.restaurant.upsert({
+                  where: { id: restaurantId },
+                  update: { ai_instructions: toolInput.instructions },
+                  create: {
+                    id: restaurantId,
+                    name: restaurantName || 'مطعم عم عيسى',
+                    phone_number: '+201012345678',
+                    whatsapp_number_id: '100020003000',
+                    subscription_tier: 'PREMIUM',
+                    subscription_status: 'ACTIVE',
+                    subscription_expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+                    ai_instructions: toolInput.instructions
+                  }
+                });
+              } catch (dbErr) {
+                console.warn('تنبيه: فشل حفظ التوجيهات في DB:', dbErr);
+              }
+
+              // إرسال النتيجة لـ Gemini لصياغة الرد النهائي للأدمن
+              const functionResponses = [
                 {
-                  name: 'update_restaurant_instructions',
-                  description: 'حفظ وتحديث القائمة الكاملة للتعليمات والقواعد المخصصة لبوت المطعم في قاعدة البيانات فوراً',
-                  parameters: {
-                    type: SchemaType.OBJECT,
-                    properties: {
-                      instructions: {
-                        type: SchemaType.STRING,
-                        description: 'القائمة الكاملة المحدثة للتعليمات المنسقة بنقاط Markdown (Bulleted List)'
-                      }
-                    },
-                    required: ['instructions']
+                  functionResponse: {
+                    name: call.name,
+                    response: { result: { status: 'success', message: 'تم التحديث بنجاح' } }
                   }
                 }
-              ]
+              ];
+
+              result = await chat.sendMessage(functionResponses);
+              response = result.response;
             }
-          ]
-        });
-
-        const chat = model.startChat({ history: geminiHistory });
-        let result = await chat.sendMessage(newMessage);
-        let response = result.response;
-
-        let functionCalls = response.functionCalls();
-        if (functionCalls && functionCalls.length > 0) {
-          const call = functionCalls[0];
-          if (call.name === 'update_restaurant_instructions') {
-            const toolInput = call.args as any;
-
-            // تشغيل الأداة وحفظ البيانات بـ upsert لتفادي خطأ السجل غير الموجود
-            try {
-              await prisma.restaurant.upsert({
-                where: { id: restaurantId },
-                update: { ai_instructions: toolInput.instructions },
-                create: {
-                  id: restaurantId,
-                  name: restaurantName || 'مطعم عم عيسى',
-                  phone_number: '+201012345678',
-                  whatsapp_number_id: '100020003000',
-                  subscription_tier: 'PREMIUM',
-                  subscription_status: 'ACTIVE',
-                  subscription_expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
-                  ai_instructions: toolInput.instructions
-                }
-              });
-            } catch (dbErr) {
-              console.warn('تنبيه: فشل حفظ التوجيهات في DB:', dbErr);
-            }
-
-            // إرسال النتيجة لـ Gemini لصياغة الرد النهائي للأدمن
-            const functionResponses = [
-              {
-                functionResponse: {
-                  name: call.name,
-                  response: { result: { status: 'success', message: 'تم التحديث بنجاح' } }
-                }
-              }
-            ];
-
-            result = await chat.sendMessage(functionResponses);
-            response = result.response;
           }
-        }
 
-        return { responseText: response.text() || 'تم استلام وتحديث القواعد بنجاح.' };
-      } catch (err: any) {
-        lastError = err;
-        console.warn(`[Gemini Admin Config] الموديل ${targetModelName} فشل (${err?.message || err}). تجربة الموديل التالي...`);
-        if (targetModelName !== candidateModels[candidateModels.length - 1]) {
+          return { responseText: response.text() || 'تم استلام وتحديث القواعد بنجاح.' };
+        } catch (err: any) {
+          lastError = err;
+          console.warn(`[Gemini Admin Config] الموديل ${targetModelName} فشل (${err?.message || err}). تجربة المفتاح/الموديل التالي...`);
           continue;
         }
-        console.error('خطأ في مساعد الإعداد الذكي:', err);
-        return { responseText: this.formatGeminiErrorMessage(err) };
       }
     }
 
