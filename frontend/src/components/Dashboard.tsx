@@ -2110,7 +2110,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                       {viewArchived ? 'لا توجد محادثات مؤرشفة حالياً.' : 'لا توجد محادثات نشطة تطابق التصفية.'}
                     </p>
                   ) : (
-                    <div style={{ overflowY: 'auto', flex: 1, padding: '6px' }}>
+                    <div style={{ overflowY: 'auto', flex: 1, padding: '6px', minHeight: 0 }}>
                       {conversations
                         .filter(c => viewArchived ? Boolean(c.is_archived) : !c.is_archived)
                         .filter(c => {
@@ -3409,6 +3409,7 @@ const getDashboardStyles = (isDark: boolean): Record<string, React.CSSProperties
       flex: 1,
       padding: '20px',
       overflowY: 'auto',
+      minHeight: 0,
       backgroundColor: inputBg,
       display: 'flex',
       flexDirection: 'column',

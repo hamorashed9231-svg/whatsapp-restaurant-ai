@@ -53,20 +53,21 @@ body {
   line-height: 1.6;
 }
 
-/* تنسيق شريط التمرير */
+/* تخصيص مسطرة التمرير الشاملة (Custom Visual Scrollbar) لجميع الدردشات والنوافذ */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: rgba(0, 102, 255, 0.06);
+  border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--secondary);
+  background: #0066FF;
   border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--accent);
+  background: #004ECC;
 }
 
 /* المكونات المشتركة */
