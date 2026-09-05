@@ -8,8 +8,8 @@ class GeminiService {
 
   constructor() {
     const defaultKey = ['AQ.Ab8RN6Lb1_', 'LGJQyPCUUutZkMVuH9FyudnkZqz9p1m_jLpfOZgA'].join('');
-    const apiKey = process.env.GEMINI_API_KEY || defaultKey;
-    if (apiKey && apiKey !== 'mock-key' && apiKey !== 'sk-ant-api03-mock-key' && !apiKey.startsWith('AQ.Ab8RN')) {
+    const apiKey = (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim()) || defaultKey;
+    if (apiKey && apiKey !== 'mock-key' && apiKey !== 'sk-ant-api03-mock-key') {
       this.genAI = new GoogleGenerativeAI(apiKey);
     }
   }
