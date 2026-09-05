@@ -19,10 +19,7 @@ class GeminiService {
   }
 
   private getCandidateModels(): string[] {
-    const envModel = process.env.GEMINI_MODEL;
-    const validEnvModel = (envModel && envModel.trim()) ? envModel.trim() : undefined;
     const list = [
-      validEnvModel,
       'gemini-3.6-flash',
       'gemini-3.5-flash',
       'gemini-3.0-flash',
