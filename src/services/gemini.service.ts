@@ -9,7 +9,8 @@ class GeminiService {
   constructor() {
     const defaultParts = ['AQ.Ab8RN6LHTqR2aj0Eu5ZwN91', 'GKQZ0v6bZAEGDS5Gv9Db2nGjRyw'];
     const userDefaultKey = defaultParts.join('');
-    const rawKey = (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim()) || userDefaultKey;
+    let rawKey = (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim()) || userDefaultKey;
+    rawKey = rawKey.replace(/^["']|["']$/g, '').trim();
     if (rawKey && rawKey !== 'mock-key' && rawKey !== 'sk-ant-api03-mock-key') {
       this.genAI = new GoogleGenerativeAI(rawKey);
     } else {
@@ -32,11 +33,8 @@ class GeminiService {
   }
 
   private formatGeminiErrorMessage(err: any): string {
-    const msg = (err?.message || String(err)).toLowerCase();
-    if (msg.includes('401') || msg.includes('unauthorized') || msg.includes('access_token_type_unsupported')) {
-      return 'عذراً، المفتاح المستعمل حالياً غير صالح لـ Gemini API (الرمز المستخدم هو OAuth Token وليس API Key). يرجى نسخ مفتاح API Key من تبويب API Keys في Google AI Studio (يبدأ بـ AIzaSy...) وإضافته في Vercel باسم GEMINI_API_KEY.';
-    }
-    return `عذراً، حدث خطأ أثناء معالجة طلبك: ${err.message}`;
+    const errorStr = err?.message || String(err);
+    return `عذراً، حدث خطأ أثناء معالجة طلبك عبر Gemini API: ${errorStr}`;
   }
 
   /**
