@@ -15,14 +15,15 @@ class GeminiService {
   }
 
   private getCandidateModels(): string[] {
+    const envModel = process.env.GEMINI_MODEL;
+    const validEnvModel = (envModel && envModel.trim() !== 'gemini-1.5-flash') ? envModel.trim() : undefined;
     const list = [
-      process.env.GEMINI_MODEL,
-      'gemini-2.5-flash',
+      validEnvModel,
       'gemini-2.0-flash',
+      'gemini-2.5-flash',
       'gemini-1.5-flash-latest',
       'gemini-1.5-flash-002',
       'gemini-1.5-flash-001',
-      'gemini-1.5-flash'
     ];
     return Array.from(new Set(list.filter((m): m is string => Boolean(m && m.trim()))));
   }
@@ -292,8 +293,8 @@ class GeminiService {
 
       } catch (error: any) {
         lastError = error;
-        if (this.isModelNotFoundError(error) && targetModelName !== candidateModels[candidateModels.length - 1]) {
-          console.warn(`[Gemini AI] الموديل ${targetModelName} غير متاح (404/Not Found). التبديل التلقائي للموديل التالي...`);
+        console.warn(`[Gemini AI] الموديل ${targetModelName} فشل (${error?.message || error}). تجربة الموديل التالي...`);
+        if (targetModelName !== candidateModels[candidateModels.length - 1]) {
           continue;
         }
         console.error('خطأ في الاتصال بخدمة Gemini API:', error);
@@ -686,8 +687,8 @@ ${currentInstructions}
         return { responseText: response.text() || 'تم استلام وتحديث القواعد بنجاح.' };
       } catch (err: any) {
         lastError = err;
-        if (this.isModelNotFoundError(err) && targetModelName !== candidateModels[candidateModels.length - 1]) {
-          console.warn(`[Gemini Admin Config] الموديل ${targetModelName} غير متاح (404/Not Found). التبديل التلقائي للموديل التالي...`);
+        console.warn(`[Gemini Admin Config] الموديل ${targetModelName} فشل (${err?.message || err}). تجربة الموديل التالي...`);
+        if (targetModelName !== candidateModels[candidateModels.length - 1]) {
           continue;
         }
         console.error('خطأ في مساعد الإعداد الذكي:', err);
