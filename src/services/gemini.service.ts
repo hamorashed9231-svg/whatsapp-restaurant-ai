@@ -19,14 +19,7 @@ class GeminiService {
   }
 
   private getCandidateModels(): string[] {
-    const list = [
-      'gemini-3.6-flash',
-      'gemini-3.5-flash',
-      'gemini-3.0-flash',
-      'gemini-2.5-flash',
-      'gemini-2.0-flash',
-    ];
-    return Array.from(new Set(list.filter((m): m is string => Boolean(m && m.trim()))));
+    return ['gemini-3.6-flash', 'gemini-3.5-flash'];
   }
 
   private formatGeminiErrorMessage(err: any): string {
