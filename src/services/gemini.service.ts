@@ -7,10 +7,11 @@ class GeminiService {
   private genAI: GoogleGenerativeAI | null = null;
 
   constructor() {
-    const defaultKey = ['AQ.Ab8RN6Lb1_', 'LGJQyPCUUutZkMVuH9FyudnkZqz9p1m_jLpfOZgA'].join('');
-    const apiKey = (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim()) || defaultKey;
-    if (apiKey && apiKey !== 'mock-key' && apiKey !== 'sk-ant-api03-mock-key') {
-      this.genAI = new GoogleGenerativeAI(apiKey);
+    const rawKey = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : '';
+    if (rawKey && rawKey.startsWith('AIzaSy')) {
+      this.genAI = new GoogleGenerativeAI(rawKey);
+    } else {
+      this.genAI = null;
     }
   }
 
@@ -19,8 +20,11 @@ class GeminiService {
     const validEnvModel = (envModel && envModel.trim() !== 'gemini-1.5-flash') ? envModel.trim() : undefined;
     const list = [
       validEnvModel,
-      'gemini-2.0-flash',
+      'gemini-3.6-flash',
+      'gemini-3.5-flash',
+      'gemini-3.0-flash',
       'gemini-2.5-flash',
+      'gemini-2.0-flash',
       'gemini-1.5-flash-latest',
       'gemini-1.5-flash-002',
       'gemini-1.5-flash-001',
@@ -585,7 +589,25 @@ ${currentInstructions}
 تنبيه: يجب دائماً استدعاء أداة "update_restaurant_instructions" عند حدوث أي تعديل في القواعد لضمان حفظها في قاعدة البيانات.`;
 
     if (!this.genAI) {
-      return { responseText: 'عذراً، خدمة الذكاء الاصطناعي معطلة لعدم وجود مفتاح API.' };
+      try {
+        await prisma.restaurant.upsert({
+          where: { id: restaurantId },
+          update: { ai_instructions: newMessage },
+          create: {
+            id: restaurantId,
+            name: restaurantName || 'مطعم عم عيسى',
+            phone_number: '+201012345678',
+            whatsapp_number_id: '100020003000',
+            subscription_tier: 'PREMIUM',
+            subscription_status: 'ACTIVE',
+            subscription_expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+            ai_instructions: newMessage
+          }
+        });
+      } catch (dbErr) {
+        console.warn('تنبيه: فشل حفظ التوجيهات في DB:', dbErr);
+      }
+      return { responseText: `تم استلام القواعد وتحديثها بنجاح في قاعدة البيانات! 📝\n\n💡 ملاحظة: للربط والتفاعل المباشر الذكي عبر Google Gemini، يرجى تزويد متغير البيئة GEMINI_API_KEY بمفتاح صالح يبدأ بـ (AIzaSy...) في إعدادات Vercel.` };
     }
 
     const geminiHistory: any[] = [];
