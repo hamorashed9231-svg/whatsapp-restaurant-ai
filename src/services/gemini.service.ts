@@ -34,15 +34,12 @@ class GeminiService {
     return Array.from(new Set(list.filter((m): m is string => Boolean(m && m.trim()))));
   }
 
-  private isModelNotFoundError(err: any): boolean {
-    if (!err) return false;
-    const msg = (err.message || String(err)).toLowerCase();
-    return (
-      msg.includes('404') ||
-      msg.includes('not found') ||
-      msg.includes('not supported') ||
-      msg.includes('models/')
-    );
+  private formatGeminiErrorMessage(err: any): string {
+    const msg = (err?.message || String(err)).toLowerCase();
+    if (msg.includes('401') || msg.includes('unauthorized') || msg.includes('access_token_type_unsupported')) {
+      return 'عذراً، المفتاح المستعمل حالياً غير صالح لـ Gemini API (الرمز المستخدم هو OAuth Token وليس API Key). يرجى نسخ مفتاح API Key من تبويب API Keys في Google AI Studio (يبدأ بـ AIzaSy...) وإضافته في Vercel باسم GEMINI_API_KEY.';
+    }
+    return `عذراً، حدث خطأ أثناء معالجة طلبك: ${err.message}`;
   }
 
   /**
@@ -716,11 +713,11 @@ ${currentInstructions}
           continue;
         }
         console.error('خطأ في مساعد الإعداد الذكي:', err);
-        return { responseText: `عذراً، حدث خطأ أثناء معالجة طلبك: ${err.message}` };
+        return { responseText: this.formatGeminiErrorMessage(err) };
       }
     }
 
-    return { responseText: `عذراً، حدث خطأ أثناء معالجة طلبك: ${lastError?.message || 'جميع الموديلات المتاحة تعذرت'}` };
+    return { responseText: this.formatGeminiErrorMessage(lastError) };
   }
 
   /**
