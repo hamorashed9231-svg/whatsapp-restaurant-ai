@@ -87,15 +87,27 @@ class WhatsAppService {
     const phoneNumberId = customPhoneNumberId || this.defaultPhoneNumberId;
     const token = customToken || this.token;
 
-    const matches = dataUrl.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
-    if (!matches) {
-      throw new Error('صيغة الصورة Data URL غير صالحة.');
+    let mimeType = 'image/jpeg';
+    let rawBase64 = '';
+
+    const base64Index = dataUrl.indexOf(';base64,');
+    if (base64Index !== -1) {
+      mimeType = dataUrl.substring(5, base64Index);
+      rawBase64 = dataUrl.substring(base64Index + 8);
+    } else {
+      const matches = dataUrl.match(/^data:(image\/[a-zA-Z0-9\+\-\.]+);base64,(.+)$/);
+      if (matches) {
+        mimeType = matches[1];
+        rawBase64 = matches[2];
+      } else {
+        throw new Error('صيغة الصورة Data URL غير صالحة.');
+      }
     }
 
-    const mimeType = matches[1];
-    const base64Data = matches[2];
-    const buffer = Buffer.from(base64Data, 'base64');
-    const extension = mimeType.split('/')[1] || 'jpg';
+    const cleanBase64 = rawBase64.trim().replace(/\s/g, '').replace(/ /g, '+');
+    const buffer = Buffer.from(cleanBase64, 'base64');
+    let extension = mimeType.split('/')[1] || 'jpg';
+    if (extension === 'jpeg') extension = 'jpg';
     const filename = `image_${Date.now()}.${extension}`;
 
     const blob = new Blob([buffer], { type: mimeType });
@@ -104,17 +116,23 @@ class WhatsAppService {
     formData.append('file', blob, filename);
     formData.append('type', mimeType);
 
-    const response = await axios.post(
-      `https://graph.facebook.com/v20.0/${phoneNumberId}/media`,
-      formData,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
+    try {
+      const response = await axios.post(
+        `https://graph.facebook.com/v20.0/${phoneNumberId}/media`,
+        formData,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
 
-    return response.data.id;
+      return response.data.id;
+    } catch (uploadErr: any) {
+      console.error('[WhatsApp Media Upload Error]:', uploadErr.response?.data || uploadErr.message);
+      const metaErrMsg = uploadErr.response?.data?.error?.message || uploadErr.message;
+      throw new Error(`فشل رفع الصورة لـ Meta Media API: ${metaErrMsg}`);
+    }
   }
 
   public async sendImageMessage(
@@ -125,7 +143,7 @@ class WhatsAppService {
     customToken?: string
   ): Promise<any> {
     const token = customToken || this.token;
-    if (!token || token.includes('ضع_توكين') || token === 'mock-token' || token.startsWith('EAAG...')) {
+    if (!token || token.includes('ضع_توكين') || token === 'mock-token' || token === 'EAAG...') {
       console.log(`[WhatsApp Mock Image] إلى ${to}: صورة [${imageUrl.slice(0, 40)}...] - الشرح: ${caption}`);
       return { mock: true, success: true };
     }
@@ -134,14 +152,9 @@ class WhatsAppService {
       let imagePayload: any = {};
 
       if (imageUrl.startsWith('data:image/')) {
-        try {
-          const mediaId = await this.uploadMedia(imageUrl, customPhoneNumberId, customToken);
-          imagePayload = { id: mediaId, caption: caption || '' };
-          console.log(`[WhatsApp Media] تم رفع الصورة المباشرة لـ Meta Media API بنجاح (Media ID: ${mediaId})`);
-        } catch (uploadErr: any) {
-          console.warn('[WhatsApp Media Upload Warn] تعذر الرفع لـ Meta Media API، يتم الاعتماد على رابط الصورة:', uploadErr.message);
-          imagePayload = { link: imageUrl, caption: caption || '' };
-        }
+        const mediaId = await this.uploadMedia(imageUrl, customPhoneNumberId, customToken);
+        imagePayload = { id: mediaId, caption: caption || '' };
+        console.log(`[WhatsApp Media] تم رفع الصورة المباشرة لـ Meta Media API بنجاح (Media ID: ${mediaId})`);
       } else {
         imagePayload = { link: imageUrl, caption: caption || '' };
       }
@@ -162,7 +175,8 @@ class WhatsAppService {
       return response.data;
     } catch (error: any) {
       console.error('[WhatsApp Error] فشل إرسال الصورة:', error.response?.data || error.message);
-      throw new Error(`فشل إرسال صورة واتساب: ${JSON.stringify(error.response?.data || error.message)}`);
+      const metaErrMsg = error.response?.data?.error?.message || error.message;
+      throw new Error(`فشل إرسال صورة واتساب: ${metaErrMsg}`);
     }
   }
 

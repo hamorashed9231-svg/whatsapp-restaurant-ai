@@ -1107,15 +1107,8 @@ const Dashboard: React.FC<DashboardProps> = ({
         setShowTemplateModal(true);
         setChatMessages(prev => prev.filter(m => !newMsgs.includes(m)));
       } else {
-        const updatedData = {
-          status: 'IN_PROGRESS',
-          assigned_to: selectedConversation.assigned_to || currentUsername,
-          updated_at: new Date().toISOString(),
-          isWindowOpen: true
-        };
-        setConversations(prev => prev.map(c => c.id === selectedConversation.id ? { ...c, ...updatedData } : c));
-        setSelectedConversation(prev => prev ? { ...prev, ...updatedData } : null);
-        setSelectedConvWindowOpen(true);
+        setChatMessages(prev => prev.filter(m => !newMsgs.includes(m)));
+        alert(err.response?.data?.message || 'فشل إرسال الصورة/الرسالة عبر الواتساب.');
       }
     }
   };

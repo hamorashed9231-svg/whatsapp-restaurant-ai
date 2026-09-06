@@ -1088,7 +1088,12 @@ export const sendManualMessage = async (req: AuthenticatedRequest, res: Response
           }
         }
       } catch (wsErr: any) {
-        console.warn('[Manual Message] تحذير الإرسال عبر واتساب:', wsErr.message);
+        console.error('[Manual Message Error] فشل الإرسال عبر واتساب:', wsErr.message);
+        res.status(400).json({
+          status: 'error',
+          message: wsErr.message || 'فشل إرسال الرسالة عبر الواتساب.'
+        });
+        return;
       }
     }
 
