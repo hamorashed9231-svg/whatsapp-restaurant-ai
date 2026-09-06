@@ -373,6 +373,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState<string>('');
   const [chatImageUrls, setChatImageUrls] = useState<string[]>([]);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   // حالات الردود المحفوظة القابلة للإضافة والتعديل من قبل الأدمن
   const [savedReplies, setSavedReplies] = useState<QuickReplyItem[]>(() => getStoredQuickReplies(restaurantId));
   const [showAddReplyModal, setShowAddReplyModal] = useState<boolean>(false);
@@ -1175,31 +1176,34 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
     const s = (conv.status || 'UNANSWERED').toUpperCase();
     if (s === 'CLOSED' || s === 'ARCHIVED') {
       return {
-        label: conv.closed_by ? `✅ مغلقة بواسطة: ${conv.closed_by}` : '✅ مغلقة',
+        label: conv.closed_by ? `✅ مغلقة (${conv.closed_by})` : '✅ مغلقة',
         shortLabel: 'مغلقة',
-        color: darkMode ? '#94A3B8' : '#475569',
-        bgColor: darkMode ? '#1E293B' : '#F1F5F9',
+        color: darkMode ? '#94A3B8' : '#64748B',
+        bgColor: darkMode ? '#111B21' : '#FFFFFF',
         borderColor: '#64748B',
-        badgeBg: '#64748B'
+        badgeBg: darkMode ? 'rgba(100, 116, 139, 0.2)' : '#F1F5F9',
+        textColor: darkMode ? '#CBD5E1' : '#475569'
       };
     }
     if (s === 'IN_PROGRESS' || s === 'ACTIVE') {
       return {
-        label: conv.assigned_to ? `🔵 جاري المتابعة: ${conv.assigned_to}` : '🔵 جاري المتابعة',
+        label: conv.assigned_to ? `🔵 المتابعة: ${conv.assigned_to}` : '🔵 جاري المتابعة',
         shortLabel: 'جاري المتابعة',
         color: darkMode ? '#60A5FA' : '#1E40AF',
-        bgColor: darkMode ? 'rgba(30, 64, 175, 0.25)' : '#EFF6FF',
+        bgColor: darkMode ? '#111B21' : '#FFFFFF',
         borderColor: '#3B82F6',
-        badgeBg: '#2563EB'
+        badgeBg: darkMode ? 'rgba(59, 130, 246, 0.2)' : '#EFF6FF',
+        textColor: darkMode ? '#93C5FD' : '#1D4ED8'
       };
     }
     return {
       label: '🟠 لم يتم الرد عليه بعد',
       shortLabel: 'لم يتم الرد',
-      color: darkMode ? '#FBBF24' : '#B45309',
-      bgColor: darkMode ? 'rgba(217, 119, 6, 0.25)' : '#FFFBEB',
+      color: darkMode ? '#FBBF24' : '#D97706',
+      bgColor: darkMode ? '#111B21' : '#FFFFFF',
       borderColor: '#F59E0B',
-      badgeBg: '#D97706'
+      badgeBg: darkMode ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7',
+      textColor: darkMode ? '#FDE68A' : '#B45309'
     };
   };
 
@@ -3143,73 +3147,102 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                           const isSelected = selectedConversation?.id === conv.id;
                           const timeFormatted = safeFormatTime(conv.updated_at || conv.created_at);
 
-                          return (
-                            <div
-                              key={conv.id || Math.random()}
-                              onClick={() => handleSelectConversation(conv)}
-                              style={{
-                                padding: '10px 12px',
-                                marginBottom: '6px',
-                                borderRadius: '8px',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s',
-                                backgroundColor: isSelected ? 'rgba(0, 102, 255, 0.08)' : statusInfo.bgColor,
-                                borderRight: `4px solid ${statusInfo.borderColor}`,
-                                borderTop: '1px solid rgba(0,0,0,0.03)',
-                                borderLeft: '1px solid rgba(0,0,0,0.03)',
-                                borderBottom: '1px solid rgba(0,0,0,0.03)'
-                              }}
-                            >
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: `${catColor}15`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    <MessageSquare size={14} color={catColor} />
-                                  </div>
-                                  <div>
-                                    <div style={{ fontWeight: 'bold', fontSize: '0.82rem' }}>{phoneStr}</div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-                                      <span style={{ fontSize: '0.65rem', color: catColor, fontWeight: 'bold', backgroundColor: `${catColor}10`, padding: '2px 6px', borderRadius: '4px' }}>
-                                        {catLabel}
-                                      </span>
-                                      {timeFormatted && (
-                                        <span style={{ fontSize: '0.65rem', color: '#8E9FB8' }}>
-                                          {timeFormatted}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
+                           return (
+                             <div
+                               key={conv.id || Math.random()}
+                               onClick={() => handleSelectConversation(conv)}
+                               style={{
+                                 padding: '12px 14px',
+                                 marginBottom: '4px',
+                                 borderRadius: '10px',
+                                 cursor: 'pointer',
+                                 transition: 'all 0.15s ease-in-out',
+                                 backgroundColor: isSelected
+                                   ? (darkMode ? '#2A3942' : '#EFF6FF')
+                                   : (darkMode ? '#111B21' : '#FFFFFF'),
+                                 borderRight: isSelected ? '4px solid #0066FF' : '4px solid transparent',
+                                 borderBottom: darkMode ? '1px solid #182229' : '1px solid #F1F5F9',
+                                 boxShadow: isSelected ? '0 2px 6px rgba(0,0,0,0.06)' : 'none'
+                               }}
+                             >
+                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
+                                   <div style={{
+                                     width: '38px',
+                                     height: '38px',
+                                     borderRadius: '50%',
+                                     backgroundColor: `${catColor}18`,
+                                     display: 'flex',
+                                     alignItems: 'center',
+                                     justifyContent: 'center',
+                                     flexShrink: 0
+                                   }}>
+                                     <MessageSquare size={16} color={catColor} />
+                                   </div>
 
-                              {/* الشارات الملونة لهوية الموظف والحالة الـ 3 والإشعارات */}
-                              <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '4px' }}>
-                                <span style={{
-                                  fontSize: '0.68rem',
-                                  fontWeight: 'bold',
-                                  padding: '2px 8px',
-                                  borderRadius: '10px',
-                                  backgroundColor: statusInfo.badgeBg,
-                                  color: '#FFFFFF'
-                                }}>
-                                  {statusInfo.label}
-                                </span>
-                                {unreadConvIds.has(conv.id) && (
-                                  <span style={{
-                                    fontSize: '0.68rem',
-                                    fontWeight: 'bold',
-                                    padding: '2px 8px',
-                                    borderRadius: '10px',
-                                    backgroundColor: '#EF4444',
-                                    color: '#FFFFFF',
-                                    animation: 'pulse 1.5s infinite',
-                                    boxShadow: '0 0 8px rgba(239, 68, 68, 0.5)'
-                                  }}>
-                                    🔔 رسالة جديدة
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          );
+                                   <div style={{ flex: 1, minWidth: 0 }}>
+                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                       <span style={{
+                                         fontWeight: '600',
+                                         fontSize: '0.88rem',
+                                         color: darkMode ? '#E9EDEF' : '#111B21',
+                                         overflow: 'hidden',
+                                         textOverflow: 'ellipsis',
+                                         whiteSpace: 'nowrap'
+                                       }}>
+                                         {phoneStr}
+                                       </span>
+                                       {timeFormatted && (
+                                         <span style={{ fontSize: '0.68rem', color: darkMode ? '#8696A0' : '#667781', flexShrink: 0 }}>
+                                           {timeFormatted}
+                                         </span>
+                                       )}
+                                     </div>
+
+                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
+                                       <span style={{
+                                         fontSize: '0.65rem',
+                                         color: catColor,
+                                         fontWeight: 'bold',
+                                         backgroundColor: `${catColor}15`,
+                                         padding: '2px 8px',
+                                         borderRadius: '12px'
+                                       }}>
+                                         {catLabel}
+                                       </span>
+                                       <span style={{
+                                         fontSize: '0.65rem',
+                                         fontWeight: '600',
+                                         padding: '2px 8px',
+                                         borderRadius: '12px',
+                                         backgroundColor: statusInfo.badgeBg,
+                                         color: statusInfo.textColor
+                                       }}>
+                                         {statusInfo.label}
+                                       </span>
+                                     </div>
+                                   </div>
+                                 </div>
+                               </div>
+
+                               {unreadConvIds.has(conv.id) && (
+                                 <div style={{ marginTop: '6px', display: 'flex', justifyContent: 'flex-end' }}>
+                                   <span style={{
+                                     fontSize: '0.65rem',
+                                     fontWeight: 'bold',
+                                     padding: '2px 8px',
+                                     borderRadius: '10px',
+                                     backgroundColor: '#EF4444',
+                                     color: '#FFFFFF',
+                                     animation: 'pulse 1.5s infinite',
+                                     boxShadow: '0 0 8px rgba(239, 68, 68, 0.4)'
+                                   }}>
+                                     🔔 رسالة جديدة
+                                   </span>
+                                 </div>
+                               )}
+                             </div>
+                           );
                         })}
                     </div>
                   )}
@@ -3499,15 +3532,26 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                         الرد بواسطة الموظف: {senderName}
                                       </div>
                                     )}
-                                    {msg.image_url && (
-                                      <div style={{ marginBottom: '6px' }}>
-                                        <img
-                                          src={msg.image_url}
-                                          alt="صورة مرفقة"
-                                          style={{ maxWidth: '240px', maxHeight: '180px', borderRadius: '8px', objectFit: 'cover', display: 'block' }}
-                                        />
-                                      </div>
-                                    )}
+                                     {msg.image_url && (
+                                       <div style={{ marginBottom: '6px', position: 'relative', overflow: 'hidden', borderRadius: '10px' }}>
+                                         <img
+                                           src={msg.image_url}
+                                           alt="صورة مرفقة"
+                                           onClick={() => setPreviewImageUrl(msg.image_url!)}
+                                           style={{
+                                             maxWidth: '260px',
+                                             maxHeight: '200px',
+                                             borderRadius: '10px',
+                                             objectFit: 'cover',
+                                             display: 'block',
+                                             cursor: 'pointer',
+                                             boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                                             transition: 'transform 0.2s ease-in-out',
+                                           }}
+                                           title="انقر لتكبير الصورة وتحميلها على جهازك 🔍"
+                                         />
+                                       </div>
+                                     )}
 
                                     {editingMessageIndex === i ? (
                                       <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -3789,25 +3833,46 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                               onClick={() => chatFileInputRef.current?.click()}
                               disabled={!selectedConvWindowOpen}
                               style={{
-                                border: '1px solid #CBD5E1',
-                                backgroundColor: chatImageUrls.length > 0 ? '#EFF6FF' : '#FFFFFF',
-                                color: !selectedConvWindowOpen ? '#94A3B8' : '#3B82F6',
-                                borderRadius: '8px',
-                                padding: '8px 14px',
-                                fontSize: '0.85rem',
-                                fontWeight: 'bold',
+                                border: 'none',
+                                backgroundColor: chatImageUrls.length > 0
+                                  ? (darkMode ? '#1E293B' : '#E0F2FE')
+                                  : (darkMode ? '#2A3942' : '#E2E8F0'),
+                                color: chatImageUrls.length > 0 ? '#0066FF' : (darkMode ? '#AEBAC1' : '#54656F'),
+                                borderRadius: '50%',
+                                width: '42px',
+                                height: '42px',
                                 cursor: !selectedConvWindowOpen ? 'not-allowed' : 'pointer',
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: '6px',
+                                justifyContent: 'center',
                                 transition: 'all 0.2s',
-                                whiteSpace: 'nowrap',
-                                opacity: !selectedConvWindowOpen ? 0.6 : 1
+                                opacity: !selectedConvWindowOpen ? 0.5 : 1,
+                                position: 'relative',
+                                flexShrink: 0
                               }}
-                              title="اختيار صورة أو عدة صور مباشرة من الجهاز"
+                              title="إرفاق صور أو وسائط (📷 / Ctrl+V)"
                             >
-                              <Upload size={18} />
-                              <span>{chatImageUrls.length > 0 ? `صور مختارة (${chatImageUrls.length})` : 'رفع صور من الجهاز'}</span>
+                              <Upload size={20} />
+                              {chatImageUrls.length > 0 && (
+                                <span style={{
+                                  position: 'absolute',
+                                  top: '-2px',
+                                  right: '-2px',
+                                  backgroundColor: '#0066FF',
+                                  color: '#FFFFFF',
+                                  borderRadius: '50%',
+                                  width: '18px',
+                                  height: '18px',
+                                  fontSize: '0.65rem',
+                                  fontWeight: 'bold',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                                }}>
+                                  {chatImageUrls.length}
+                                </span>
+                              )}
                             </button>
 
                             <input
@@ -4548,6 +4613,119 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
 
         </div>
       </main>
+
+      {/* مودال معاينة وتكبير الصورة المرفقة مع إمكانية التنزيل المباشر */}
+      {previewImageUrl && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.9)',
+            zIndex: 999999,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px',
+            backdropFilter: 'blur(8px)'
+          }}
+          onClick={() => setPreviewImageUrl(null)}
+        >
+          <div
+            style={{
+              position: 'relative',
+              maxWidth: '92vw',
+              maxHeight: '88vh',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* شريط الإجراءات: زر التحميل وزر الإغلاق */}
+            <div
+              style={{
+                display: 'flex',
+                gap: '14px',
+                marginBottom: '16px',
+                width: '100%',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  if (!previewImageUrl) return;
+                  const link = document.createElement('a');
+                  link.href = previewImageUrl;
+                  link.download = `whatsapp_media_${Date.now()}.jpg`;
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                }}
+                style={{
+                  backgroundColor: '#10B981',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: '24px',
+                  padding: '10px 24px',
+                  fontSize: '0.9rem',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
+                  transition: 'all 0.2s'
+                }}
+                title="تحميل هذه الصورة مباشرة على الكمبيوتر أو الموبايل"
+              >
+                <Download size={18} />
+                <span>تحميل الصورة على الجهاز 💾</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPreviewImageUrl(null)}
+                style={{
+                  backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '42px',
+                  height: '42px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s'
+                }}
+                title="إغلاق المعاينة"
+              >
+                <X size={22} />
+              </button>
+            </div>
+
+            {/* الصورة بحجمها المكبر المريح */}
+            <img
+              src={previewImageUrl}
+              alt="معاينة الصورة المكبرة"
+              style={{
+                maxWidth: '90vw',
+                maxHeight: '78vh',
+                borderRadius: '12px',
+                objectFit: 'contain',
+                boxShadow: '0 16px 48px rgba(0, 0, 0, 0.7)'
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
