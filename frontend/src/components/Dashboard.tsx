@@ -554,31 +554,42 @@ const Dashboard: React.FC<DashboardProps> = ({
     const items = Array.from(clipboardData.items || []);
     const files = Array.from(clipboardData.files || []);
 
-    const imageFiles: File[] = [];
+    const rawImageFiles: File[] = [];
 
     // 1. فحص عناصر الحافظة المسحوبة مباشرة
     for (const item of items) {
       if (item.type && item.type.startsWith('image/')) {
         const file = item.getAsFile();
-        if (file) imageFiles.push(file);
+        if (file) rawImageFiles.push(file);
       } else if (item.kind === 'file') {
         const file = item.getAsFile();
         if (file && (file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(file.name))) {
-          imageFiles.push(file);
+          rawImageFiles.push(file);
         }
       }
     }
 
     // 2. فحص قائمة الملفات في حال عدم وجود صورة في العناصر
-    if (imageFiles.length === 0) {
+    if (rawImageFiles.length === 0) {
       for (const file of files) {
         if (file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(file.name)) {
-          imageFiles.push(file);
+          rawImageFiles.push(file);
         }
       }
     }
 
-    // 3. قراءة كافة الصور وضغطها تلقائياً وإضافتها للمعاينة
+    // تنقية وتجميع الصور المتطابقة بالـ size و type لتجنب التكرار من اسكرين شوت ويندوز
+    const imageFiles: File[] = [];
+    const seenKeys = new Set<string>();
+    for (const f of rawImageFiles) {
+      const key = `${f.name}_${f.size}_${f.type}`;
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        imageFiles.push(f);
+      }
+    }
+
+    // 3. قراءة كافة الصور وضغطها تلقائياً وإضافتها للمعاينة (صورة واحدة فقط بدون تكرار)
     if (imageFiles.length > 0) {
       const readPromises = imageFiles.map(file => {
         return new Promise<string>((resolve) => {
@@ -593,7 +604,15 @@ const Dashboard: React.FC<DashboardProps> = ({
       });
 
       const results = await Promise.all(readPromises);
-      setChatImageUrls(prev => [...prev, ...results]);
+      setChatImageUrls(prev => {
+        const next = [...prev];
+        for (const res of results) {
+          if (!next.includes(res)) {
+            next.push(res);
+          }
+        }
+        return next;
+      });
       return true;
     }
 
@@ -601,7 +620,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     const textData = clipboardData.getData('text/plain') || '';
     if (textData.trim().startsWith('data:image/')) {
       const compressed = await compressImageDataUrl(textData.trim());
-      setChatImageUrls(prev => [...prev, compressed]);
+      setChatImageUrls(prev => prev.includes(compressed) ? prev : [...prev, compressed]);
       return true;
     }
 
@@ -3530,7 +3549,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
                           <div ref={chatEndRef} />
                         </div>
 
-                        <form onSubmit={handleSendManualMessage} onPaste={handlePasteInChat} style={{ ...styles.chatPaneInputArea, flexDirection: 'column', gap: '8px' }}>
+                        <form onSubmit={handleSendManualMessage} style={{ ...styles.chatPaneInputArea, flexDirection: 'column', gap: '8px' }}>
                           {/* شريط الردود السريعة المحفوظة */}
                           {selectedConvWindowOpen && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflowX: 'auto', width: '100%', paddingBottom: '4px', scrollbarWidth: 'thin' }}>
@@ -3745,7 +3764,6 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
                               type="text"
                               value={chatInput}
                               onChange={e => setChatInput(e.target.value)}
-                              onPaste={handlePasteInChat}
                               placeholder={selectedConvWindowOpen ? `اكتب رسالة للرد كـ (${currentUsername}) أو الصق صورة/نص (Ctrl+V)...` : 'إرسال الرسائل العادية معطل - يرجى اختيار قالب رسمي من الزر بالأعلى'}
                               disabled={!selectedConvWindowOpen}
                               style={{
