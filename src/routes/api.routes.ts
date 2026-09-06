@@ -16,6 +16,7 @@ import {
   updateConversationCategory,
   updateConversationStatus,
   archiveConversation,
+  deleteConversation,
   sendManualMessage,
   sendTemplateMessageEndpoint,
   handleDemoChat,
@@ -68,6 +69,7 @@ router.get('/conversations/:id/messages', authMiddleware, getConversationMessage
 router.put('/conversations/:id/category', authMiddleware, updateConversationCategory);
 router.put('/conversations/:id/status', authMiddleware, updateConversationStatus);
 router.put('/conversations/:id/archive', authMiddleware, archiveConversation);
+router.delete('/conversations/:id', authMiddleware, deleteConversation);
 router.post('/conversations/:id/messages', authMiddleware, sendManualMessage);
 router.post('/conversations/:id/send-manual', authMiddleware, sendManualMessage);
 router.post('/conversations/:id/send-template', authMiddleware, sendTemplateMessageEndpoint);

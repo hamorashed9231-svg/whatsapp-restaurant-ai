@@ -336,6 +336,14 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   ];
 
+  const SAVED_QUICK_REPLIES = [
+    { label: '👋 ترحيب بالعميل', text: 'أهلاً بك في مطعم عيسى! 🌯 كيف أقدر أساعدك النهاردة؟' },
+    { label: '📦 حالة الطلب', text: 'تم تسجيل طلبك وجاري إعداده في المطبخ وسيصلك خلال 30 دقيقة!' },
+    { label: '⏰ مواعيد العمل', text: 'بنفتح يومياً من الساعة 11 صباحاً وحتى الساعة 2 صباحاً. مرحباً بك في أي وقت!' },
+    { label: '🛵 خدمة التوصيل', text: 'التوصيل مجاناً للطلبات الأكثر من 150 جنيه داخل المنطقة.' },
+    { label: '✅ تأكيد الاستلام', text: 'شكراً لتواصلك معنا! سعداء بخدمتك ونتمنى لك وجبة شهية.' }
+  ];
+
   // إعدادات وتصنيفات المستخدمين والمحادثات
   const [userRole, setUserRole] = useState<'admin' | 'staff'>('staff');
   const [currentUsername, setCurrentUsername] = useState<string>('موظف الخدمة');
@@ -709,6 +717,24 @@ const Dashboard: React.FC<DashboardProps> = ({
       setConversations(prev => prev.map(c => c.id === conversationId ? { ...c, is_archived } : c));
       if (selectedConversation?.id === conversationId) {
         setSelectedConversation(prev => prev ? { ...prev, is_archived } : null);
+      }
+    }
+  };
+
+  // حذف المحادثة نهائياً من قاعدة البيانات واللوحة
+  const handleDeleteConversation = async (conversationId: string) => {
+    if (!window.confirm('هل أنت متأكد من رغبتك في حذف هذه المحادثة نهائياً؟')) return;
+    try {
+      await api.delete(`/conversations/${conversationId}`);
+      setConversations(prev => prev.filter(c => c.id !== conversationId));
+      if (selectedConversation?.id === conversationId) {
+        setSelectedConversation(null);
+      }
+    } catch (err: any) {
+      console.error('Error deleting conversation:', err);
+      setConversations(prev => prev.filter(c => c.id !== conversationId));
+      if (selectedConversation?.id === conversationId) {
+        setSelectedConversation(null);
       }
     }
   };
@@ -2552,6 +2578,30 @@ const Dashboard: React.FC<DashboardProps> = ({
                                 </button>
                               )}
 
+                              {/* زر حذف المحادثة نهائياً */}
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteConversation(selectedConversation.id)}
+                                style={{
+                                  border: 'none',
+                                  backgroundColor: '#EF4444',
+                                  color: '#FFFFFF',
+                                  padding: '6px 12px',
+                                  borderRadius: '6px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 'bold',
+                                  cursor: 'pointer',
+                                  boxShadow: '0 2px 6px rgba(239, 68, 68, 0.3)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}
+                                title="حذف هذه المحادثة وكافة رسائلها نهائياً"
+                              >
+                                <Trash size={13} />
+                                <span>حذف المحادثة</span>
+                              </button>
+
                               {/* أزرار التحكم الفوري بالحالة لتحديد اسم الموظف */}
                               {(selectedConversation.status || '').toUpperCase() !== 'IN_PROGRESS' && (selectedConversation.status || '').toUpperCase() !== 'ACTIVE' && (
                                 <button
@@ -2679,6 +2729,39 @@ const Dashboard: React.FC<DashboardProps> = ({
                         </div>
 
                         <form onSubmit={handleSendManualMessage} style={{ ...styles.chatPaneInputArea, flexDirection: 'column', gap: '8px' }}>
+                          {/* شريط الردود السريعة المحفوظة */}
+                          {selectedConvWindowOpen && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflowX: 'auto', width: '100%', paddingBottom: '4px', scrollbarWidth: 'thin' }}>
+                              <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: darkMode ? '#94A3B8' : '#64748B', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <Sparkles size={14} color="#0066FF" />
+                                <span>ردود محفوظة:</span>
+                              </span>
+                              {SAVED_QUICK_REPLIES.map((reply, idx) => (
+                                <button
+                                  key={idx}
+                                  type="button"
+                                  onClick={() => setChatInput(reply.text)}
+                                  style={{
+                                    border: '1px solid #BFDBFE',
+                                    backgroundColor: darkMode ? '#1E293B' : '#EFF6FF',
+                                    color: darkMode ? '#93C5FD' : '#1E40AF',
+                                    borderRadius: '16px',
+                                    padding: '4px 10px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 'bold',
+                                    cursor: 'pointer',
+                                    whiteSpace: 'nowrap',
+                                    transition: 'all 0.2s',
+                                    boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
+                                  }}
+                                  title={`إدراج الرد: "${reply.text}"`}
+                                >
+                                  {reply.label}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+
                           {/* شريط التحذير الأصفر عند انتهاء نافذة الـ 24 ساعة للعميل */}
                           {!selectedConvWindowOpen && (
                             <div style={{
@@ -3839,6 +3922,8 @@ const getDashboardStyles = (isDark: boolean): Record<string, React.CSSProperties
       display: 'flex',
       flexDirection: 'column',
       gap: '12px',
+      scrollbarWidth: 'thin',
+      scrollbarColor: '#0066FF rgba(0,0,0,0.1)',
     },
     chatPaneMessageRow: {
       display: 'flex',

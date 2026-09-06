@@ -237,49 +237,13 @@ export const getMenu = async (req: Request, res: Response): Promise<void> => {
         where: targetRestId && targetRestId !== 'default' ? { restaurant_id: targetRestId } : undefined,
         orderBy: { category: 'asc' }
       });
-
-      if (dbItems.length === 0) {
-        dbItems = await prisma.menuItem.findMany({
-          orderBy: { category: 'asc' }
-        });
-      }
     } catch (dbErr: any) {
       console.warn('تنبيه: تعذر الوصول لقاعدة البيانات، يتم إرجاع البيانات المؤقتة.');
       res.status(200).json(memoryMenuItems);
       return;
     }
 
-    if (dbItems.length > 0) {
-      res.status(200).json(dbItems);
-      return;
-    }
-
-    // لو قاعدة البيانات فاضية → أدخل الأصناف الافتراضية كـ seed لمرة واحدة
-    if (rest) {
-      const seededItems = [];
-      for (const item of memoryMenuItems) {
-        try {
-          const created = await prisma.menuItem.create({
-            data: {
-              restaurant_id: rest.id,
-              name: item.name,
-              description: item.description || '',
-              price: item.price,
-              category: item.category,
-              image_url: item.image_url || '',
-              is_available: item.is_available !== undefined ? item.is_available : true
-            }
-          });
-          seededItems.push(created);
-        } catch (e) {}
-      }
-      if (seededItems.length > 0) {
-        res.status(200).json(seededItems);
-        return;
-      }
-    }
-
-    res.status(200).json(memoryMenuItems);
+    res.status(200).json(dbItems);
   } catch (error: any) {
     res.status(200).json(memoryMenuItems);
   }
@@ -953,6 +917,24 @@ export const archiveConversation = async (req: Request, res: Response): Promise<
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message });
   }
+};
+
+/**
+ * حذف المحادثة نهائياً من قاعدة البيانات والذاكرة
+ */
+export const deleteConversation = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+
+  memoryConversations = memoryConversations.filter(c => c.id !== id);
+
+  try {
+    await prisma.message.deleteMany({ where: { conversation_id: id } }).catch(() => {});
+    await prisma.conversation.delete({ where: { id } }).catch(() => {});
+  } catch (e: any) {
+    console.warn('[Delete Conversation Warn]:', e.message);
+  }
+
+  res.status(200).json({ status: 'success', message: 'تم حذف المحادثة بنجاح!' });
 };
 
 /**
