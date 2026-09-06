@@ -565,57 +565,72 @@ const Dashboard: React.FC<DashboardProps> = ({
     setTimeout(() => setCopiedMsgIndex(null), 2000);
   };
 
-  const handlePasteInChat = async (e: React.ClipboardEvent) => {
-    const clipboardData = e.clipboardData;
-    if (!clipboardData) return;
+  const processClipboardData = async (clipboardData: DataTransfer): Promise<boolean> => {
+    if (!clipboardData) return false;
 
     const items = Array.from(clipboardData.items || []);
     const files = Array.from(clipboardData.files || []);
 
-    const imageItems = items.filter(item => item.type.startsWith('image/'));
-    const imageFiles = files.filter(file => file.type.startsWith('image/'));
+    const imageFiles: File[] = [];
 
-    if (imageItems.length > 0 || imageFiles.length > 0) {
-      e.preventDefault();
-
-      const readPromises: Promise<string>[] = [];
-
-      for (const item of imageItems) {
+    // 1. فحص عناصر الحافظة المسحوبة مباشرة
+    for (const item of items) {
+      if (item.type && item.type.startsWith('image/')) {
         const file = item.getAsFile();
-        if (file) {
-          readPromises.push(
-            new Promise((resolve) => {
-              const reader = new FileReader();
-              reader.onloadend = async () => {
-                const raw = reader.result as string;
-                const compressed = await compressImageDataUrl(raw);
-                resolve(compressed);
-              };
-              reader.readAsDataURL(file);
-            })
-          );
+        if (file) imageFiles.push(file);
+      } else if (item.kind === 'file') {
+        const file = item.getAsFile();
+        if (file && (file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(file.name))) {
+          imageFiles.push(file);
         }
       }
+    }
 
-      if (readPromises.length === 0 && imageFiles.length > 0) {
-        for (const file of imageFiles) {
-          readPromises.push(
-            new Promise((resolve) => {
-              const reader = new FileReader();
-              reader.onloadend = async () => {
-                const raw = reader.result as string;
-                const compressed = await compressImageDataUrl(raw);
-                resolve(compressed);
-              };
-              reader.readAsDataURL(file);
-            })
-          );
+    // 2. فحص قائمة الملفات في حال عدم وجود صورة في العناصر
+    if (imageFiles.length === 0) {
+      for (const file of files) {
+        if (file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(file.name)) {
+          imageFiles.push(file);
         }
       }
+    }
 
-      if (readPromises.length > 0) {
-        const results = await Promise.all(readPromises);
-        setChatImageUrls(prev => [...prev, ...results]);
+    // 3. قراءة كافة الصور وضغطها تلقائياً وإضافتها للمعاينة
+    if (imageFiles.length > 0) {
+      const readPromises = imageFiles.map(file => {
+        return new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = async () => {
+            const raw = reader.result as string;
+            const compressed = await compressImageDataUrl(raw);
+            resolve(compressed);
+          };
+          reader.readAsDataURL(file);
+        });
+      });
+
+      const results = await Promise.all(readPromises);
+      setChatImageUrls(prev => [...prev, ...results]);
+      return true;
+    }
+
+    // 4. فحص ما إذا كان النص الملصق عبارة عن صورة base64 مباشرة
+    const textData = clipboardData.getData('text/plain') || '';
+    if (textData.trim().startsWith('data:image/')) {
+      const compressed = await compressImageDataUrl(textData.trim());
+      setChatImageUrls(prev => [...prev, compressed]);
+      return true;
+    }
+
+    return false;
+  };
+
+  const handlePasteInChat = async (e: React.ClipboardEvent) => {
+    if (e.clipboardData) {
+      const handled = await processClipboardData(e.clipboardData);
+      if (handled) {
+        e.preventDefault();
+        e.stopPropagation();
       }
     }
   };
@@ -888,6 +903,29 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
 
     return () => clearInterval(interval);
   }, [restaurant, selectedConversation, unreadConvIds, soundEnabled]);
+
+  // استماع حدث اللصق السريع (Ctrl + V) للصور على مستوى الشاشة بالكامل أثناء فتح شات
+  useEffect(() => {
+    const handleGlobalPaste = async (e: ClipboardEvent) => {
+      if (activeTab !== 'conversations' || !selectedConversation || !selectedConvWindowOpen) return;
+
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') && target.id !== 'chat-input-field') {
+        return;
+      }
+
+      if (e.clipboardData) {
+        const handled = await processClipboardData(e.clipboardData);
+        if (handled) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }
+    };
+
+    window.addEventListener('paste', handleGlobalPaste);
+    return () => window.removeEventListener('paste', handleGlobalPaste);
+  }, [activeTab, selectedConversation, selectedConvWindowOpen]);
 
   // تحديث التبويب النشط أو تنشيط جلب بيانات إضافية
   const changeTab = async (tab: typeof activeTab) => {
@@ -3721,6 +3759,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
                             </button>
 
                             <input
+                              id="chat-input-field"
                               type="text"
                               value={chatInput}
                               onChange={e => setChatInput(e.target.value)}
