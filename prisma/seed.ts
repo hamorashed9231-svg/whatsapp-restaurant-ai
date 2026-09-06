@@ -5,22 +5,22 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('جاري بدء عملية تهيئة البيانات (Seeding)...');
 
-  // 1. تنظيف قاعدة البيانات القديمة (اختياري)
+  // 1. تنظيف قاعدة البيانات القديمة
   await prisma.reservation.deleteMany({});
   await prisma.order.deleteMany({});
   await prisma.conversation.deleteMany({});
   await prisma.menuItem.deleteMany({});
   await prisma.restaurant.deleteMany({});
 
-  // 2. إنشاء مطعم افتراضي
+  // 2. إنشاء مطعم عم عيسى
   const oneYearFromNow = new Date();
   oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
 
   const restaurant = await prisma.restaurant.create({
     data: {
-      name: 'مطعم ومطبخ البركة شاورما',
+      name: 'مطعم عم عيسى',
       phone_number: '+201000000000',
-      whatsapp_number_id: '1234567890', // معرف الواتساب بيزنس
+      whatsapp_number_id: '1234567890',
       subscription_tier: 'PREMIUM',
       subscription_status: 'ACTIVE',
       subscription_expires_at: oneYearFromNow,
@@ -28,58 +28,6 @@ async function main() {
   });
 
   console.log(`تم إنشاء المطعم: ${restaurant.name} (معرف: ${restaurant.id})`);
-
-  // 3. إنشاء عناصر قائمة الطعام (Menu Items بالجنيه المصري)
-  const menuItems = [
-    {
-      restaurant_id: restaurant.id,
-      name: 'شاورما دجاج سوبر',
-      description: 'شاورما دجاج بخبز الصاج المميز مع الثوم والبطاطس والخلطة الخاصة',
-      price: 85.00,
-      category: 'وجبات رئيسية',
-      is_available: true,
-    },
-    {
-      restaurant_id: restaurant.id,
-      name: 'بيتزا مارغريتا عائلية',
-      description: 'عجينة بيتزا هشة مع صلصة الطماطم الإيطالية وجبنة الموزاريلا الفاخرة والأوريغانو',
-      price: 145.00,
-      category: 'وجبات رئيسية',
-      is_available: true,
-    },
-    {
-      restaurant_id: restaurant.id,
-      name: 'بطاطس مقلية مع الجبنة',
-      description: 'أصابع بطاطس مقرمشة مغطاة بصلصة الجبن الغنية',
-      price: 45.00,
-      category: 'مقبلات',
-      is_available: true,
-    },
-    {
-      restaurant_id: restaurant.id,
-      name: 'عصير برتقال طازج',
-      description: 'عصير برتقال طبيعي 100% معصور طازجاً بدون إضافة سكر',
-      price: 35.00,
-      category: 'مشروبات',
-      is_available: true,
-    },
-    {
-      restaurant_id: restaurant.id,
-      name: 'كولا بارد',
-      description: 'علبة كولا مثلجة 330 مل',
-      price: 20.00,
-      category: 'مشروبات',
-      is_available: true,
-    },
-  ];
-
-  for (const item of menuItems) {
-    const createdItem = await prisma.menuItem.create({
-      data: item,
-    });
-    console.log(`تم إضافة صنف للمنيو: ${createdItem.name} (${createdItem.price} ج.م)`);
-  }
-
   console.log('✅ اكتملت عملية تهيئة البيانات بنجاح!');
 }
 
@@ -91,3 +39,4 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
+

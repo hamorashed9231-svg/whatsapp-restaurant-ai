@@ -218,7 +218,7 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
         oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
         restaurant = await prisma.restaurant.create({
           data: {
-            name: 'مطعم ومطبخ البركة شاورما',
+            name: 'مطعم عم عيسى',
             phone_number: '+201000000000',
             whatsapp_number_id: whatsappNumberId || '1234567890',
             subscription_tier: 'PREMIUM',
