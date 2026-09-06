@@ -1483,4 +1483,89 @@ export const deleteConversationMessage = async (req: AuthenticatedRequest, res: 
   }
 };
 
+/**
+ * 24. جلب تصنيفات المنيو المخصصة للمطعم المعتمدة في الداتابيز
+ */
+export const getCategories = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+  try {
+    const rest = await getOrCreateDefaultRestaurant(id);
+    const targetRestId = rest ? rest.id : (id !== 'default' ? id : 'restaurant-am-eissa');
+    const restaurant = await prisma.restaurant.findUnique({
+      where: { id: targetRestId },
+      select: { custom_categories: true }
+    });
+    const categories = (restaurant?.custom_categories as string[]) || [];
+    res.status(200).json(categories);
+  } catch (error: any) {
+    res.status(200).json([]);
+  }
+};
+
+/**
+ * 25. تحديث حفظ تصنيفات المنيو المخصصة للمطعم في قاعدة البيانات
+ */
+export const updateCategories = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const { categories } = req.body;
+  try {
+    const rest = await getOrCreateDefaultRestaurant(id);
+    const targetRestId = rest ? rest.id : (id !== 'default' ? id : 'restaurant-am-eissa');
+    const updated = await prisma.restaurant.update({
+      where: { id: targetRestId },
+      data: { custom_categories: categories || [] }
+    });
+    res.status(200).json({
+      status: 'success',
+      categories: updated.custom_categories,
+      message: 'تم حفظ التصنيفات بنجاح!'
+    });
+  } catch (error: any) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+/**
+ * 26. جلب الردود السريعة المخصصة للمطعم من قاعدة البيانات
+ */
+export const getQuickReplies = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+  try {
+    const rest = await getOrCreateDefaultRestaurant(id);
+    const targetRestId = rest ? rest.id : (id !== 'default' ? id : 'restaurant-am-eissa');
+    const restaurant = await prisma.restaurant.findUnique({
+      where: { id: targetRestId },
+      select: { quick_replies: true }
+    });
+    const replies = (restaurant?.quick_replies as any[]) || null;
+    res.status(200).json(replies);
+  } catch (error: any) {
+    res.status(200).json(null);
+  }
+};
+
+/**
+ * 27. تحديث الردود السريعة المخصصة للمطعم في قاعدة البيانات
+ */
+export const updateQuickReplies = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const { replies } = req.body;
+  try {
+    const rest = await getOrCreateDefaultRestaurant(id);
+    const targetRestId = rest ? rest.id : (id !== 'default' ? id : 'restaurant-am-eissa');
+    const updated = await prisma.restaurant.update({
+      where: { id: targetRestId },
+      data: { quick_replies: replies || [] }
+    });
+    res.status(200).json({
+      status: 'success',
+      replies: updated.quick_replies,
+      message: 'تم حفظ الردود السريعة بنجاح!'
+    });
+  } catch (error: any) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+
 

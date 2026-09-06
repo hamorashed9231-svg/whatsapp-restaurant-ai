@@ -248,29 +248,11 @@ const saveDeletedIdsToStorage = (ids: string[], restId?: string) => {
   } catch (e) {}
 };
 
-const syncMenuItemsWithStorage = (serverItems?: any, restId?: string): MenuItem[] => {
-  const storedItems = getStoredUserItems(restId);
-
-  if (serverItems && Array.isArray(serverItems) && serverItems.length > 0) {
-    const mergedMap = new Map<string, MenuItem>();
-    serverItems.forEach(item => {
-      if (item && item.id) mergedMap.set(item.id, item);
-    });
-    storedItems.forEach(item => {
-      if (item && item.id && !mergedMap.has(item.id)) {
-        mergedMap.set(item.id, item);
-      }
-    });
-    const finalResult = Array.from(mergedMap.values());
-    saveMenuItemsToStorage(finalResult, restId);
-    return finalResult;
+const syncMenuItemsWithStorage = (serverItems?: any, _restId?: string): MenuItem[] => {
+  if (serverItems && Array.isArray(serverItems)) {
+    return serverItems;
   }
-
-  if (storedItems && storedItems.length > 0) {
-    return storedItems;
-  }
-
-  return serverItems && Array.isArray(serverItems) ? serverItems : [];
+  return [];
 };
 
 class ChatErrorBoundary extends React.Component<
@@ -824,24 +806,30 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
           logo_url: restData.logo_url || localStorage.getItem('restaurant_logo') || '',
         });
 
-        // جلب بقية البيانات
+        // جلب بقية البيانات من قاعدة البيانات المركزية
         const actualRestId = resRest.data.id;
-        const [resMenu, resOrders, resReserv, resConvers, resAiInst] = await Promise.all([
+        const [resMenu, resOrders, resReserv, resConvers, resAiInst, resCats, resQuick] = await Promise.all([
           api.get(`/restaurants/${actualRestId}/menu`),
           api.get(`/restaurants/${actualRestId}/orders`),
           api.get(`/restaurants/${actualRestId}/reservations`),
           api.get(`/restaurants/${actualRestId}/conversations`),
-          api.get(`/restaurants/${actualRestId}/ai-instructions`)
+          api.get(`/restaurants/${actualRestId}/ai-instructions`),
+          api.get(`/restaurants/${actualRestId}/categories`),
+          api.get(`/restaurants/${actualRestId}/quick-replies`)
         ]);
 
-        // فحص وحفظ الأصناف بالذاكرة المحفوفة بالدمج الذكي ومنع عودة المحذوفات
-        const syncedMenu = syncMenuItemsWithStorage(resMenu?.data, actualRestId);
-        setMenuItems(syncedMenu);
-
-        setOrders(resOrders.data);
-        setReservations(resReserv.data);
-        setConversations(resConvers.data);
+        setMenuItems(resMenu.data || []);
+        setOrders(resOrders.data || []);
+        setReservations(resReserv.data || []);
+        setConversations(resConvers.data || []);
         setAiInstructions(resAiInst.data.instructions || '');
+
+        if (Array.isArray(resCats.data) && resCats.data.length > 0) {
+          setCustomCategories(resCats.data);
+        }
+        if (Array.isArray(resQuick.data) && resQuick.data.length > 0) {
+          setSavedReplies(resQuick.data);
+        }
       } catch (err: any) {
         console.error('خطأ أثناء جلب بيانات لوحة التحكم:', err);
         setError(err.response?.data?.message || 'عذراً، فشل الاتصال بالباك إند وقاعدة البيانات. تأكد من تشغيل المخدم وتهيئة قاعدة البيانات.');
@@ -934,9 +922,12 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
     if (!restaurant) return;
     try {
       if (tab === 'menu') {
-        const res = await api.get(`/restaurants/${restaurant.id}/menu`);
-        const syncedMenu = syncMenuItemsWithStorage(res?.data, restaurant.id);
-        setMenuItems(syncedMenu);
+        const [resMenu, resCats] = await Promise.all([
+          api.get(`/restaurants/${restaurant.id}/menu`),
+          api.get(`/restaurants/${restaurant.id}/categories`)
+        ]);
+        setMenuItems(resMenu.data || []);
+        if (Array.isArray(resCats.data)) setCustomCategories(resCats.data);
       } else if (tab === 'orders') {
         const res = await api.get(`/restaurants/${restaurant.id}/orders`);
         setOrders(res.data);
@@ -1110,7 +1101,8 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
 
     const updated = [...savedReplies, newItem];
     setSavedReplies(updated);
-    saveQuickRepliesToStorage(updated, restaurantId);
+    const restId = restaurant?.id || restaurantId;
+    api.post(`/restaurants/${restId}/quick-replies`, { replies: updated }).catch(() => {});
 
     setNewReplyLabel('');
     setNewReplyText('');
@@ -1123,7 +1115,8 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
     if (!window.confirm('هل أنت متأكد من حذف هذا الرد المحفوظ؟')) return;
     const updated = savedReplies.filter(r => r.id !== id);
     setSavedReplies(updated);
-    saveQuickRepliesToStorage(updated, restaurantId);
+    const restId = restaurant?.id || restaurantId;
+    api.post(`/restaurants/${restId}/quick-replies`, { replies: updated }).catch(() => {});
   };
 
   // دالة تحديد الألوان والبادجات للحالات الـ 3 (غير مردود، جاري الرد، مغلقة)
@@ -1395,48 +1388,22 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
     if (menuForm.category && !customCategories.includes(menuForm.category) && !DEFAULT_CATEGORIES.includes(menuForm.category)) {
       const updatedCats = [...customCategories, menuForm.category];
       setCustomCategories(updatedCats);
-      saveCustomCategoriesToStorage(updatedCats, restId);
+      api.post(`/restaurants/${restId}/categories`, { categories: updatedCats }).catch(() => {});
     }
-
-    // 1. التحديث الفوري المباشر في الـ State والـ LocalStorage (لا ينتظر الـ API)
-    setMenuItems(prev => {
-      let nextList: MenuItem[];
-      if (editingItem) {
-        nextList = prev.map(m => m.id === editingItem.id ? fullItem : m);
-      } else {
-        nextList = [...prev.filter(m => m.id !== targetId), fullItem];
-      }
-      saveMenuItemsToStorage(nextList, restId);
-      return nextList;
-    });
 
     setShowAddMenuModal(false);
 
-    // 2. إرسال الطلب للباك إند وتحديث الـ ID إذا تم إرجاع عنصر معتمد من DB
     try {
       if (editingItem) {
-        const res = await api.put(`/menu/${editingItem.id}`, dataPayload);
-        if (res.data && res.data.item) {
-          const serverItem = res.data.item;
-          setMenuItems(prev => {
-            const nextList = prev.map(m => m.id === editingItem.id ? serverItem : m);
-            saveMenuItemsToStorage(nextList, restId);
-            return nextList;
-          });
-        }
+        await api.put(`/menu/${editingItem.id}`, dataPayload);
       } else {
-        const res = await api.post(`/restaurants/${restaurant.id}/menu`, dataPayload);
-        if (res.data && res.data.item) {
-          const serverItem = res.data.item;
-          setMenuItems(prev => {
-            const nextList = prev.map(m => (m.id === targetId || m.id === serverItem.id) ? serverItem : m);
-            saveMenuItemsToStorage(nextList, restId);
-            return nextList;
-          });
-        }
+        await api.post(`/restaurants/${restaurant.id}/menu`, dataPayload);
       }
-    } catch (err) {
-      console.warn('تنبيه: الصنف محفوظ ومستمر محلياً بالذاكرة الدائمة للنظام');
+      const resMenu = await api.get(`/restaurants/${restaurant.id}/menu`);
+      setMenuItems(resMenu.data || []);
+    } catch (err: any) {
+      console.error('خطأ أثناء حفظ الصنف:', err);
+      alert(err.response?.data?.message || 'فشل حفظ الصنف في قاعدة البيانات.');
     }
   };
 
@@ -1461,10 +1428,9 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
       setImportSuccess(res.data.message || 'تم الاستيراد بنجاح!');
       setImportFile(null);
       
-      // تحديث قائمة الطعام من السيرفر ومزامنتها
+      // تحديث قائمة الطعام من قاعدة البيانات المركزية
       const resMenu = await api.get(`/restaurants/${restaurant.id}/menu`);
-      const syncedMenu = syncMenuItemsWithStorage(resMenu?.data, restaurant.id);
-      setMenuItems(syncedMenu);
+      setMenuItems(resMenu.data || []);
 
       // إغلاق المودال بعد ثانيتين
       setTimeout(() => {
@@ -1480,7 +1446,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
     }
   };
 
-  const handleDeleteMenuItem = (itemId: string, e?: React.MouseEvent) => {
+  const handleDeleteMenuItem = async (itemId: string, e?: React.MouseEvent) => {
     if (e) {
       e.stopPropagation();
       e.preventDefault();
@@ -1488,28 +1454,17 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
 
     if (!window.confirm('هل أنت متأكد من رغبتك في حذف هذا الصنف من قائمة الطعام نهائياً؟')) return;
 
-    const restId = restaurant?.id || restaurantId;
-
-    // 1. تحديث تفاعلي فوري للشاشة (0ms INP Blocking)
     setMenuItems(prev => prev.filter(m => m && m.id !== itemId));
 
-    // 2. ترحيل عمليات التخزين والـ Serialization والاتصال بالباك إند إلى الخلفية دون تجميد الواجهة
-    setTimeout(async () => {
-      try {
-        const currentDeleted = getStoredDeletedIds(restId);
-        if (!currentDeleted.includes(itemId)) {
-          saveDeletedIdsToStorage([...currentDeleted, itemId], restId);
-        }
-
-        const currentItems = getStoredUserItems(restId);
-        const nextList = currentItems.filter(m => m && m.id !== itemId);
-        saveMenuItemsToStorage(nextList, restId);
-
-        await api.delete(`/menu/${itemId}`);
-      } catch (err) {
-        console.warn('تم الحذف النهائي وتثبيته في الذاكرة الدائمة للنظام');
+    try {
+      await api.delete(`/menu/${itemId}`);
+      if (restaurant) {
+        const resMenu = await api.get(`/restaurants/${restaurant.id}/menu`);
+        setMenuItems(resMenu.data || []);
       }
-    }, 0);
+    } catch (err: any) {
+      console.warn('خطأ أثناء حذف الصنف من السيرفر:', err);
+    }
   };
 
   const handleSaveSettings = async (e: React.FormEvent) => {
@@ -2498,7 +2453,8 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
                                     if (!customCategories.includes(newCat) && !DEFAULT_CATEGORIES.includes(newCat)) {
                                       const updated = [...customCategories, newCat];
                                       setCustomCategories(updated);
-                                      saveCustomCategoriesToStorage(updated, restaurantId);
+                                      const restId = restaurant?.id || restaurantId;
+                                      api.post(`/restaurants/${restId}/categories`, { categories: updated }).catch(() => {});
                                     }
                                     setMenuForm({ ...menuForm, category: newCat });
                                   }
@@ -2629,7 +2585,8 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
                           if (!customCategories.includes(catName) && !DEFAULT_CATEGORIES.includes(catName)) {
                             const updated = [...customCategories, catName];
                             setCustomCategories(updated);
-                            saveCustomCategoriesToStorage(updated, restaurantId);
+                            const restId = restaurant?.id || restaurantId;
+                            api.post(`/restaurants/${restId}/categories`, { categories: updated }).catch(() => {});
                           }
                           setNewCategoryManagerInput('');
                         }
@@ -2678,7 +2635,8 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
                                   if (window.confirm(`هل أنت متأكد من حذف تصنيف "${cat}"؟`)) {
                                     const updated = customCategories.filter(c => c !== cat);
                                     setCustomCategories(updated);
-                                    saveCustomCategoriesToStorage(updated, restaurantId);
+                                    const restId = restaurant?.id || restaurantId;
+                                    api.post(`/restaurants/${restId}/categories`, { categories: updated }).catch(() => {});
                                     if (selectedMenuCategoryFilter === cat) {
                                       setSelectedMenuCategoryFilter('ALL');
                                     }

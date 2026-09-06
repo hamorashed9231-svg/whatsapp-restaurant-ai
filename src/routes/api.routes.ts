@@ -32,7 +32,11 @@ import {
   syncCatalogEndpoint,
   sendCatalogMessageEndpoint,
   editConversationMessage,
-  deleteConversationMessage
+  deleteConversationMessage,
+  getCategories,
+  updateCategories,
+  getQuickReplies,
+  updateQuickReplies
 } from '../controllers/api.controller';
 import { upload } from '../middlewares/upload.middleware';
 
@@ -54,11 +58,15 @@ router.get('/restaurants/:id', authMiddleware, getRestaurant);
 router.put('/restaurants/:id', authMiddleware, updateRestaurantSettings);
 router.put('/restaurants/:id/settings', authMiddleware, updateRestaurantSettings);
 
-// قائمة الطعام (المنيو) ومزامنة الكتالوج
+// قائمة الطعام (المنيو) والتصنيفات ومزامنة الكتالوج
 router.get('/restaurants/:id/menu', authMiddleware, getMenu);
 router.post('/restaurants/:id/menu', authMiddleware, addMenuItem);
 router.put('/menu/:itemId', authMiddleware, updateMenuItem);
 router.delete('/menu/:itemId', authMiddleware, deleteMenuItem);
+router.get('/restaurants/:id/categories', authMiddleware, getCategories);
+router.post('/restaurants/:id/categories', authMiddleware, updateCategories);
+router.get('/restaurants/:id/quick-replies', authMiddleware, getQuickReplies);
+router.post('/restaurants/:id/quick-replies', authMiddleware, updateQuickReplies);
 router.post('/restaurants/:id/menu/import', authMiddleware, upload.single('file'), importMenu);
 router.post('/restaurants/:id/catalog/sync', authMiddleware, syncCatalogEndpoint);
 
