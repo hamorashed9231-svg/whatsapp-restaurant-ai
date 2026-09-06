@@ -1786,6 +1786,14 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
             <span>إعدادات النظام</span>
           </button>
 
+          <button
+            onClick={onBackToLanding}
+            style={{ ...styles.navItem }}
+          >
+            <LogOut size={20} style={{ transform: 'rotate(180deg)' }} />
+            <span>العودة لصفحة الهبوط</span>
+          </button>
+
           {userRole === 'admin' && (
             <>
               <button
@@ -1859,8 +1867,8 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
 
       {/* محتوى لوحة التحكم الأساسي (Main Content) */}
       <main style={{ ...styles.mainContent, width: '100%' }}>
-        {/* الهيدر العلوي */}
-        <header style={styles.topBar}>
+        {/* الهيدر العلوي المبسط والنظيف - يحتوي فقط على زر القائمة واسم صاحب الحساب */}
+        <header style={{ ...styles.topBar, padding: '10px 20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <button
               onClick={() => setIsSidebarOpen(prev => !prev)}
@@ -1869,17 +1877,17 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '8px',
-                padding: '10px 18px',
-                borderRadius: '12px',
-                fontSize: '0.95rem',
+                padding: '8px 16px',
+                borderRadius: '10px',
+                fontSize: '0.9rem',
                 fontWeight: '700',
                 cursor: 'pointer',
                 border: 'none',
-                boxShadow: '0 4px 14px rgba(0, 102, 255, 0.35)',
+                boxShadow: '0 3px 12px rgba(0, 102, 255, 0.35)',
               }}
               title="فتح قائمة الاختيارات والتبويبات"
             >
-              <Menu size={22} />
+              <Menu size={20} />
               <span>زر القائمة</span>
               {conversations.filter(c => c.category === 'COMPLAINT').length > 0 && (
                 <span style={{
@@ -1897,29 +1905,10 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
             </button>
 
             <div>
-              <h2 style={{ fontSize: '1.5rem', fontWeight: '800', color: darkMode ? '#FFFFFF' : '#0F1E36' }}>
-                {activeTab === 'overview'
-                  ? `مرحباً، ${restaurant?.name || 'مطعم عم عيسى'}`
-                  : `مرحباً، ${currentUsername}`}
+              <h2 style={{ fontSize: '1.2rem', fontWeight: '800', margin: 0, color: darkMode ? '#FFFFFF' : '#0F1E36' }}>
+                مرحباً، {currentUsername}
               </h2>
-              <p style={{ fontSize: '0.85rem', color: darkMode ? '#94A3B8' : '#5E6E85' }}>
-                {activeTab === 'overview'
-                  ? `مستوى الاشتراك: ${restaurant?.subscription_tier || 'نشط'}`
-                  : `حساب المستخدم: ${currentUsername} (${userRole === 'admin' ? 'مدير النظام' : 'موظف الخدمة'})`}
-              </p>
             </div>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            {onToggleTheme && (
-              <button onClick={onToggleTheme} className="theme-toggle-btn" title="تبديل مظهر اللوحة">
-                {darkMode ? <Sun size={18} color="#F59E0B" /> : <Moon size={18} color="#0066FF" />}
-                <span>{darkMode ? 'الوضع المضيء' : 'الوضع الداكن'}</span>
-              </button>
-            )}
-            <button onClick={onBackToLanding} className="btn btn-secondary">
-              العودة لصفحة الهبوط
-            </button>
           </div>
         </header>
 
@@ -2865,7 +2854,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
 
           {/* 5. التبويب الخامس: مراقبة المحادثات (Conversations) */}
           {activeTab === 'conversations' && (
-            <div className="animate-fade-in" style={{ ...styles.tabContent, height: 'calc(100vh - 180px)', padding: 0 }}>
+            <div className="animate-fade-in" style={{ ...styles.tabContent, height: 'calc(100vh - 85px)', padding: 0 }}>
               <div style={styles.conversationsLayout}>
                 {/* قائمة المحادثات (يسار) */}
                 <div style={styles.conversationsListPane}>
@@ -2880,26 +2869,6 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                     <h4 style={{ fontWeight: 'bold', margin: 0, fontSize: '0.95rem', color: darkMode ? '#E9EDEF' : '#111B21' }}>
                       دردشات خدمة العملاء 💬
                     </h4>
-                    <button
-                      type="button"
-                      onClick={() => setSoundEnabled(prev => !prev)}
-                      style={{
-                        padding: '4px 8px',
-                        fontSize: '0.72rem',
-                        fontWeight: 'bold',
-                        borderRadius: '6px',
-                        border: 'none',
-                        cursor: 'pointer',
-                        backgroundColor: soundEnabled ? (darkMode ? 'rgba(0, 168, 132, 0.2)' : 'rgba(16, 185, 129, 0.15)') : 'rgba(239, 68, 68, 0.15)',
-                        color: soundEnabled ? (darkMode ? '#00A884' : '#10B981') : '#EF4444',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}
-                      title={soundEnabled ? 'كتم صوت الإشعارات' : 'تفعيل صوت الإشعارات'}
-                    >
-                      {soundEnabled ? '🔔 الصوت: مفعّل' : '🔇 مكتوم'}
-                    </button>
                   </div>
                   
                   {/* مفتاح التنقل بين الدردشات النشطة والأرشيف بأسلوب كبسولة متناسق */}
@@ -3894,7 +3863,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                               type="text"
                               value={chatInput}
                               onChange={e => setChatInput(e.target.value)}
-                              placeholder={selectedConvWindowOpen ? `اكتب رسالة للرد كـ (${currentUsername}) أو الصق صورة/نص (Ctrl+V)...` : 'إرسال الرسائل العادية معطل - يرجى اختيار قالب رسمي من الزر بالأعلى'}
+                              placeholder={selectedConvWindowOpen ? 'اكتب الرسالة...' : 'إرسال الرسائل العادية معطل - يرجى اختيار قالب رسمي'}
                               disabled={!selectedConvWindowOpen}
                               style={{
                                 ...styles.chatPaneInput,
@@ -4149,6 +4118,38 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                 )}
 
                 <form onSubmit={handleSaveSettings}>
+                  {/* قسم التحكم بالصوت والإشعارات الصوتية */}
+                  <div style={{ marginBottom: '20px', padding: '16px 20px', borderRadius: '12px', backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: 'var(--text-main)' }}>
+                        🔊 إشعار نغمة الرسايل الجديدة من العملاء
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                        تشغيل تنبيه صوتي فور ورود أي رسالة جديدة غير مجاب عليها من عميل على الواتساب.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSoundEnabled(prev => !prev)}
+                      style={{
+                        padding: '8px 16px',
+                        fontSize: '0.82rem',
+                        fontWeight: 'bold',
+                        borderRadius: '8px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        backgroundColor: soundEnabled ? (darkMode ? 'rgba(0, 168, 132, 0.25)' : 'rgba(16, 185, 129, 0.15)') : 'rgba(239, 68, 68, 0.15)',
+                        color: soundEnabled ? (darkMode ? '#00A884' : '#10B981') : '#EF4444',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      {soundEnabled ? '🔔 الصوت: مفعّل' : '🔇 الصوت: مكتوم'}
+                    </button>
+                  </div>
+
                   {/* قسم إضافة وتحديث صورة اللوجو للمطعم على واتساب */}
                   <div style={{ marginBottom: '24px', padding: '20px', borderRadius: '12px', backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '20px' }}>
                     <div style={{ position: 'relative' }}>
