@@ -322,6 +322,54 @@ class WhatsAppService {
       throw new Error(`فشل إرسال قالب واتساب الرسمي: ${JSON.stringify(error.response?.data || error.message)}`);
     }
   }
+
+  /**
+   * إرسال رسالة الكتالوج الرسمي المباشرة من Meta (Native WhatsApp Catalog Message)
+   */
+  public async sendNativeCatalogMessage(
+    to: string,
+    bodyText: string = 'تفضل بتصفح قائمة الأصناف الكاملة واختيار وجبتك مباشرة 🌯',
+    thumbnailItemId?: string,
+    customPhoneNumberId?: string,
+    customToken?: string
+  ): Promise<any> {
+    const token = customToken || this.token;
+    if (!token || token.includes('ضع_توكين') || token === 'mock-token') {
+      console.log(`[WhatsApp Mock Catalog] إلى ${to}: إرسال رسالة الكتالوج المباشرة.`);
+      return { mock: true, success: true };
+    }
+
+    try {
+      const payload: any = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: to,
+        type: 'interactive',
+        interactive: {
+          type: 'catalog_message',
+          body: {
+            text: bodyText
+          },
+          action: {
+            name: 'catalog_message',
+            ...(thumbnailItemId ? { parameters: { thumbnail_product_retailer_id: thumbnailItemId } } : {})
+          }
+        }
+      };
+
+      const response = await axios.post(
+        this.getUrl(customPhoneNumberId),
+        payload,
+        { headers: this.getHeaders(customToken) }
+      );
+
+      console.log(`[WhatsApp] تم إرسال رسالة الكتالوج المباشرة للرقم ${to}`);
+      return response.data;
+    } catch (error: any) {
+      console.error('[WhatsApp Error] فشل إرسال رسالة الكتالوج المباشرة:', error.response?.data || error.message);
+      throw new Error(`فشل إرسال رسالة الكتالوج المباشرة: ${JSON.stringify(error.response?.data || error.message)}`);
+    }
+  }
 }
 
 export const whatsappService = new WhatsAppService();

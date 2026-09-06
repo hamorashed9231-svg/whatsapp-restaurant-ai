@@ -47,6 +47,7 @@ interface Restaurant {
   phone_number: string;
   whatsapp_number_id: string;
   whatsapp_access_token?: string | null;
+  catalog_id?: string | null;
   logo_url?: string | null;
   subscription_tier: string;
   subscription_status: string;
@@ -463,15 +464,50 @@ const Dashboard: React.FC<DashboardProps> = ({
     phone_number: '',
     whatsapp_number_id: '',
     whatsapp_access_token: '',
+    catalog_id: '',
     logo_url: '',
   });
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSuccess, setSettingsSuccess] = useState<string | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [catalogSyncLoading, setCatalogSyncLoading] = useState(false);
+  const [catalogSyncMessage, setCatalogSyncMessage] = useState<string | null>(null);
   const [showToken, setShowToken] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleSyncCatalog = async () => {
+    if (!restaurant) return;
+    setCatalogSyncLoading(true);
+    setCatalogSyncMessage(null);
+    try {
+      const res = await api.post(`/restaurants/${restaurant.id}/catalog/sync`);
+      setCatalogSyncMessage(res.data.message || 'تمت مزامنة الأصناف مع كتالوج Meta بنجاح!');
+      setTimeout(() => setCatalogSyncMessage(null), 5000);
+    } catch (err: any) {
+      setCatalogSyncMessage(err.response?.data?.message || 'فشلت المزامنة. تأكد من إدخال معرف الكتالوج والتوكين في الإعدادات.');
+    } finally {
+      setCatalogSyncLoading(false);
+    }
+  };
+
+  const handleSendCatalogToCustomer = async () => {
+    if (!selectedConversation) return;
+    try {
+      const res = await api.post(`/conversations/${selectedConversation.id}/send-catalog`);
+      const newCatMsg: ChatMessage = {
+        role: 'assistant',
+        content: '[🛍️ تم إرسال كتالوج الواتساب الرسمي المباشر للعميل]',
+        sender_name: currentUsername,
+        timestamp: new Date().toISOString()
+      };
+      setChatMessages(prev => [...prev, newCatMsg]);
+      alert(res.data.message || 'تم إرسال الكتالوج المباشر للعميل!');
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'فشل إرسال الكتالوج للعميل.');
+    }
+  };
 
   // تصدير قائمة الطعام (المنيو) كملف إكسيل Excel (.xlsx)
   const handleExportMenuExcel = () => {
@@ -590,6 +626,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           phone_number: restData.phone_number || '',
           whatsapp_number_id: restData.whatsapp_number_id || '',
           whatsapp_access_token: restData.whatsapp_access_token || '',
+          catalog_id: restData.catalog_id || '',
           logo_url: restData.logo_url || localStorage.getItem('restaurant_logo') || '',
         });
 
@@ -1717,6 +1754,10 @@ const Dashboard: React.FC<DashboardProps> = ({
                     </button>
                   </div>
 
+                  <button onClick={handleSyncCatalog} disabled={catalogSyncLoading} className="btn btn-secondary" style={{ backgroundColor: '#8B5CF6', color: '#FFFFFF', border: 'none' }} title="مزامنة كافة عناصر المنيو مع كتالوج Meta Commerce Catalog الرسمي على واتساب">
+                    <Sparkles size={18} />
+                    <span>{catalogSyncLoading ? 'جاري المزامنة...' : '🛍️ مزامنة كتالوج الواتساب'}</span>
+                  </button>
                   <button onClick={() => setShowImportModal(true)} className="btn btn-secondary">
                     <Upload size={18} />
                     <span>استيراد Excel</span>
@@ -1731,6 +1772,12 @@ const Dashboard: React.FC<DashboardProps> = ({
                   </button>
                 </div>
               </div>
+
+              {catalogSyncMessage && (
+                <div style={{ backgroundColor: 'rgba(139, 92, 246, 0.15)', border: '1px solid #8B5CF6', color: '#8B5CF6', padding: '12px 16px', borderRadius: '10px', fontWeight: 'bold', fontSize: '0.88rem', marginBottom: '20px' }}>
+                  {catalogSyncMessage}
+                </div>
+              )}
 
               {menuItems.length === 0 ? (
                 <div className="glass-card" style={{ padding: '40px', textAlign: 'center' }}>
@@ -2639,6 +2686,26 @@ const Dashboard: React.FC<DashboardProps> = ({
                             </div>
                             
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                              {/* زر إرسال الكتالوج الرسمي المباشر للعميل */}
+                              <button
+                                type="button"
+                                onClick={handleSendCatalogToCustomer}
+                                style={{
+                                  border: 'none',
+                                  backgroundColor: '#8B5CF6',
+                                  color: '#FFFFFF',
+                                  padding: '6px 12px',
+                                  borderRadius: '6px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 'bold',
+                                  cursor: 'pointer',
+                                  boxShadow: '0 2px 6px rgba(139, 92, 246, 0.3)'
+                                }}
+                                title="إرسال كارت الكتالوج الرسمي المباشر للعميل على الواتساب"
+                              >
+                                🛍️ إرسال الكتالوج
+                              </button>
+
                               {/* زر الأرشفة / إلغاء الأرشفة */}
                               {!selectedConversation.is_archived ? (
                                 <button
@@ -3421,6 +3488,21 @@ const Dashboard: React.FC<DashboardProps> = ({
                     </div>
                     <span style={{ fontSize: '0.75rem', color: '#5E6E85', marginTop: '6px', display: 'block' }}>
                       اترك هذا الحقل فارغاً للاستمرار في استخدام الرقم التجريبي المشترك.
+                    </span>
+                  </div>
+
+                  <div style={styles.formGroup}>
+                    <label style={styles.formLabel}>معرّف كتالوج واتساب للعلامة التجارية (Meta Commerce Catalog ID)</label>
+                    <input
+                      type="text"
+                      value={settingsForm.catalog_id || ''}
+                      onChange={e => setSettingsForm({ ...settingsForm, catalog_id: e.target.value })}
+                      disabled={settingsLoading}
+                      placeholder="أدخل معرّف الكتالوج (Catalog ID) الخاص بك من Meta Commerce Manager"
+                      style={styles.formInput}
+                    />
+                    <span style={{ fontSize: '0.75rem', color: '#5E6E85', marginTop: '6px', display: 'block' }}>
+                      عند إدخال معرف الكتالوج، سيتم رفع ومزامنة جميع أصناف المنيو تلقائياً مع كتالوج الواتساب الرسمي المباشر للعملاء! 🛍️
                     </span>
                   </div>
 

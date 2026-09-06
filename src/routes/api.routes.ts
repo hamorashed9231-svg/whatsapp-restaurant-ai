@@ -27,7 +27,10 @@ import {
   deleteUser,
   handleAdminConfigChat,
   getAiInstructions,
-  updateAiInstructions
+  updateAiInstructions,
+  updateRestaurantSettings,
+  syncCatalogEndpoint,
+  sendCatalogMessageEndpoint
 } from '../controllers/api.controller';
 import { upload } from '../middlewares/upload.middleware';
 
@@ -44,16 +47,18 @@ router.post('/demo/chat', handleDemoChat);
 
 // ================= مسارات محمية بـ JWT (Protected Routes) =================
 
-// بيانات المطعم
+// بيانات وإعدادات المطعم ومعرّف الكتالوج
 router.get('/restaurants/:id', authMiddleware, getRestaurant);
-router.put('/restaurants/:id', authMiddleware, updateRestaurant);
+router.put('/restaurants/:id', authMiddleware, updateRestaurantSettings);
+router.put('/restaurants/:id/settings', authMiddleware, updateRestaurantSettings);
 
-// قائمة الطعام (المنيو)
+// قائمة الطعام (المنيو) ومزامنة الكتالوج
 router.get('/restaurants/:id/menu', authMiddleware, getMenu);
 router.post('/restaurants/:id/menu', authMiddleware, addMenuItem);
 router.put('/menu/:itemId', authMiddleware, updateMenuItem);
 router.delete('/menu/:itemId', authMiddleware, deleteMenuItem);
 router.post('/restaurants/:id/menu/import', authMiddleware, upload.single('file'), importMenu);
+router.post('/restaurants/:id/catalog/sync', authMiddleware, syncCatalogEndpoint);
 
 // الطلبات
 router.get('/restaurants/:id/orders', authMiddleware, getOrders);
@@ -63,7 +68,7 @@ router.put('/orders/:orderId/status', authMiddleware, updateOrderStatus);
 router.get('/restaurants/:id/reservations', authMiddleware, getReservations);
 router.put('/reservations/:reservationId/status', authMiddleware, updateReservationStatus);
 
-// المحادثات الحقيقية والرسائل
+// المحادثات الحقيقية والرسائل وإرسال الكتالوج
 router.get('/restaurants/:id/conversations', authMiddleware, getConversations);
 router.get('/conversations/:id/messages', authMiddleware, getConversationMessages);
 router.put('/conversations/:id/category', authMiddleware, updateConversationCategory);
@@ -73,6 +78,7 @@ router.delete('/conversations/:id', authMiddleware, deleteConversation);
 router.post('/conversations/:id/messages', authMiddleware, sendManualMessage);
 router.post('/conversations/:id/send-manual', authMiddleware, sendManualMessage);
 router.post('/conversations/:id/send-template', authMiddleware, sendTemplateMessageEndpoint);
+router.post('/conversations/:id/send-catalog', authMiddleware, sendCatalogMessageEndpoint);
 
 // إدارة المستخدمين (للمسؤول فقط)
 router.post('/users', authMiddleware, createUser);

@@ -7,6 +7,7 @@ import { geminiService } from '../services/gemini.service';
 import { whatsappService } from '../services/whatsapp.service';
 import { hashPassword, comparePassword } from '../utils/auth';
 import { checkSessionWindow } from '../utils/sessionWindow';
+import { syncMenuItemToMetaCatalog, deleteMenuItemFromMetaCatalog, syncFullMenuToMetaCatalog } from '../services/catalog.service';
 
 /**
  * 1. تسجيل الدخول لمسؤول لوحة تحكم المطعم
@@ -1258,6 +1259,112 @@ export const updateAiInstructions = async (req: Request, res: Response): Promise
     res.status(200).json({ status: 'success', message: 'تم تحديث توجيهات المساعد الذكي بنجاح!' });
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+/**
+ * تحديث إعدادات المطعم ومعرّف الكتالوج (Meta Catalog ID)
+ */
+export const updateRestaurantSettings = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params; // restaurant_id
+  const { name, phone_number, whatsapp_number_id, whatsapp_access_token, catalog_id } = req.body;
+
+  try {
+    const updated = await prisma.restaurant.update({
+      where: { id },
+      data: {
+        ...(name ? { name } : {}),
+        ...(phone_number ? { phone_number } : {}),
+        ...(whatsapp_number_id ? { whatsapp_number_id } : {}),
+        ...(whatsapp_access_token ? { whatsapp_access_token } : {}),
+        ...(catalog_id !== undefined ? { catalog_id } : {})
+      }
+    });
+
+    res.status(200).json({
+      status: 'success',
+      restaurant: updated,
+      message: 'تم تحديث إعدادات المطعم ومعرّف الكتالوج بنجاح!'
+    });
+  } catch (err: any) {
+    console.error('Error updating restaurant settings:', err);
+    res.status(500).json({ status: 'error', message: err.message || 'فشل تحديث الإعدادات.' });
+  }
+};
+
+/**
+ * مزامنة المنيو كاملاً مع كتالوج Meta Commerce Catalog يدوياً
+ */
+export const syncCatalogEndpoint = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params; // restaurant_id
+  try {
+    const result = await syncFullMenuToMetaCatalog(id);
+    if (!result.success) {
+      res.status(400).json({ status: 'error', message: result.error || 'فشلت مزامنة الكتالوج مع Meta Commerce API.' });
+      return;
+    }
+    res.status(200).json({ status: 'success', message: `تمت مزامنة ${result.syncedCount} صنف مع كتالوج Meta الواتساب الرسمي بنجاح!` });
+  } catch (err: any) {
+    res.status(500).json({ status: 'error', message: err.message || 'حدث خطأ أثناء مزامنة الكتالوج.' });
+  }
+};
+
+/**
+ * إرسال رسالة الكتالوج الرسمي المباشرة للعميل في محادثة معينة
+ */
+export const sendCatalogMessageEndpoint = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const { id } = req.params; // conversation_id
+  const currentUsername = req.user?.username || 'موظف الخدمة';
+  try {
+    let conv: any = null;
+    try {
+      conv = await prisma.conversation.findUnique({
+        where: { id },
+        include: { restaurant: true }
+      });
+    } catch (e) {}
+
+    if (!conv) {
+      conv = memoryConversations.find(c => c.id === id);
+    }
+
+    if (!conv || !conv.customer_phone) {
+      res.status(404).json({ status: 'error', message: 'المحادثة غير موجودة أو رقم العميل مفقود.' });
+      return;
+    }
+
+    await whatsappService.sendNativeCatalogMessage(
+      conv.customer_phone,
+      'تفضل بتصفح قائمة طعام المطعم واختيار الوجبة مباشرة 🛍️',
+      undefined,
+      conv.restaurant?.whatsapp_number_id,
+      conv.restaurant?.whatsapp_access_token || undefined
+    );
+
+    const catalogMsgObj = {
+      role: 'assistant',
+      content: '[🛍️ تم إرسال كتالوج الواتساب الرسمي المباشر للعميل]',
+      sender_name: currentUsername,
+      timestamp: new Date().toISOString()
+    };
+
+    let msgs: any[] = [];
+    try {
+      msgs = typeof conv.messages_json === 'string' ? JSON.parse(conv.messages_json) : (conv.messages_json as any[]) || [];
+    } catch (e) {}
+    msgs.push(catalogMsgObj);
+
+    try {
+      await prisma.conversation.update({
+        where: { id: conv.id },
+        data: { messages_json: msgs, status: 'IN_PROGRESS', updated_at: new Date() }
+      });
+    } catch (e) {}
+
+    res.status(200).json({ status: 'success', message: 'تم إرسال الكتالوج المباشر للعميل بنجاح!', messageObj: catalogMsgObj });
+  } catch (err: any) {
+    console.error('Error sending catalog message:', err);
+    res.status(500).json({ status: 'error', message: err.message || 'فشل إرسال الكتالوج عبر الواتساب.' });
   }
 };
 

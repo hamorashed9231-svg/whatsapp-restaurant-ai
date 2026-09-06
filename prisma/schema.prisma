@@ -17,6 +17,7 @@ model Restaurant {
   phone_number            String        // رقم هاتف المطعم العام
   whatsapp_number_id      String        @unique // معرف رقم الهاتف المخصص لبيزنس واتساب لتحديد المطعم
   whatsapp_access_token   String?       // رمز الوصول (Token) المخصص للواتساب الخاص بالمطعم
+  catalog_id              String?       // معرف كتالوج المنتجات المخصص على Meta Commerce Catalog
   subscription_tier       String        // فئة الاشتراك (مثال: FREE, PREMIUM)
   subscription_status     String        // حالة الاشتراك (مثال: ACTIVE, EXPIRED, TRIAL)
   subscription_expires_at DateTime
