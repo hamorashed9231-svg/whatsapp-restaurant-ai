@@ -7,6 +7,7 @@ import { geminiService } from '../services/gemini.service';
 import { whatsappService } from '../services/whatsapp.service';
 import { hashPassword, comparePassword } from '../utils/auth';
 import { checkSessionWindow } from '../utils/sessionWindow';
+import { normalizePhone } from '../utils/phone';
 import { syncMenuItemToMetaCatalog, deleteMenuItemFromMetaCatalog, syncFullMenuToMetaCatalog } from '../services/catalog.service';
 
 /**
@@ -509,39 +510,23 @@ let memoryConversations: any[] = [
 ];
 
 /**
- * 11. جلب محادثات المطعم الحقيقية وإثرائها ببيانات نافذة الـ 24 ساعة
+ * 11. جلب محادثات المطعم الحقيقية وإثرائها ببيانات نافذة الـ 24 ساعة (معزل تماماً بكل مطعم)
  */
 export const getConversations = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params; // restaurant_id
   try {
-    try {
-      const conversations = await prisma.conversation.findMany({
-        where: { restaurant_id: id },
-        orderBy: { updated_at: 'desc' }
-      });
-      if (conversations && conversations.length > 0) {
-        const enriched = conversations.map(c => {
-          let msgs: any[] = [];
-          try {
-            msgs = typeof c.messages_json === 'string' ? JSON.parse(c.messages_json) : (c.messages_json as any[]) || [];
-          } catch (e) {}
-          const lastUserMsg = msgs.slice().reverse().find((m: any) => m.role === 'user');
-          const windowInfo = checkSessionWindow(lastUserMsg?.timestamp || lastUserMsg?.created_at || c.updated_at || c.created_at);
-          return {
-            ...c,
-            isWindowOpen: windowInfo.isWindowOpen,
-            windowExpiresAt: windowInfo.windowExpiresAt,
-            remainingHours: windowInfo.remainingHours
-          };
-        });
-        res.status(200).json(enriched);
-        return;
-      }
-    } catch (e) {}
+    const conversations = await prisma.conversation.findMany({
+      where: { restaurant_id: id },
+      orderBy: { updated_at: 'desc' }
+    });
 
-    const enrichedMemory = memoryConversations.map(c => {
-      const lastUserMsg = (c.messages_json || []).slice().reverse().find((m: any) => m.role === 'user');
-      const windowInfo = checkSessionWindow(lastUserMsg?.timestamp || c.updated_at);
+    const enriched = (conversations || []).map(c => {
+      let msgs: any[] = [];
+      try {
+        msgs = typeof c.messages_json === 'string' ? JSON.parse(c.messages_json) : (c.messages_json as any[]) || [];
+      } catch (e) {}
+      const lastUserMsg = msgs.slice().reverse().find((m: any) => m.role === 'user');
+      const windowInfo = checkSessionWindow(lastUserMsg?.timestamp || lastUserMsg?.created_at || c.updated_at || c.created_at);
       return {
         ...c,
         isWindowOpen: windowInfo.isWindowOpen,
@@ -549,9 +534,11 @@ export const getConversations = async (req: Request, res: Response): Promise<voi
         remainingHours: windowInfo.remainingHours
       };
     });
-    res.status(200).json(enrichedMemory);
+
+    res.status(200).json(enriched);
   } catch (error: any) {
-    res.status(200).json(memoryConversations);
+    console.error('Error fetching conversations:', error);
+    res.status(200).json([]);
   }
 };
 
@@ -564,40 +551,31 @@ export const getConversationMessages = async (req: Request, res: Response): Prom
     let msgs: any[] = [];
     let lastActivityDate: any = null;
 
-    try {
-      const conversation = await prisma.conversation.findUnique({
-        where: { id }
-      });
-      if (conversation) {
-        try {
-          msgs = typeof conversation.messages_json === 'string' ? JSON.parse(conversation.messages_json) : (conversation.messages_json as any[]) || [];
-        } catch (e) {}
+    const conversation = await prisma.conversation.findUnique({
+      where: { id }
+    });
 
-        if (msgs.length === 0) {
-          const dbMsgs = await prisma.message.findMany({
-            where: { conversation_id: id },
-            orderBy: { created_at: 'asc' }
-          });
-          if (dbMsgs && dbMsgs.length > 0) {
-            msgs = dbMsgs.map(m => ({
-              id: m.id,
-              role: m.role,
-              content: m.content,
-              timestamp: m.created_at.toISOString()
-            }));
-          }
+    if (conversation) {
+      try {
+        msgs = typeof conversation.messages_json === 'string' ? JSON.parse(conversation.messages_json) : (conversation.messages_json as any[]) || [];
+      } catch (e) {}
+
+      if (msgs.length === 0) {
+        const dbMsgs = await prisma.message.findMany({
+          where: { conversation_id: id },
+          orderBy: { created_at: 'asc' }
+        });
+        if (dbMsgs && dbMsgs.length > 0) {
+          msgs = dbMsgs.map(m => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            timestamp: m.created_at.toISOString()
+          }));
         }
-
-        lastActivityDate = conversation.updated_at || conversation.created_at;
       }
-    } catch (e) {}
 
-    if (msgs.length === 0) {
-      const memConv = memoryConversations.find(c => c.id === id);
-      if (memConv) {
-        msgs = memConv.messages_json || [];
-        lastActivityDate = memConv.updated_at;
-      }
+      lastActivityDate = conversation.updated_at || conversation.created_at;
     }
 
     const lastUserMsg = msgs.slice().reverse().find((m: any) => m.role === 'user');
@@ -1055,14 +1033,10 @@ export const sendManualMessage = async (req: AuthenticatedRequest, res: Response
     } catch (e) {}
 
     if (!conv) {
-      const memConv = memoryConversations.find(c => c.id === id);
-      if (memConv) {
-        conv = memConv;
-        customerPhone = memConv.customer_phone;
-        restaurantId = memConv.restaurant_id;
-        msgs = memConv.messages_json || [];
-      }
+      res.status(404).json({ status: 'error', message: 'لم يتم العثور على المحادثة.' });
+      return;
     }
+    customerPhone = normalizePhone(conv.customer_phone);
 
     // 1. فحص نافذة الـ 24 ساعة من تاريخ أحدث رسالة صادرة من العميل
     const lastUserMsg = msgs.slice().reverse().find((m: any) => m.role === 'user');

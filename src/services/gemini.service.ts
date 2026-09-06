@@ -229,16 +229,16 @@ class GeminiService {
                   resultData = await this.executeGetMenu(restaurantId, toolInput.category);
                 } else if (name === 'create_order') {
                   resultData = await this.executeCreateOrder(
-                    toolInput.restaurant_id || restaurantId,
-                    toolInput.customer_phone || customerPhone,
+                    restaurantId,
+                    customerPhone,
                     toolInput.items,
                     toolInput.delivery_address,
                     toolInput.notes
                   );
                 } else if (name === 'create_reservation') {
                   resultData = await this.executeCreateReservation(
-                    toolInput.restaurant_id || restaurantId,
-                    toolInput.customer_phone || customerPhone,
+                    restaurantId,
+                    customerPhone,
                     toolInput.date_time,
                     toolInput.party_size,
                     toolInput.customer_name,
@@ -246,7 +246,7 @@ class GeminiService {
                   );
                 } else if (name === 'send_interactive_menu') {
                   resultData = await this.executeSendInteractiveMenu(
-                    toolInput.restaurant_id || restaurantId,
+                    restaurantId,
                     restaurantName,
                     customerPhone
                   );

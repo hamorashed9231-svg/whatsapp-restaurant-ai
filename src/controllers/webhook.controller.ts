@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { whatsappQueue } from '../queues/whatsapp.queue';
 import { redisClient } from '../services/redis.service';
+import { normalizePhone } from '../utils/phone';
 
 /**
  * التحقق من خادم الويب هوك (Webhook Verification) من فيسبوك
@@ -95,8 +96,9 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // 2. استخراج رقم هاتف الزبون ومحتوى الرسالة والوسائط
-    const customerPhone = message.from;
+    // 2. استخراج رقم هاتف الزبون وتوحيد صيغته ومحتوى الرسالة والوسائط
+    const rawCustomerPhone = message.from;
+    const customerPhone = normalizePhone(rawCustomerPhone);
     let messageText = '';
     let mediaId = '';
 
@@ -129,12 +131,12 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    console.log(`[Webhook] تم استلام رسالة جديدة من [${customerPhone}] (${message.type}): "${messageText}".`);
+    console.log(`[Webhook] تم استلام رسالة جديدة من [${customerPhone}] متجهة للمعرف [${whatsappNumberId}] (${message.type}): "${messageText}".`);
 
-    // 3. دفع المهمة إلى Redis / BullMQ للمضي قدماً
+    // 3. دفع المهمة إلى Redis / BullMQ بمفتاح معزول للمطعم ورقم الزبون حصراً
     let queuedInRedis = false;
     try {
-      const pendingKey = `pending_messages:${customerPhone}`;
+      const pendingKey = `pending_messages:${whatsappNumberId}:${customerPhone}`;
       const payload = JSON.stringify({
         whatsappNumberId,
         customerPhone,
@@ -147,7 +149,7 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
       await redisClient.rpush(pendingKey, payload);
       await redisClient.expire(pendingKey, 120);
 
-      const jobId = `chat_${customerPhone}`;
+      const jobId = `chat_${whatsappNumberId}_${customerPhone}`;
       const existingJob = await whatsappQueue.getJob(jobId);
       if (existingJob) {
         await existingJob.remove().catch(() => {});
@@ -172,7 +174,7 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
       console.warn('[Webhook] تحذير: تعذر دفع المهام لـ Redis/BullMQ (سيتم الاعتماد على المعالجة المباشرة):', redisErr.message);
     }
 
-    // 4. إذا لم يتم التجميع والتحويل لـ Redis (مثلاً في بيئة Vercel بدون Redis)، قم بالمعالجة المباشرة حصرياً
+    // 4. إذا لم يتم التجميع والتحويل لـ Redis (مثلاً في بيئة Serverless)، قم بالمعالجة المباشرة حصرياً
     if (!queuedInRedis) {
       await processDirectly(whatsappNumberId, customerPhone, messageText, mediaId);
     }
@@ -185,27 +187,29 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
 };
 
 /**
- * معالجة الرسالة مباشرة لبيئات Serverless (مثل Vercel) حيث لا تضمن استمرار تشغيل Worker في الخلفية
+ * معالجة الرسالة مباشرة لبيئات Serverless (مثل Vercel) مع منع تداخل الشاتات تماماً
  */
-async function processDirectly(whatsappNumberId: string, customerPhone: string, messageText: string, mediaId?: string) {
+async function processDirectly(whatsappNumberId: string, rawCustomerPhone: string, messageText: string, mediaId?: string) {
   try {
     const { prisma } = await import('../services/prisma.service');
     const { geminiService } = await import('../services/gemini.service');
     const { whatsappService } = await import('../services/whatsapp.service');
+    const { normalizePhone: norm } = await import('../utils/phone');
 
-    // 1. تحديد المطعم المرتبط
-    let restaurant = await prisma.restaurant.findUnique({
-      where: { whatsapp_number_id: whatsappNumberId },
+    const customerPhone = norm(rawCustomerPhone);
+
+    // 1. تحديد المطعم المرتبط برقم الواتساب فقط وبدون أي افتراضات عشوائية تسبب تداخل المحادثات
+    const restaurant = await prisma.restaurant.findFirst({
+      where: {
+        OR: [
+          { whatsapp_number_id: whatsappNumberId },
+          { whatsapp_number_id: whatsappNumberId.trim() }
+        ]
+      },
     });
 
     if (!restaurant) {
-      restaurant = await prisma.restaurant.findFirst({
-        where: { subscription_status: 'ACTIVE' },
-      });
-    }
-
-    if (!restaurant) {
-      console.warn(`[DirectProcess] لم يتم العثور على مطعم نشط لرقم الواتساب: ${whatsappNumberId}`);
+      console.warn(`[DirectProcess] تم تجاهل الرسالة: لم يتم العثور على مطعم مرخص لرقم الواتساب: ${whatsappNumberId}`);
       return;
     }
 
@@ -215,7 +219,7 @@ async function processDirectly(whatsappNumberId: string, customerPhone: string, 
       if (fetchedUrl) mediaUrl = fetchedUrl;
     }
 
-    // 2. جلب المحادثة النشطة أو الأخيرة
+    // 2. جلب المحادثة النشطة أو الأخيرة للعميل مع هذا المطعم تحديداً
     let conversation = await prisma.conversation.findFirst({
       where: {
         restaurant_id: restaurant.id,

@@ -5,16 +5,19 @@ import { prisma } from '../services/prisma.service';
 import { geminiService } from '../services/gemini.service';
 import { whatsappService } from '../services/whatsapp.service';
 import { ChatMessage } from '../models/types';
+import { normalizePhone } from '../utils/phone';
 
 export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
   WHATSAPP_QUEUE_NAME,
   async (job: Job<WhatsAppMessageJob>) => {
     try {
-      const { whatsappNumberId, customerPhone, messageText: defaultMessageText } = job.data;
+      const { whatsappNumberId, customerPhone: rawCustomerPhone, messageText: defaultMessageText } = job.data;
+      const customerPhone = normalizePhone(rawCustomerPhone);
       console.log(`[BullMQ Worker] بدء معالجة المهمة #${job.id} للزبون [${customerPhone}] متجهة للمطعم [${whatsappNumberId}]`);
 
-      // 1. سحب كافة الرسائل المجمعة في القائمة المؤقتة بـ Redis وحذف المفتاح فوراً (Debouncing & Key Cleanup)
-      const pendingKey = `pending_messages:${customerPhone}`;
+      // 1. سحب كافة الرسائل المجمعة في القائمة المؤقتة المعزولة برقم المطعم والزبون من Redis
+      const targetWhatsappNumberId = whatsappNumberId;
+      const pendingKey = `pending_messages:${targetWhatsappNumberId}:${customerPhone}`;
       const rawPendingMessages = await redisClient.lrange(pendingKey, 0, -1);
       await redisClient.del(pendingKey);
 
@@ -25,9 +28,6 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
           return { messageText: item };
         }
       });
-
-      // استخدام الرقم المستلم الفعلي إن وُجد أو الرقم الافتراضي من البيانات
-      const targetWhatsappNumberId = pendingList.find(p => p.whatsappNumberId)?.whatsappNumberId || whatsappNumberId;
 
       // تجميع كافة نصوص الرسائل في نص واحد مفصول بأسطر جديدة
       let combinedMessageText = '';
@@ -45,8 +45,13 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
       console.log(`[BullMQ Worker] تم تجميع ${pendingList.length || 1} رسائل متتالية للزبون [${customerPhone}] في سياق واحد: "${combinedMessageText.replace(/\n/g, ' ')}"`);
 
       // 2. تحديد المطعم المرتبط برقم الواتساب المستلم
-      const restaurant = await prisma.restaurant.findUnique({
-        where: { whatsapp_number_id: targetWhatsappNumberId },
+      const restaurant = await prisma.restaurant.findFirst({
+        where: {
+          OR: [
+            { whatsapp_number_id: targetWhatsappNumberId },
+            { whatsapp_number_id: targetWhatsappNumberId.trim() }
+          ]
+        },
       });
 
       if (!restaurant) {
