@@ -15,7 +15,7 @@ export const WHATSAPP_QUEUE_NAME = 'whatsapp-incoming-messages';
 export const whatsappQueue = new Queue<WhatsAppMessageJob, any, string>(WHATSAPP_QUEUE_NAME, {
   connection: redisConnectionOptions,
   defaultJobOptions: {
-    attempts: 3,
+    attempts: 1,
     backoff: {
       type: 'exponential',
       delay: 2000,

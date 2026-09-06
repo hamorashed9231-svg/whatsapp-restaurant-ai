@@ -239,14 +239,29 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
       });
     }
 
-    // 3. حفظ رسالة العميل
-    await prisma.message.create({
-      data: {
-        conversation_id: conversation.id,
-        role: 'user',
-        content: messageText,
-      },
+    // 3. كتم التكرار وحفظ رسالة العميل في DB بدون تكرار
+    const recentLastMsg = await prisma.message.findFirst({
+      where: { conversation_id: conversation.id },
+      orderBy: { created_at: 'desc' }
     });
+
+    const isDuplicateMessage = Boolean(
+      recentLastMsg &&
+      recentLastMsg.role === 'user' &&
+      recentLastMsg.content &&
+      recentLastMsg.content.trim() === messageText.trim() &&
+      (Date.now() - new Date(recentLastMsg.created_at).getTime() < 10000)
+    );
+
+    if (!isDuplicateMessage) {
+      await prisma.message.create({
+        data: {
+          conversation_id: conversation.id,
+          role: 'user',
+          content: messageText,
+        },
+      });
+    }
 
     let currentMsgs: any[] = [];
     try {

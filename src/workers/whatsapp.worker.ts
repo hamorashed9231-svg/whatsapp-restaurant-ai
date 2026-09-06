@@ -174,27 +174,42 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
         timestamp: msg.created_at.toISOString(),
       }));
 
-      // حفظ الرسائل الفردية للزبون في جدول Message
-      if (pendingList.length > 0) {
-        for (const pMsg of pendingList) {
-          if (pMsg.messageText && pMsg.messageText.trim()) {
-            await prisma.message.create({
-              data: {
-                conversation_id: conversation.id,
-                role: 'user',
-                content: pMsg.messageText.trim(),
-              },
-            });
+      // حفظ الرسائل الفردية للزبون في جدول Message مع كتم التكرار
+      const recentWorkerMsg = await prisma.message.findFirst({
+        where: { conversation_id: conversation.id },
+        orderBy: { created_at: 'desc' }
+      });
+
+      const isWorkerDuplicate = Boolean(
+        recentWorkerMsg &&
+        recentWorkerMsg.role === 'user' &&
+        recentWorkerMsg.content &&
+        recentWorkerMsg.content.trim() === combinedMessageText.trim() &&
+        (Date.now() - new Date(recentWorkerMsg.created_at).getTime() < 10000)
+      );
+
+      if (!isWorkerDuplicate) {
+        if (pendingList.length > 0) {
+          for (const pMsg of pendingList) {
+            if (pMsg.messageText && pMsg.messageText.trim()) {
+              await prisma.message.create({
+                data: {
+                  conversation_id: conversation.id,
+                  role: 'user',
+                  content: pMsg.messageText.trim(),
+                },
+              });
+            }
           }
+        } else {
+          await prisma.message.create({
+            data: {
+              conversation_id: conversation.id,
+              role: 'user',
+              content: combinedMessageText,
+            },
+          });
         }
-      } else {
-        await prisma.message.create({
-          data: {
-            conversation_id: conversation.id,
-            role: 'user',
-            content: combinedMessageText,
-          },
-        });
       }
 
       // 7. استدعاء خدمة الذكاء الاصطناعي Gemini API

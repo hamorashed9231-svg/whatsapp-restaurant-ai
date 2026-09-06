@@ -82,9 +82,20 @@ class GeminiService {
 تجنب الإطالة في الردود واجعلها مناسبة لشاشة محادثة واتساب.
 الوقت الحالي للنظام هو: ${new Date().toISOString()}. استخدم هذا المرجع لتحديد الأوقات النسبية (مثل اليوم، غداً، إلخ).` + customInstructions;
 
-    // تحويل السجل الداخلي لتنسيق متوافق مع متطلبات Gemini SDK
+    // تحويل السجل الداخلي لتنسيق متوافق مع متطلبات Gemini SDK مع كتم التكرار إن وُجدت الرسالة مسبقاً في السجل
+    const historyCopy = [...(history || [])];
+    const lastHistoryMsg = historyCopy[historyCopy.length - 1];
+    const isNewMsgAlreadyInHistory = Boolean(
+      lastHistoryMsg &&
+      lastHistoryMsg.role === 'user' &&
+      lastHistoryMsg.content &&
+      lastHistoryMsg.content.trim() === newMessage.trim()
+    );
+
+    const historyForGemini = isNewMsgAlreadyInHistory ? historyCopy.slice(0, -1) : historyCopy;
+
     const geminiHistory: any[] = [];
-    for (const msg of history) {
+    for (const msg of historyForGemini) {
       if (msg.role === 'system') continue;
       geminiHistory.push({
         role: msg.role === 'assistant' ? 'model' : 'user',
@@ -279,9 +290,10 @@ class GeminiService {
 
           const finalResponseText = response.text() || 'عذراً، لم أستطع معالجة طلبك حالياً.';
 
-          // تحديث وحفظ سجل الرسائل بصيغتنا المخصصة لحفظه في قاعدة البيانات
+          // بناء سجل التحديث الموحد بدون تكرار رسالة العميل إطلاقاً
+          const cleanHistory = isNewMsgAlreadyInHistory ? historyCopy.slice(0, -1) : historyCopy;
           const updatedHistory: ChatMessage[] = [
-            ...history,
+            ...cleanHistory,
             { role: 'user', content: newMessage, timestamp: new Date().toISOString() },
             { role: 'assistant', content: finalResponseText, timestamp: new Date().toISOString() },
           ];
