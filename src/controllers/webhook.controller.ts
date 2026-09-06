@@ -327,7 +327,8 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
       image_url: mediaUrl || undefined,
       timestamp: new Date().toISOString()
     });
-    conversation.messages_json = currentMsgs;
+    const isWasClosed = (conversation.status === 'CLOSED');
+    const newStatus = isWasClosed ? 'UNANSWERED' : (conversation.status || 'UNANSWERED');
 
     try {
       await prisma.conversation.update({
@@ -335,15 +336,25 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
         data: {
           messages_json: currentMsgs as any,
           is_archived: false,
+          status: newStatus,
+          closed_by: isWasClosed ? null : conversation.closed_by,
           updated_at: new Date()
         }
       }).catch(() => {});
     } catch (e) {}
 
+    if (isWasClosed) {
+      conversation.status = 'UNANSWERED';
+      conversation.closed_by = null;
+    }
+
     // تحديث الذاكرة الحية دائمًا كخيار احتياطي أسرع
     const memIdx = memoryConversations.findIndex((c: any) => c.customer_phone === customerPhone || c.id === conversation.id);
     if (memIdx !== -1) {
       memoryConversations[memIdx].messages_json = currentMsgs;
+      memoryConversations[memIdx].status = newStatus;
+      memoryConversations[memIdx].is_archived = false;
+      if (isWasClosed) memoryConversations[memIdx].closed_by = null;
       memoryConversations[memIdx].updated_at = new Date().toISOString();
     } else {
       memoryConversations.unshift({
@@ -351,7 +362,7 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
         restaurant_id: restaurant.id,
         customer_phone: customerPhone,
         messages_json: currentMsgs,
-        status: conversation.status || 'UNANSWERED',
+        status: newStatus,
         category: 'INQUIRY',
         is_archived: false,
         created_at: new Date().toISOString(),
@@ -361,10 +372,10 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
 
     // فحص تدخل العنصر البشري
     const isStaffAssigned = Boolean(conversation.assigned_to && conversation.assigned_to.trim().length > 0);
-    const isHumanTakeover = conversation.status === 'IN_PROGRESS' || conversation.status === 'CLOSED' || isStaffAssigned;
+    const isHumanTakeover = conversation.status === 'IN_PROGRESS' || isWasClosed || isStaffAssigned;
 
     if (isHumanTakeover) {
-      console.log(`[DirectProcess] المحادثة مع [${customerPhone}] تحت إشراف موظف. تم توثيق الرسالة بدون رد آلي.`);
+      console.log(`[DirectProcess] المحادثة مع [${customerPhone}] تم إعادة فتحها كـ UNANSWERED أو تحت إشراف موظف. تم توثيق الرسالة دون رد آلي.`);
       return;
     }
 
