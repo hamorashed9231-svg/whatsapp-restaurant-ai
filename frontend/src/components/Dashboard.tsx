@@ -227,13 +227,28 @@ const saveDeletedIdsToStorage = (ids: string[], restId?: string) => {
 };
 
 const syncMenuItemsWithStorage = (serverItems?: any, restId?: string): MenuItem[] => {
-  if (serverItems && Array.isArray(serverItems)) {
-    saveMenuItemsToStorage(serverItems, restId);
-    return serverItems;
+  const storedItems = getStoredUserItems(restId);
+
+  if (serverItems && Array.isArray(serverItems) && serverItems.length > 0) {
+    const mergedMap = new Map<string, MenuItem>();
+    serverItems.forEach(item => {
+      if (item && item.id) mergedMap.set(item.id, item);
+    });
+    storedItems.forEach(item => {
+      if (item && item.id && !mergedMap.has(item.id)) {
+        mergedMap.set(item.id, item);
+      }
+    });
+    const finalResult = Array.from(mergedMap.values());
+    saveMenuItemsToStorage(finalResult, restId);
+    return finalResult;
   }
 
-  const storedItems = getStoredUserItems(restId);
-  return storedItems;
+  if (storedItems && storedItems.length > 0) {
+    return storedItems;
+  }
+
+  return serverItems && Array.isArray(serverItems) ? serverItems : [];
 };
 
 class ChatErrorBoundary extends React.Component<

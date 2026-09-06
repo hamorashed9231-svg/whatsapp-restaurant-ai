@@ -238,13 +238,35 @@ export const getMenu = async (req: Request, res: Response): Promise<void> => {
         where: targetRestId && targetRestId !== 'default' ? { restaurant_id: targetRestId } : undefined,
         orderBy: { category: 'asc' }
       });
+
+      if (dbItems.length === 0 && memoryMenuItems.length > 0) {
+        for (const mItem of memoryMenuItems) {
+          try {
+            await prisma.menuItem.create({
+              data: {
+                restaurant_id: targetRestId,
+                name: mItem.name,
+                description: mItem.description || '',
+                price: Number(mItem.price) || 0,
+                category: mItem.category || 'وجبات رئيسية',
+                image_url: mItem.image_url || '',
+                is_available: mItem.is_available !== undefined ? mItem.is_available : true
+              }
+            });
+          } catch (e) {}
+        }
+        dbItems = await prisma.menuItem.findMany({
+          where: targetRestId && targetRestId !== 'default' ? { restaurant_id: targetRestId } : undefined,
+          orderBy: { category: 'asc' }
+        });
+      }
     } catch (dbErr: any) {
       console.warn('تنبيه: تعذر الوصول لقاعدة البيانات، يتم إرجاع البيانات المؤقتة.');
       res.status(200).json(memoryMenuItems);
       return;
     }
 
-    res.status(200).json(dbItems);
+    res.status(200).json(dbItems.length > 0 ? dbItems : memoryMenuItems);
   } catch (error: any) {
     res.status(200).json(memoryMenuItems);
   }
