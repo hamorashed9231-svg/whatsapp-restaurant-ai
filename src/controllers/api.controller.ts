@@ -1536,5 +1536,69 @@ export const updateQuickReplies = async (req: Request, res: Response): Promise<v
   }
 };
 
+/**
+ * 28. إضافة/إزالة تفاعل إيموجي (Reaction) على رسالة محددة بالمحادثة
+ */
+export const reactToMessageEndpoint = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const { id, msgIndex } = req.params;
+  const { emoji, messageId } = req.body;
+
+  try {
+    const conv = await prisma.conversation.findUnique({ where: { id } });
+    if (!conv) {
+      res.status(404).json({ status: 'error', message: 'المحادثة غير موجودة.' });
+      return;
+    }
+
+    let msgs: any[] = [];
+    try {
+      msgs = typeof conv.messages_json === 'string' ? JSON.parse(conv.messages_json) : (conv.messages_json as any[]) || [];
+    } catch (e) {}
+
+    const indexNum = parseInt(msgIndex, 10);
+    let targetMsg: any = null;
+
+    if (!isNaN(indexNum) && indexNum >= 0 && indexNum < msgs.length) {
+      targetMsg = msgs[indexNum];
+      msgs[indexNum] = { ...targetMsg, reaction: emoji || undefined };
+    } else if (messageId) {
+      msgs = msgs.map(m => {
+        if (m.wamid === messageId || m.id === messageId) {
+          targetMsg = m;
+          return { ...m, reaction: emoji || undefined };
+        }
+        return m;
+      });
+    }
+
+    await prisma.conversation.update({
+      where: { id },
+      data: { messages_json: msgs, updated_at: new Date() }
+    });
+
+    const targetWamid = messageId || targetMsg?.wamid || targetMsg?.id;
+    if (conv.customer_phone && targetWamid) {
+      try {
+        const rest = await prisma.restaurant.findUnique({ where: { id: conv.restaurant_id } });
+        if (rest) {
+          await whatsappService.sendReactionMessage(
+            normalizePhone(conv.customer_phone),
+            targetWamid,
+            emoji || '',
+            rest.whatsapp_number_id,
+            rest.whatsapp_access_token || undefined
+          );
+        }
+      } catch (wsErr: any) {
+        console.error('[API Reaction WhatsApp Error]:', wsErr.message);
+      }
+    }
+
+    res.status(200).json({ status: 'success', messages: msgs, reaction: emoji });
+  } catch (error: any) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
 
 

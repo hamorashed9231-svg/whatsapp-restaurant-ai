@@ -101,6 +101,7 @@ interface Conversation {
 
 interface ChatMessage {
   id?: string;
+  wamid?: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   sender_name?: string;
@@ -111,6 +112,7 @@ interface ChatMessage {
   audio_url?: string;
   sticker_url?: string;
   reply_to_id?: string;
+  reaction?: string;
   timestamp?: string;
   created_at?: string;
   is_template?: boolean;
@@ -481,6 +483,33 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [templateLoading, setTemplateLoading] = useState<boolean>(false);
   const [templateError, setTemplateError] = useState<string | null>(null);
   const [templateSuccess, setTemplateSuccess] = useState<string | null>(null);
+
+  // حالة تفاعلات الإيموجي على الرسائل (Message Reactions)
+  const [activeReactionPickerIndex, setActiveReactionPickerIndex] = useState<number | null>(null);
+
+  const handleReactToMessage = async (index: number, emoji: string) => {
+    if (!selectedConversation) return;
+    const targetMsg = chatMessages[index];
+    const currentReaction = targetMsg?.reaction;
+    const newEmoji = currentReaction === emoji ? '' : emoji;
+
+    const updatedMessages = [...chatMessages];
+    updatedMessages[index] = {
+      ...targetMsg,
+      reaction: newEmoji || undefined
+    };
+    setChatMessages(updatedMessages);
+    setActiveReactionPickerIndex(null);
+
+    try {
+      await api.post(`/conversations/${selectedConversation.id}/messages/${index}/reaction`, {
+        emoji: newEmoji,
+        messageId: targetMsg?.wamid || targetMsg?.id
+      });
+    } catch (err) {
+      console.error('Failed to send reaction:', err);
+    }
+  };
 
   // حالة التسجيل الصوتي للفويس نوت (Voice Recording)
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
@@ -3748,6 +3777,67 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                        </div>
                                      )}
 
+                                     {/* تفاعل إيموجي يظهر على حافة فقاعة الرسالة (Reaction Badge) */}
+                                     {msg.reaction && (
+                                       <div
+                                         onClick={() => handleReactToMessage(i, msg.reaction!)}
+                                         style={{
+                                           position: 'absolute',
+                                           bottom: '-10px',
+                                           right: isUser ? '12px' : 'auto',
+                                           left: !isUser ? '12px' : 'auto',
+                                           backgroundColor: darkMode ? '#1E293B' : '#FFFFFF',
+                                           border: '1px solid #CBD5E1',
+                                           borderRadius: '12px',
+                                           padding: '1px 6px',
+                                           fontSize: '0.8rem',
+                                           boxShadow: '0 2px 4px rgba(0,0,0,0.12)',
+                                           cursor: 'pointer',
+                                           zIndex: 5
+                                         }}
+                                         title="تفاعل إيموجي (انقر لإزالته)"
+                                       >
+                                         {msg.reaction}
+                                       </div>
+                                     )}
+
+                                     {/* قائمة التفاعلات السريعة فوق الرسالة عند النقر على زر التفاعل */}
+                                     {activeReactionPickerIndex === i && (
+                                       <div style={{
+                                         position: 'absolute',
+                                         top: '-36px',
+                                         right: isUser ? '0' : 'auto',
+                                         left: !isUser ? '0' : 'auto',
+                                         backgroundColor: darkMode ? '#1E293B' : '#FFFFFF',
+                                         border: '1px solid #CBD5E1',
+                                         borderRadius: '20px',
+                                         padding: '3px 8px',
+                                         display: 'flex',
+                                         gap: '6px',
+                                         boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                                         zIndex: 10
+                                       }}>
+                                         {['👍', '❤️', '😂', '😮', '😢', '🙏'].map(emoji => (
+                                           <button
+                                             key={emoji}
+                                             type="button"
+                                             onClick={() => handleReactToMessage(i, emoji)}
+                                             style={{
+                                               background: 'none',
+                                               border: 'none',
+                                               cursor: 'pointer',
+                                               fontSize: '1.1rem',
+                                               padding: '2px 4px',
+                                               borderRadius: '4px',
+                                               transition: 'transform 0.1s'
+                                             }}
+                                           >
+                                             {emoji}
+                                           </button>
+                                         ))}
+                                       </div>
+                                     )}
+
                                     {editingMessageIndex === i ? (
                                       <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                         <textarea
@@ -3788,9 +3878,25 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                       <>
                                         {msgContent && <p style={{ fontSize: '0.85rem', color: darkMode ? '#F8FAFC' : '#0F172A', margin: 0, whiteSpace: 'pre-wrap' }}>{msgContent}</p>}
                                         
-                                        {/* شريط الإجراءات: تعديل ومسح الرسالة */}
+                                        {/* شريط الإجراءات: تفاعل ورَد وتعديل ومسح الرسالة */}
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px', borderTop: '1px solid rgba(0,0,0,0.06)', paddingTop: '4px' }}>
                                           <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                            <button
+                                              type="button"
+                                              onClick={() => setActiveReactionPickerIndex(activeReactionPickerIndex === i ? null : i)}
+                                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', fontSize: '0.8rem', opacity: 0.85 }}
+                                              title="إضافة تفاعل إيموجي"
+                                            >
+                                              😊
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => setReplyToMessage(msg)}
+                                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: '#0066FF', fontSize: '0.8rem', opacity: 0.85 }}
+                                              title="رد على هذه الرسالة"
+                                            >
+                                              ↩️
+                                            </button>
                                             <button
                                               type="button"
                                               onClick={() => handleCopyMessageText(msgContent, i)}

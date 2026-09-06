@@ -505,6 +505,48 @@ class WhatsAppService {
   }
 
   /**
+   * إرسال تفاعل إيموجي (Reaction) على رسالة محددة عبر Meta WhatsApp Cloud API
+   */
+  public async sendReactionMessage(
+    to: string,
+    messageId: string,
+    emoji: string,
+    customPhoneNumberId?: string,
+    customToken?: string
+  ): Promise<any> {
+    const token = customToken || this.token;
+    if (!token || token.includes('ضع_توكين') || token === 'mock-token') {
+      console.log(`[WhatsApp Mock Reaction] إلى ${to}: تفاعل ${emoji} على الرسالة ${messageId}`);
+      return { mock: true, success: true };
+    }
+
+    try {
+      const payload: any = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: to,
+        type: 'reaction',
+        reaction: {
+          message_id: messageId,
+          emoji: emoji || ''
+        }
+      };
+
+      const response = await axios.post(
+        this.getUrl(customPhoneNumberId),
+        payload,
+        { headers: this.getHeaders(customToken) }
+      );
+
+      console.log(`[WhatsApp] تم إرسال التفاعل ${emoji} للرقم ${to} على الرسالة ${messageId}`);
+      return response.data;
+    } catch (error: any) {
+      console.error('[WhatsApp Error] فشل إرسال التفاعل على الرسالة:', error.response?.data || error.message);
+      throw new Error(`فشل إرسال تفاعل الواتساب: ${JSON.stringify(error.response?.data || error.message)}`);
+    }
+  }
+
+  /**
    * جلب وتحويل رابط/بيانات الوسائط الواردة من واتساب Meta Media API
    */
   public async getMediaUrl(mediaId: string, customToken?: string): Promise<string | null> {

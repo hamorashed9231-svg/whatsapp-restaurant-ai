@@ -33,6 +33,7 @@ import {
   sendCatalogMessageEndpoint,
   editConversationMessage,
   deleteConversationMessage,
+  reactToMessageEndpoint,
   getCategories,
   updateCategories,
   getQuickReplies,
@@ -88,6 +89,7 @@ router.delete('/conversations/:id', authMiddleware, deleteConversation);
 router.post('/conversations/:id/messages', authMiddleware, sendManualMessage);
 router.put('/conversations/:id/messages/:msgIndex', authMiddleware, editConversationMessage);
 router.delete('/conversations/:id/messages/:msgIndex', authMiddleware, deleteConversationMessage);
+router.post('/conversations/:id/messages/:msgIndex/reaction', authMiddleware, reactToMessageEndpoint);
 router.post('/conversations/:id/send-manual', authMiddleware, sendManualMessage);
 router.post('/conversations/:id/send-template', authMiddleware, sendTemplateMessageEndpoint);
 router.post('/conversations/:id/send-catalog', authMiddleware, sendCatalogMessageEndpoint);

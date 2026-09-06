@@ -137,6 +137,45 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
       } else if (interactive.type === 'list_reply') {
         messageText = interactive.list_reply?.title || '';
       }
+    } else if (message.type === 'reaction') {
+      const reactionObj = message.reaction;
+      const targetMessageId = reactionObj?.message_id;
+      const emoji = reactionObj?.emoji || '';
+      console.log(`[Webhook Reaction] تم استلام تفاعل (${emoji}) على الرسالة (${targetMessageId}) من العميل [${customerPhone}].`);
+
+      if (targetMessageId) {
+        try {
+          const conv = await prisma.conversation.findFirst({
+            where: { customer_phone: customerPhone }
+          });
+          if (conv) {
+            let jsonMsgs: any[] = [];
+            try {
+              jsonMsgs = typeof conv.messages_json === 'string' ? JSON.parse(conv.messages_json) : (conv.messages_json as any[]) || [];
+            } catch (e) {}
+
+            let updated = false;
+            jsonMsgs = jsonMsgs.map(m => {
+              if (m.wamid === targetMessageId || m.id === targetMessageId) {
+                updated = true;
+                return { ...m, reaction: emoji };
+              }
+              return m;
+            });
+
+            if (updated) {
+              await prisma.conversation.update({
+                where: { id: conv.id },
+                data: { messages_json: jsonMsgs, updated_at: new Date() }
+              });
+            }
+          }
+        } catch (err) {
+          console.error('[Webhook Reaction Error]:', err);
+        }
+      }
+      res.status(200).json({ status: 'reaction_processed' });
+      return;
     } else if (message.type === 'button') {
       messageText = message.button?.text || '';
     }
