@@ -4337,141 +4337,209 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                               </div>
                             </div>
                           ) : (
-                            <div style={{ display: 'flex', gap: '8px', width: '100%', alignItems: 'center' }}>
-                              {/* مدخل مجهّز لاختيار الصور المباشرة من جهاز الكمبيوتر/الموبايل */}
-                              <input
-                                type="file"
-                                ref={chatFileInputRef}
-                                accept="image/*"
-                                multiple
-                                style={{ display: 'none' }}
-                                onChange={handleChatImageFileChange}
-                                disabled={!selectedConvWindowOpen}
-                              />
-
-                              {/* زر إرفاق وسائط / صور */}
-                              <button
-                                type="button"
-                                onClick={() => chatFileInputRef.current?.click()}
-                                disabled={!selectedConvWindowOpen}
-                                style={{
-                                  border: 'none',
-                                  backgroundColor: chatImageUrls.length > 0
-                                    ? (darkMode ? '#1E293B' : '#E0F2FE')
-                                    : (darkMode ? '#2A3942' : '#E2E8F0'),
-                                  color: chatImageUrls.length > 0 ? '#0066FF' : (darkMode ? '#AEBAC1' : '#54656F'),
-                                  borderRadius: '50%',
-                                  width: '42px',
-                                  height: '42px',
-                                  cursor: !selectedConvWindowOpen ? 'not-allowed' : 'pointer',
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+                              {/* شريط معاينة مصغرات الصور المرفقة قبل الإرسال */}
+                              {chatImageUrls.length > 0 && (
+                                <div style={{
                                   display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  transition: 'all 0.2s',
-                                  opacity: !selectedConvWindowOpen ? 0.5 : 1,
-                                  position: 'relative',
-                                  flexShrink: 0
-                                }}
-                                title="إرفاق صور أو وسائط (📷 / Ctrl+V)"
-                              >
-                                <Upload size={20} />
-                                {chatImageUrls.length > 0 && (
-                                  <span style={{
-                                    position: 'absolute',
-                                    top: '-2px',
-                                    right: '-2px',
-                                    backgroundColor: '#0066FF',
-                                    color: '#FFFFFF',
+                                  gap: '8px',
+                                  padding: '8px 12px',
+                                  backgroundColor: darkMode ? '#1E293B' : '#F1F5F9',
+                                  borderRadius: '12px',
+                                  overflowX: 'auto',
+                                  alignItems: 'center'
+                                }}>
+                                  {chatImageUrls.map((img, idx) => (
+                                    <div key={idx} style={{ position: 'relative', width: '56px', height: '56px', flexShrink: 0 }}>
+                                      <img src={img} alt="مرفق" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px', boxShadow: '0 2px 6px rgba(0,0,0,0.15)' }} />
+                                      <button
+                                        type="button"
+                                        onClick={() => setChatImageUrls(prev => prev.filter((_, i) => i !== idx))}
+                                        style={{
+                                          position: 'absolute',
+                                          top: '-4px',
+                                          right: '-4px',
+                                          backgroundColor: '#EF4444',
+                                          color: '#FFF',
+                                          border: 'none',
+                                          borderRadius: '50%',
+                                          width: '18px',
+                                          height: '18px',
+                                          fontSize: '0.65rem',
+                                          fontWeight: 'bold',
+                                          cursor: 'pointer',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                                        }}
+                                        title="حذف هذه الصورة"
+                                      >
+                                        ✕
+                                      </button>
+                                    </div>
+                                  ))}
+                                  <span style={{ fontSize: '0.75rem', color: darkMode ? '#94A3B8' : '#64748B', fontWeight: 'bold', marginRight: '6px' }}>
+                                    جاهز للإرسال 📸 ({chatImageUrls.length})
+                                  </span>
+                                </div>
+                              )}
+
+                              <div style={{ display: 'flex', gap: '8px', width: '100%', alignItems: 'center' }}>
+                                {/* مدخل مجهّز لاختيار الصور المباشرة من جهاز الكمبيوتر/الموبايل */}
+                                <input
+                                  type="file"
+                                  ref={chatFileInputRef}
+                                  accept="image/*"
+                                  multiple
+                                  style={{ display: 'none' }}
+                                  onChange={handleChatImageFileChange}
+                                  disabled={!selectedConvWindowOpen}
+                                />
+
+                                {/* زر إرفاق وسائط / صور */}
+                                <button
+                                  type="button"
+                                  onClick={() => chatFileInputRef.current?.click()}
+                                  disabled={!selectedConvWindowOpen}
+                                  style={{
+                                    border: 'none',
+                                    backgroundColor: chatImageUrls.length > 0
+                                      ? (darkMode ? '#1E293B' : '#E0F2FE')
+                                      : (darkMode ? '#2A3942' : '#E2E8F0'),
+                                    color: chatImageUrls.length > 0 ? '#0066FF' : (darkMode ? '#AEBAC1' : '#54656F'),
                                     borderRadius: '50%',
-                                    width: '18px',
-                                    height: '18px',
-                                    fontSize: '0.65rem',
-                                    fontWeight: 'bold',
+                                    width: '42px',
+                                    height: '42px',
+                                    cursor: !selectedConvWindowOpen ? 'not-allowed' : 'pointer',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                                  }}>
-                                    {chatImageUrls.length}
-                                  </span>
-                                )}
-                              </button>
+                                    transition: 'all 0.2s',
+                                    opacity: !selectedConvWindowOpen ? 0.5 : 1,
+                                    position: 'relative',
+                                    flexShrink: 0
+                                  }}
+                                  title="إرفاق صور أو وسائط (📷 / Ctrl+V)"
+                                >
+                                  <Upload size={20} />
+                                  {chatImageUrls.length > 0 && (
+                                    <span style={{
+                                      position: 'absolute',
+                                      top: '-2px',
+                                      right: '-2px',
+                                      backgroundColor: '#0066FF',
+                                      color: '#FFFFFF',
+                                      borderRadius: '50%',
+                                      width: '18px',
+                                      height: '18px',
+                                      fontSize: '0.65rem',
+                                      fontWeight: 'bold',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                                    }}>
+                                      {chatImageUrls.length}
+                                    </span>
+                                  )}
+                                </button>
 
-                              {/* زر الإيموجيات */}
-                              <button
-                                type="button"
-                                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                                disabled={!selectedConvWindowOpen}
-                                style={{
-                                  border: 'none',
-                                  backgroundColor: darkMode ? '#2A3942' : '#E2E8F0',
-                                  color: darkMode ? '#AEBAC1' : '#54656F',
-                                  borderRadius: '50%',
-                                  width: '42px',
-                                  height: '42px',
-                                  cursor: !selectedConvWindowOpen ? 'not-allowed' : 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  fontSize: '1.2rem',
-                                  flexShrink: 0,
-                                  opacity: !selectedConvWindowOpen ? 0.5 : 1
-                                }}
-                                title="إدراج ملصق / إيموجي 😊"
-                              >
-                                😊
-                              </button>
+                                {/* زر الإيموجيات */}
+                                <button
+                                  type="button"
+                                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                                  disabled={!selectedConvWindowOpen}
+                                  style={{
+                                    border: 'none',
+                                    backgroundColor: darkMode ? '#2A3942' : '#E2E8F0',
+                                    color: darkMode ? '#AEBAC1' : '#54656F',
+                                    borderRadius: '50%',
+                                    width: '42px',
+                                    height: '42px',
+                                    cursor: !selectedConvWindowOpen ? 'not-allowed' : 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '1.2rem',
+                                    flexShrink: 0,
+                                    opacity: !selectedConvWindowOpen ? 0.5 : 1
+                                  }}
+                                  title="إدراج ملصق / إيموجي 😊"
+                                >
+                                  😊
+                                </button>
 
-                              {/* زر تسجيل الفويس نوت */}
-                              <button
-                                type="button"
-                                onClick={startVoiceRecording}
-                                disabled={!selectedConvWindowOpen}
-                                style={{
-                                  border: 'none',
-                                  backgroundColor: darkMode ? '#2A3942' : '#E2E8F0',
-                                  color: darkMode ? '#AEBAC1' : '#54656F',
-                                  borderRadius: '50%',
-                                  width: '42px',
-                                  height: '42px',
-                                  cursor: !selectedConvWindowOpen ? 'not-allowed' : 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  fontSize: '1.1rem',
-                                  flexShrink: 0,
-                                  opacity: !selectedConvWindowOpen ? 0.5 : 1
-                                }}
-                                title="تسجيل رسالة صوتية (فويس نوت 🎙️)"
-                              >
-                                🎙️
-                              </button>
+                                {/* زر تسجيل الفويس نوت */}
+                                <button
+                                  type="button"
+                                  onClick={startVoiceRecording}
+                                  disabled={!selectedConvWindowOpen}
+                                  style={{
+                                    border: 'none',
+                                    backgroundColor: darkMode ? '#2A3942' : '#E2E8F0',
+                                    color: darkMode ? '#AEBAC1' : '#54656F',
+                                    borderRadius: '50%',
+                                    width: '42px',
+                                    height: '42px',
+                                    cursor: !selectedConvWindowOpen ? 'not-allowed' : 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '1.1rem',
+                                    flexShrink: 0,
+                                    opacity: !selectedConvWindowOpen ? 0.5 : 1
+                                  }}
+                                  title="تسجيل رسالة صوتية (فويس نوت 🎙️)"
+                                >
+                                  🎙️
+                                </button>
 
-                              <input
-                                id="chat-input-field"
-                                type="text"
-                                value={chatInput}
-                                onChange={e => setChatInput(e.target.value)}
-                                placeholder={selectedConvWindowOpen ? t[lang].typeMessagePlaceholder : 'إرسال الرسائل العادية معطل - يرجى اختيار قالب رسمي'}
-                                disabled={!selectedConvWindowOpen}
-                                style={{
-                                  ...styles.chatPaneInput,
-                                  backgroundColor: !selectedConvWindowOpen ? (darkMode ? '#1E293B' : '#F1F5F9') : styles.chatPaneInput.backgroundColor,
-                                  cursor: !selectedConvWindowOpen ? 'not-allowed' : 'text'
-                                }}
-                              />
+                                <input
+                                  id="chat-input-field"
+                                  type="text"
+                                  value={chatInput}
+                                  onChange={e => setChatInput(e.target.value)}
+                                  onPaste={(e) => {
+                                    const items = e.clipboardData?.items;
+                                    if (items) {
+                                      for (let i = 0; i < items.length; i++) {
+                                        if (items[i].type.indexOf('image') !== -1) {
+                                          const file = items[i].getAsFile();
+                                          if (file) {
+                                            const reader = new FileReader();
+                                            reader.onload = (event) => {
+                                              if (event.target?.result) {
+                                                setChatImageUrls(prev => [...prev, event.target!.result as string]);
+                                              }
+                                            };
+                                            reader.readAsDataURL(file);
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }}
+                                  placeholder={selectedConvWindowOpen ? t[lang].typeMessagePlaceholder : 'إرسال الرسائل العادية معطل - يرجى اختيار قالب رسمي'}
+                                  disabled={!selectedConvWindowOpen}
+                                  style={{
+                                    ...styles.chatPaneInput,
+                                    backgroundColor: !selectedConvWindowOpen ? (darkMode ? '#1E293B' : '#F1F5F9') : styles.chatPaneInput.backgroundColor,
+                                    cursor: !selectedConvWindowOpen ? 'not-allowed' : 'text'
+                                  }}
+                                />
 
-                              <button
-                                type="submit"
-                                style={{
-                                  ...styles.chatPaneSendBtn,
-                                  backgroundColor: !selectedConvWindowOpen ? '#94A3B8' : '#0066FF',
-                                  cursor: (!selectedConvWindowOpen || (!chatInput.trim() && chatImageUrls.length === 0)) ? 'not-allowed' : 'pointer'
-                                }}
-                                disabled={!selectedConvWindowOpen || (!chatInput.trim() && chatImageUrls.length === 0)}
-                              >
-                                <Send size={18} color="#FFFFFF" style={{ transform: 'rotate(180deg)' }} />
-                              </button>
+                                <button
+                                  type="submit"
+                                  style={{
+                                    ...styles.chatPaneSendBtn,
+                                    backgroundColor: !selectedConvWindowOpen ? '#94A3B8' : '#0066FF',
+                                    cursor: (!selectedConvWindowOpen || (!chatInput.trim() && chatImageUrls.length === 0)) ? 'not-allowed' : 'pointer'
+                                  }}
+                                  disabled={!selectedConvWindowOpen || (!chatInput.trim() && chatImageUrls.length === 0)}
+                                >
+                                  <Send size={18} color="#FFFFFF" style={{ transform: 'rotate(180deg)' }} />
+                                </button>
+                              </div>
                             </div>
                           )}
                         </form>
@@ -4580,6 +4648,84 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                             <span>تأكيد وإرسال القالب الآن</span>
                           </>
                         )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* مودال تكبير المعاينة للصور (Image Lightbox Preview Modal) */}
+              {previewImageUrl && (
+                <div
+                  style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: 'rgba(0, 0, 0, 0.88)',
+                    backdropFilter: 'blur(8px)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 999999,
+                    padding: '20px'
+                  }}
+                  onClick={() => setPreviewImageUrl(null)}
+                >
+                  <div
+                    style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
+                    onClick={e => e.stopPropagation()}
+                  >
+                    <img
+                      src={previewImageUrl}
+                      alt="معاينة المكبرة"
+                      style={{
+                        maxWidth: '100%',
+                        maxHeight: '80vh',
+                        borderRadius: '14px',
+                        boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+                        objectFit: 'contain'
+                      }}
+                    />
+                    <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+                      <a
+                        href={previewImageUrl}
+                        download="whatsapp_image.jpg"
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          backgroundColor: '#0066FF',
+                          color: '#FFF',
+                          padding: '10px 24px',
+                          borderRadius: '24px',
+                          textDecoration: 'none',
+                          fontWeight: 'bold',
+                          fontSize: '0.9rem',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          boxShadow: '0 4px 14px rgba(0,102,255,0.4)'
+                        }}
+                      >
+                        تحميل الصورة 💾
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewImageUrl(null)}
+                        style={{
+                          backgroundColor: 'rgba(255,255,255,0.2)',
+                          color: '#FFF',
+                          border: 'none',
+                          padding: '10px 24px',
+                          borderRadius: '24px',
+                          cursor: 'pointer',
+                          fontWeight: 'bold',
+                          fontSize: '0.9rem'
+                        }}
+                      >
+                        إغلاق ❌
                       </button>
                     </div>
                   </div>

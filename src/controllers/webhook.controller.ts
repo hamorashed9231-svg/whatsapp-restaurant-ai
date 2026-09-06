@@ -302,8 +302,9 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
     }
 
     let mediaUrl: string | undefined = undefined;
-    if (mediaId && restaurant.whatsapp_access_token) {
-      const fetchedUrl = await whatsappService.getMediaUrl(mediaId, restaurant.whatsapp_access_token).catch(() => null);
+    const mediaToken = restaurant?.whatsapp_access_token || process.env.WHATSAPP_TOKEN;
+    if (mediaId && mediaToken) {
+      const fetchedUrl = await whatsappService.getMediaUrl(mediaId, mediaToken).catch(() => null);
       if (fetchedUrl) mediaUrl = fetchedUrl;
     }
 
