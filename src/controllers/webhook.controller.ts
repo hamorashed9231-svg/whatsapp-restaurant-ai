@@ -369,6 +369,9 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
     currentMsgs.push({
       role: 'user',
       content: messageText,
+      wamid: message.id || undefined,
+      id: message.id || undefined,
+      reply_to_id: message.context?.id || undefined,
       image_url: (!isAudioType && mediaUrl) ? mediaUrl : undefined,
       audio_url: (isAudioType && mediaUrl) ? mediaUrl : undefined,
       timestamp: new Date().toISOString()

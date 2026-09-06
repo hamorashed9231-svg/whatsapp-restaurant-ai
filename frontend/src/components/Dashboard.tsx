@@ -1552,8 +1552,10 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
 
     const textToSend = chatInput;
     const imagesToSend = [...chatImageUrls];
+    const replyTargetId = replyToMessage?.wamid || replyToMessage?.id || undefined;
     setChatInput('');
     setChatImageUrls([]);
+    setReplyToMessage(null);
     if (chatFileInputRef.current) chatFileInputRef.current.value = '';
 
     const newMsgs: ChatMessage[] = [];
@@ -1563,6 +1565,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
           role: 'assistant',
           content: idx === 0 ? textToSend : '',
           image_url: img,
+          reply_to_id: replyTargetId,
           sender_name: currentUsername,
           timestamp: new Date().toISOString()
         });
@@ -1571,6 +1574,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
       newMsgs.push({
         role: 'assistant',
         content: textToSend,
+        reply_to_id: replyTargetId,
         sender_name: currentUsername,
         timestamp: new Date().toISOString()
       });
@@ -1582,10 +1586,17 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
       if (imagesToSend.length > 0) {
         for (let i = 0; i < imagesToSend.length; i++) {
           const caption = i === 0 ? textToSend : '';
-          await api.post(`/conversations/${selectedConversation.id}/messages`, { content: caption, image_url: imagesToSend[i] });
+          await api.post(`/conversations/${selectedConversation.id}/messages`, {
+            content: caption,
+            image_url: imagesToSend[i],
+            reply_to_id: replyTargetId
+          });
         }
       } else {
-        await api.post(`/conversations/${selectedConversation.id}/messages`, { content: textToSend });
+        await api.post(`/conversations/${selectedConversation.id}/messages`, {
+          content: textToSend,
+          reply_to_id: replyTargetId
+        });
       }
 
       const updatedData = {

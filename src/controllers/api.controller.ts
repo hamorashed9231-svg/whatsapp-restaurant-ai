@@ -1026,8 +1026,9 @@ export const sendManualMessage = async (req: AuthenticatedRequest, res: Response
       try {
         const restaurant = await prisma.restaurant.findUnique({ where: { id: restaurantId } });
         if (restaurant) {
+          let sendResult: any = null;
           if (audio_url && audio_url.trim()) {
-            await whatsappService.sendAudioMessage(
+            sendResult = await whatsappService.sendAudioMessage(
               customerPhone,
               audio_url,
               reply_to_id,
@@ -1035,7 +1036,7 @@ export const sendManualMessage = async (req: AuthenticatedRequest, res: Response
               restaurant.whatsapp_access_token || undefined
             );
           } else if (sticker_url && sticker_url.trim()) {
-            await whatsappService.sendStickerMessage(
+            sendResult = await whatsappService.sendStickerMessage(
               customerPhone,
               sticker_url,
               reply_to_id,
@@ -1043,7 +1044,7 @@ export const sendManualMessage = async (req: AuthenticatedRequest, res: Response
               restaurant.whatsapp_access_token || undefined
             );
           } else if (image_url && image_url.trim()) {
-            await whatsappService.sendImageMessage(
+            sendResult = await whatsappService.sendImageMessage(
               customerPhone,
               image_url,
               content,
@@ -1051,13 +1052,23 @@ export const sendManualMessage = async (req: AuthenticatedRequest, res: Response
               restaurant.whatsapp_access_token || undefined
             );
           } else if (content && content.trim()) {
-            await whatsappService.sendTextMessage(
+            sendResult = await whatsappService.sendTextMessage(
               customerPhone,
               content,
               reply_to_id,
               restaurant.whatsapp_number_id,
               restaurant.whatsapp_access_token || undefined
             );
+          }
+
+          const sentWamid = sendResult?.messages?.[0]?.id;
+          if (sentWamid && conv && conv.id) {
+            (newMsg as any).wamid = sentWamid;
+            (newMsg as any).id = sentWamid;
+            await prisma.conversation.update({
+              where: { id: conv.id },
+              data: { messages_json: msgs }
+            }).catch(() => {});
           }
         }
       } catch (wsErr: any) {
