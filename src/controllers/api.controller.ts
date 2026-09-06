@@ -944,6 +944,9 @@ export const sendManualMessage = async (req: AuthenticatedRequest, res: Response
   const { id } = req.params; // conversation_id
   const content = req.body.content || req.body.text;
   const image_url = req.body.image_url;
+  const audio_url = req.body.audio_url;
+  const sticker_url = req.body.sticker_url;
+  const reply_to_id = req.body.reply_to_id || req.body.contextMessageId;
   const currentUsername = req.user?.username || 'موظف الخدمة';
 
   try {
@@ -988,6 +991,9 @@ export const sendManualMessage = async (req: AuthenticatedRequest, res: Response
       role: 'assistant',
       content: content || '',
       image_url: image_url || undefined,
+      audio_url: audio_url || undefined,
+      sticker_url: sticker_url || undefined,
+      reply_to_id: reply_to_id || undefined,
       sender_name: currentUsername,
       timestamp: new Date().toISOString()
     };
@@ -1000,7 +1006,7 @@ export const sendManualMessage = async (req: AuthenticatedRequest, res: Response
         data: {
           conversation_id: conv.id,
           role: 'assistant',
-          content: content || (image_url ? '[صورة مرفقة]' : '')
+          content: content || (audio_url ? '[🎙️ تسجيل صوتي]' : image_url ? '[📷 صورة مرفقة]' : sticker_url ? '[ملصق 🎨]' : '')
         }
       }).catch(() => {});
 
@@ -1020,7 +1026,23 @@ export const sendManualMessage = async (req: AuthenticatedRequest, res: Response
       try {
         const restaurant = await prisma.restaurant.findUnique({ where: { id: restaurantId } });
         if (restaurant) {
-          if (image_url && image_url.trim()) {
+          if (audio_url && audio_url.trim()) {
+            await whatsappService.sendAudioMessage(
+              customerPhone,
+              audio_url,
+              reply_to_id,
+              restaurant.whatsapp_number_id,
+              restaurant.whatsapp_access_token || undefined
+            );
+          } else if (sticker_url && sticker_url.trim()) {
+            await whatsappService.sendStickerMessage(
+              customerPhone,
+              sticker_url,
+              reply_to_id,
+              restaurant.whatsapp_number_id,
+              restaurant.whatsapp_access_token || undefined
+            );
+          } else if (image_url && image_url.trim()) {
             await whatsappService.sendImageMessage(
               customerPhone,
               image_url,
@@ -1032,6 +1054,7 @@ export const sendManualMessage = async (req: AuthenticatedRequest, res: Response
             await whatsappService.sendTextMessage(
               customerPhone,
               content,
+              reply_to_id,
               restaurant.whatsapp_number_id,
               restaurant.whatsapp_access_token || undefined
             );

@@ -108,6 +108,9 @@ interface ChatMessage {
   sender?: string;
   text?: string;
   image_url?: string;
+  audio_url?: string;
+  sticker_url?: string;
+  reply_to_id?: string;
   timestamp?: string;
   created_at?: string;
   is_template?: boolean;
@@ -116,6 +119,93 @@ interface ChatMessage {
   is_edited?: boolean;
   edited_at?: string;
 }
+
+type Language = 'ar' | 'en';
+
+const t = {
+  ar: {
+    dashboardTitle: 'دردشات خدمة العملاء 💬',
+    menuButton: 'زر القائمة',
+    activeChats: '💬 النشطة',
+    archivedChats: '📦 الأرشيف',
+    filterAll: 'الكل',
+    filterUnanswered: '🟠 معلّق',
+    filterInProgress: '🔵 قيد الرد',
+    filterClosed: '✅ مغلقة',
+    filterOrders: '📦 طلبات',
+    filterComplaints: '⚠️ شكاوى',
+    filterInquiries: '❓ استفسار',
+    filterGroups: '👥 الجروبات',
+    welcome: 'مرحباً،',
+    typeMessagePlaceholder: 'اكتب الرسالة...',
+    send: 'إرسال',
+    recording: '🔴 جاري تسجيل الصوت...',
+    stopAndSend: 'إرسال التسجيل 🎙️',
+    cancel: 'إلغاء ✕',
+    replyingTo: 'رد على الرسالة:',
+    selectChatPrompt: 'يرجى اختيار رقم محادثة من القائمة اليسرى لعرض الرسائل المتبادلة وتتبع الموظفين.',
+    soundSettingsTitle: '🔊 إشعار نغمة الرسايل الجديدة من العملاء',
+    soundSettingsDesc: 'تشغيل تنبيه صوتي فور ورود أي رسالة جديدة غير مجاب عليها من عميل على الواتساب.',
+    soundEnabled: '🔔 الصوت: مفعّل',
+    soundMuted: '🔇 الصوت: مكتوم',
+    backToLanding: 'العودة لصفحة الهبوط',
+    overview: 'نظرة عامة',
+    menuManagement: 'إدارة المنيو',
+    orders: 'الطلبات الواردة',
+    reservations: 'الحجوزات والطاولات',
+    conversations: 'مراقبة المحادثات',
+    settings: 'إعدادات النظام',
+    aiAssistant: 'مساعد الضبط الذكي',
+    userManagement: 'إدارة الموظفين',
+    logout: 'تسجيل الخروج',
+    edit: 'تعديل',
+    delete: 'مسح',
+    reply: 'رد',
+    copied: 'تم النسخ!',
+    languageSwitch: '🌐 English'
+  },
+  en: {
+    dashboardTitle: 'Customer Care Chats 💬',
+    menuButton: 'Menu',
+    activeChats: '💬 Active',
+    archivedChats: '📦 Archive',
+    filterAll: 'All',
+    filterUnanswered: '🟠 Pending',
+    filterInProgress: '🔵 In Progress',
+    filterClosed: '✅ Closed',
+    filterOrders: '📦 Orders',
+    filterComplaints: '⚠️ Complaints',
+    filterInquiries: '❓ Inquiries',
+    filterGroups: '👥 Groups',
+    welcome: 'Welcome,',
+    typeMessagePlaceholder: 'Type a message...',
+    send: 'Send',
+    recording: '🔴 Recording Voice...',
+    stopAndSend: 'Send Voice 🎙️',
+    cancel: 'Cancel ✕',
+    replyingTo: 'Replying to:',
+    selectChatPrompt: 'Please select a conversation from the sidebar to view messages.',
+    soundSettingsTitle: '🔊 New Customer Message Sound Notification',
+    soundSettingsDesc: 'Play a sound notification whenever a new unanswered message arrives from a customer.',
+    soundEnabled: '🔔 Sound: Enabled',
+    soundMuted: '🔇 Sound: Muted',
+    backToLanding: 'Back to Landing Page',
+    overview: 'Overview',
+    menuManagement: 'Menu Management',
+    orders: 'Incoming Orders',
+    reservations: 'Reservations & Tables',
+    conversations: 'Conversations Monitor',
+    settings: 'System Settings',
+    aiAssistant: 'AI Config Assistant',
+    userManagement: 'Staff Management',
+    logout: 'Log Out',
+    edit: 'Edit',
+    delete: 'Delete',
+    reply: 'Reply',
+    copied: 'Copied!',
+    languageSwitch: '🌐 عربي'
+  }
+};
 
 interface QuickReplyItem {
   id: string;
@@ -370,24 +460,134 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [unreadConvIds, setUnreadConvIds] = useState<Set<string>>(new Set());
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+  const [lang, setLang] = useState<Language>(() => (localStorage.getItem('rivix_lang') as Language) || 'ar');
+  const [replyToMessage, setReplyToMessage] = useState<ChatMessage | null>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState<boolean>(false);
+
+  // Chat Pane state variables
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState<string>('');
   const [chatImageUrls, setChatImageUrls] = useState<string[]>([]);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
-  // حالات الردود المحفوظة القابلة للإضافة والتعديل من قبل الأدمن
   const [savedReplies, setSavedReplies] = useState<QuickReplyItem[]>(() => getStoredQuickReplies(restaurantId));
   const [showAddReplyModal, setShowAddReplyModal] = useState<boolean>(false);
   const [newReplyLabel, setNewReplyLabel] = useState<string>('');
   const [newReplyText, setNewReplyText] = useState<string>('');
-  // حالات نافذة الـ 24 ساعة وقوالب واتساب الرسمية
   const [selectedConvWindowOpen, setSelectedConvWindowOpen] = useState<boolean>(true);
   const [selectedConvExpiresAt, setSelectedConvExpiresAt] = useState<string | null>(null);
   const [showTemplateModal, setShowTemplateModal] = useState<boolean>(false);
   const [selectedTemplateName, setSelectedTemplateName] = useState<string>('order_update');
-  const [templateLanguage, setTemplateLanguage] = useState<string>('ar');
+  const [templateLanguage, setTemplateLanguage] = useState<'ar' | 'en'>('ar');
   const [templateLoading, setTemplateLoading] = useState<boolean>(false);
   const [templateError, setTemplateError] = useState<string | null>(null);
   const [templateSuccess, setTemplateSuccess] = useState<string | null>(null);
+
+  // حالة التسجيل الصوتي للفويس نوت (Voice Recording)
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<any>(null);
+
+  const handleAddQuickReplySubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newReplyLabel.trim() || !newReplyText.trim()) return;
+    const newReply: QuickReplyItem = {
+      id: Date.now().toString(),
+      label: newReplyLabel.trim(),
+      text: newReplyText.trim()
+    };
+    const updated = [...savedReplies, newReply];
+    setSavedReplies(updated);
+    saveQuickRepliesToStorage(updated, restaurantId);
+    setNewReplyLabel('');
+    setNewReplyText('');
+    setShowAddReplyModal(false);
+  };
+
+  const toggleLang = () => {
+    const nextLang: Language = lang === 'ar' ? 'en' : 'ar';
+    setLang(nextLang);
+    localStorage.setItem('rivix_lang', nextLang);
+  };
+
+  const startVoiceRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.start();
+      setIsRecordingAudio(true);
+      setRecordingTime(0);
+
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+    } catch (err) {
+      alert(lang === 'ar' ? 'تعذّر الوصول للمايكروفون لتسجيل الفويس نوت. تحقق من الصلاحيات.' : 'Could not access microphone for voice note recording.');
+    }
+  };
+
+  const stopVoiceRecordingAndSend = async () => {
+    if (!mediaRecorderRef.current || !selectedConversation) return;
+
+    const recorder = mediaRecorderRef.current;
+    recorder.onstop = async () => {
+      clearInterval(recordingTimerRef.current);
+      setIsRecordingAudio(false);
+      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+
+      recorder.stream.getTracks().forEach(track => track.stop());
+
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const audioDataUrl = reader.result as string;
+        if (audioDataUrl) {
+          const newAudioMsg: ChatMessage = {
+            role: 'assistant',
+            content: '[🎙️ تسجيل صوتي]',
+            audio_url: audioDataUrl,
+            sender_name: currentUsername,
+            reply_to_id: replyToMessage?.id || undefined,
+            timestamp: new Date().toISOString()
+          };
+          setChatMessages(prev => [...prev, newAudioMsg]);
+
+          try {
+            await api.post(`/conversations/${selectedConversation.id}/messages`, {
+              audio_url: audioDataUrl,
+              reply_to_id: replyToMessage?.id || undefined
+            });
+            setReplyToMessage(null);
+          } catch (err: any) {
+            alert(err.response?.data?.message || 'فشل إرسال الفويس نوت.');
+          }
+        }
+      };
+      reader.readAsDataURL(audioBlob);
+    };
+
+    recorder.stop();
+  };
+
+  const cancelVoiceRecording = () => {
+    if (mediaRecorderRef.current) {
+      clearInterval(recordingTimerRef.current);
+      if (mediaRecorderRef.current.stream) {
+        mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      }
+      setIsRecordingAudio(false);
+      setRecordingTime(0);
+    }
+  };
 
   const AVAILABLE_TEMPLATES = [
     {
@@ -3536,6 +3736,18 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                        </div>
                                      )}
 
+                                     {msg.audio_url && (
+                                       <div style={{ marginBottom: '6px', marginTop: '4px' }}>
+                                         <audio controls src={msg.audio_url} style={{ maxWidth: '240px', width: '100%', borderRadius: '20px' }} />
+                                       </div>
+                                     )}
+
+                                     {msg.sticker_url && (
+                                       <div style={{ marginBottom: '6px' }}>
+                                         <img src={msg.sticker_url} alt="الملصق" style={{ width: '120px', height: '120px', objectFit: 'contain' }} />
+                                       </div>
+                                     )}
+
                                     {editingMessageIndex === i ? (
                                       <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                         <textarea
@@ -3799,91 +4011,264 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                             </div>
                           )}
 
-                          <div style={{ display: 'flex', gap: '8px', width: '100%', alignItems: 'center' }}>
-                            {/* مدخل مجهّز لاختيار الصور المباشرة من جهاز الكمبيوتر/الموبايل */}
-                            <input
-                              type="file"
-                              ref={chatFileInputRef}
-                              accept="image/*"
-                              multiple
-                              style={{ display: 'none' }}
-                              onChange={handleChatImageFileChange}
-                              disabled={!selectedConvWindowOpen}
-                            />
+                          {/* شريط معاينة الرد على رسالة محددة */}
+                          {replyToMessage && (
+                            <div style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              backgroundColor: darkMode ? '#1E293B' : '#E0F2FE',
+                              borderRight: '4px solid #0066FF',
+                              borderRadius: '6px',
+                              padding: '6px 12px',
+                              width: '100%',
+                              fontSize: '0.8rem',
+                            }}>
+                              <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                <span style={{ fontWeight: 'bold', color: '#0066FF', marginLeft: '6px' }}>
+                                  {t[lang].replyingTo}
+                                </span>
+                                <span style={{ color: darkMode ? '#CBD5E1' : '#334155' }}>
+                                  {replyToMessage.content || replyToMessage.text || '[وسائط]'}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setReplyToMessage(null)}
+                                style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#EF4444', fontWeight: 'bold', padding: '2px 6px' }}
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          )}
 
-                            <button
-                              type="button"
-                              onClick={() => chatFileInputRef.current?.click()}
-                              disabled={!selectedConvWindowOpen}
-                              style={{
-                                border: 'none',
-                                backgroundColor: chatImageUrls.length > 0
-                                  ? (darkMode ? '#1E293B' : '#E0F2FE')
-                                  : (darkMode ? '#2A3942' : '#E2E8F0'),
-                                color: chatImageUrls.length > 0 ? '#0066FF' : (darkMode ? '#AEBAC1' : '#54656F'),
-                                borderRadius: '50%',
-                                width: '42px',
-                                height: '42px',
-                                cursor: !selectedConvWindowOpen ? 'not-allowed' : 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                transition: 'all 0.2s',
-                                opacity: !selectedConvWindowOpen ? 0.5 : 1,
-                                position: 'relative',
-                                flexShrink: 0
-                              }}
-                              title="إرفاق صور أو وسائط (📷 / Ctrl+V)"
-                            >
-                              <Upload size={20} />
-                              {chatImageUrls.length > 0 && (
-                                <span style={{
-                                  position: 'absolute',
-                                  top: '-2px',
-                                  right: '-2px',
-                                  backgroundColor: '#0066FF',
-                                  color: '#FFFFFF',
+                          {/* قائمة الإيموجيات السريعة */}
+                          {showEmojiPicker && selectedConvWindowOpen && (
+                            <div style={{
+                              display: 'flex',
+                              gap: '8px',
+                              padding: '8px 12px',
+                              backgroundColor: darkMode ? '#1E293B' : '#FFFFFF',
+                              borderRadius: '12px',
+                              border: '1px solid #CBD5E1',
+                              boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                              flexWrap: 'wrap',
+                              width: '100%'
+                            }}>
+                              {['😀', '😂', '😍', '👍', '🙏', '🔥', '🌯', '🍕', '🍔', '🥤', '💖', '🎉', '✅', '❤️', '👌'].map((emoji) => (
+                                <button
+                                  key={emoji}
+                                  type="button"
+                                  onClick={() => {
+                                    setChatInput(prev => prev + emoji);
+                                    setShowEmojiPicker(false);
+                                  }}
+                                  style={{
+                                    fontSize: '1.2rem',
+                                    border: 'none',
+                                    background: 'none',
+                                    cursor: 'pointer',
+                                    padding: '4px',
+                                    borderRadius: '6px',
+                                    transition: 'transform 0.1s'
+                                  }}
+                                >
+                                  {emoji}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* شريط تسجيل الصوت المباشر */}
+                          {isRecordingAudio ? (
+                            <div style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              width: '100%',
+                              backgroundColor: darkMode ? '#331B1B' : '#FEF2F2',
+                              border: '1px solid #EF4444',
+                              borderRadius: '24px',
+                              padding: '8px 16px',
+                              gap: '12px'
+                            }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#EF4444', fontWeight: 'bold', fontSize: '0.85rem' }}>
+                                <span style={{ animation: 'pulse 1s infinite' }}>🔴</span>
+                                <span>{t[lang].recording} ({recordingTime}s)</span>
+                              </div>
+                              <div style={{ display: 'flex', gap: '8px', marginRight: 'auto' }}>
+                                <button
+                                  type="button"
+                                  onClick={stopVoiceRecordingAndSend}
+                                  style={{
+                                    backgroundColor: '#10B981',
+                                    color: '#FFFFFF',
+                                    border: 'none',
+                                    borderRadius: '16px',
+                                    padding: '6px 14px',
+                                    fontSize: '0.8rem',
+                                    fontWeight: 'bold',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  {t[lang].stopAndSend}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={cancelVoiceRecording}
+                                  style={{
+                                    backgroundColor: '#EF4444',
+                                    color: '#FFFFFF',
+                                    border: 'none',
+                                    borderRadius: '16px',
+                                    padding: '6px 14px',
+                                    fontSize: '0.8rem',
+                                    fontWeight: 'bold',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  {t[lang].cancel}
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', gap: '8px', width: '100%', alignItems: 'center' }}>
+                              {/* مدخل مجهّز لاختيار الصور المباشرة من جهاز الكمبيوتر/الموبايل */}
+                              <input
+                                type="file"
+                                ref={chatFileInputRef}
+                                accept="image/*"
+                                multiple
+                                style={{ display: 'none' }}
+                                onChange={handleChatImageFileChange}
+                                disabled={!selectedConvWindowOpen}
+                              />
+
+                              {/* زر إرفاق وسائط / صور */}
+                              <button
+                                type="button"
+                                onClick={() => chatFileInputRef.current?.click()}
+                                disabled={!selectedConvWindowOpen}
+                                style={{
+                                  border: 'none',
+                                  backgroundColor: chatImageUrls.length > 0
+                                    ? (darkMode ? '#1E293B' : '#E0F2FE')
+                                    : (darkMode ? '#2A3942' : '#E2E8F0'),
+                                  color: chatImageUrls.length > 0 ? '#0066FF' : (darkMode ? '#AEBAC1' : '#54656F'),
                                   borderRadius: '50%',
-                                  width: '18px',
-                                  height: '18px',
-                                  fontSize: '0.65rem',
-                                  fontWeight: 'bold',
+                                  width: '42px',
+                                  height: '42px',
+                                  cursor: !selectedConvWindowOpen ? 'not-allowed' : 'pointer',
                                   display: 'flex',
                                   alignItems: 'center',
                                   justifyContent: 'center',
-                                  boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                                }}>
-                                  {chatImageUrls.length}
-                                </span>
-                              )}
-                            </button>
+                                  transition: 'all 0.2s',
+                                  opacity: !selectedConvWindowOpen ? 0.5 : 1,
+                                  position: 'relative',
+                                  flexShrink: 0
+                                }}
+                                title="إرفاق صور أو وسائط (📷 / Ctrl+V)"
+                              >
+                                <Upload size={20} />
+                                {chatImageUrls.length > 0 && (
+                                  <span style={{
+                                    position: 'absolute',
+                                    top: '-2px',
+                                    right: '-2px',
+                                    backgroundColor: '#0066FF',
+                                    color: '#FFFFFF',
+                                    borderRadius: '50%',
+                                    width: '18px',
+                                    height: '18px',
+                                    fontSize: '0.65rem',
+                                    fontWeight: 'bold',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                                  }}>
+                                    {chatImageUrls.length}
+                                  </span>
+                                )}
+                              </button>
 
-                            <input
-                              id="chat-input-field"
-                              type="text"
-                              value={chatInput}
-                              onChange={e => setChatInput(e.target.value)}
-                              placeholder={selectedConvWindowOpen ? 'اكتب الرسالة...' : 'إرسال الرسائل العادية معطل - يرجى اختيار قالب رسمي'}
-                              disabled={!selectedConvWindowOpen}
-                              style={{
-                                ...styles.chatPaneInput,
-                                backgroundColor: !selectedConvWindowOpen ? (darkMode ? '#1E293B' : '#F1F5F9') : styles.chatPaneInput.backgroundColor,
-                                cursor: !selectedConvWindowOpen ? 'not-allowed' : 'text'
-                              }}
-                            />
+                              {/* زر الإيموجيات */}
+                              <button
+                                type="button"
+                                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                                disabled={!selectedConvWindowOpen}
+                                style={{
+                                  border: 'none',
+                                  backgroundColor: darkMode ? '#2A3942' : '#E2E8F0',
+                                  color: darkMode ? '#AEBAC1' : '#54656F',
+                                  borderRadius: '50%',
+                                  width: '42px',
+                                  height: '42px',
+                                  cursor: !selectedConvWindowOpen ? 'not-allowed' : 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontSize: '1.2rem',
+                                  flexShrink: 0,
+                                  opacity: !selectedConvWindowOpen ? 0.5 : 1
+                                }}
+                                title="إدراج ملصق / إيموجي 😊"
+                              >
+                                😊
+                              </button>
 
-                            <button
-                              type="submit"
-                              style={{
-                                ...styles.chatPaneSendBtn,
-                                backgroundColor: !selectedConvWindowOpen ? '#94A3B8' : '#0066FF',
-                                cursor: (!selectedConvWindowOpen || (!chatInput.trim() && chatImageUrls.length === 0)) ? 'not-allowed' : 'pointer'
-                              }}
-                              disabled={!selectedConvWindowOpen || (!chatInput.trim() && chatImageUrls.length === 0)}
-                            >
-                              <Send size={18} color="#FFFFFF" style={{ transform: 'rotate(180deg)' }} />
-                            </button>
-                          </div>
+                              {/* زر تسجيل الفويس نوت */}
+                              <button
+                                type="button"
+                                onClick={startVoiceRecording}
+                                disabled={!selectedConvWindowOpen}
+                                style={{
+                                  border: 'none',
+                                  backgroundColor: darkMode ? '#2A3942' : '#E2E8F0',
+                                  color: darkMode ? '#AEBAC1' : '#54656F',
+                                  borderRadius: '50%',
+                                  width: '42px',
+                                  height: '42px',
+                                  cursor: !selectedConvWindowOpen ? 'not-allowed' : 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontSize: '1.1rem',
+                                  flexShrink: 0,
+                                  opacity: !selectedConvWindowOpen ? 0.5 : 1
+                                }}
+                                title="تسجيل رسالة صوتية (فويس نوت 🎙️)"
+                              >
+                                🎙️
+                              </button>
+
+                              <input
+                                id="chat-input-field"
+                                type="text"
+                                value={chatInput}
+                                onChange={e => setChatInput(e.target.value)}
+                                placeholder={selectedConvWindowOpen ? t[lang].typeMessagePlaceholder : 'إرسال الرسائل العادية معطل - يرجى اختيار قالب رسمي'}
+                                disabled={!selectedConvWindowOpen}
+                                style={{
+                                  ...styles.chatPaneInput,
+                                  backgroundColor: !selectedConvWindowOpen ? (darkMode ? '#1E293B' : '#F1F5F9') : styles.chatPaneInput.backgroundColor,
+                                  cursor: !selectedConvWindowOpen ? 'not-allowed' : 'text'
+                                }}
+                              />
+
+                              <button
+                                type="submit"
+                                style={{
+                                  ...styles.chatPaneSendBtn,
+                                  backgroundColor: !selectedConvWindowOpen ? '#94A3B8' : '#0066FF',
+                                  cursor: (!selectedConvWindowOpen || (!chatInput.trim() && chatImageUrls.length === 0)) ? 'not-allowed' : 'pointer'
+                                }}
+                                disabled={!selectedConvWindowOpen || (!chatInput.trim() && chatImageUrls.length === 0)}
+                              >
+                                <Send size={18} color="#FFFFFF" style={{ transform: 'rotate(180deg)' }} />
+                              </button>
+                            </div>
+                          )}
                         </form>
                       </>
                     ) : (

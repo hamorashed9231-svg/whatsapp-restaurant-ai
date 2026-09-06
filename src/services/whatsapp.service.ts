@@ -35,11 +35,12 @@ class WhatsAppService {
   }
 
   /**
-   * 1. إرسال رسالة نصية بسيطة
+   * 1. إرسال رسالة نصية بسيطة (مع دعم الاقتباس contextMessageId)
    */
   public async sendTextMessage(
     to: string,
     text: string,
+    contextMessageId?: string,
     customPhoneNumberId?: string,
     customToken?: string
   ): Promise<any> {
@@ -53,18 +54,24 @@ class WhatsAppService {
     }
 
     try {
+      const payload: any = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: to,
+        type: 'text',
+        text: {
+          preview_url: false,
+          body: text,
+        },
+      };
+
+      if (contextMessageId) {
+        payload.context = { message_id: contextMessageId };
+      }
+
       const response = await axios.post(
         this.getUrl(customPhoneNumberId),
-        {
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to: to,
-          type: 'text',
-          text: {
-            preview_url: false,
-            body: text,
-          },
-        },
+        payload,
         { headers: this.getHeaders(customToken) }
       );
 
@@ -77,8 +84,7 @@ class WhatsAppService {
   }
 
   /**
-   * 2. إرسال صورة مع شرح نصي (Image with Caption)
-   * تدعم الصور الخارجية عبر روابط HTTPS أو رفع الصور المحلية المباشرة (Base64) عبر Meta Media API
+   * 2. رفع وسائط لـ Meta Media API (صور أو فويس نوت أو مستندات)
    */
   public async uploadMedia(
     dataUrl: string,
@@ -96,12 +102,12 @@ class WhatsAppService {
       mimeType = dataUrl.substring(5, base64Index);
       rawBase64 = dataUrl.substring(base64Index + 8);
     } else {
-      const matches = dataUrl.match(/^data:(image\/[a-zA-Z0-9\+\-\.]+);base64,(.+)$/);
+      const matches = dataUrl.match(/^data:([a-zA-Z0-9\+\-\.\/]+);base64,(.+)$/);
       if (matches) {
         mimeType = matches[1];
         rawBase64 = matches[2];
       } else {
-        throw new Error('صيغة الصورة Data URL غير صالحة.');
+        throw new Error('صيغة الوسائط Data URL غير صالحة.');
       }
     }
 
@@ -178,6 +184,110 @@ class WhatsAppService {
       console.error('[WhatsApp Error] فشل إرسال الصورة:', error.response?.data || error.message);
       const metaErrMsg = error.response?.data?.error?.message || error.message;
       throw new Error(`فشل إرسال صورة واتساب: ${metaErrMsg}`);
+    }
+  }
+
+  /**
+   * 2.5. إرسال تسجيل صوتي / فويس نوت (Audio / Voice Note)
+   */
+  public async sendAudioMessage(
+    to: string,
+    audioUrlOrDataUrl: string,
+    contextMessageId?: string,
+    customPhoneNumberId?: string,
+    customToken?: string
+  ): Promise<any> {
+    const token = customToken || this.token;
+    if (!token || token.includes('ضع_توكين') || token === 'mock-token' || token.startsWith('EAAG...')) {
+      console.log(`[WhatsApp Mock Audio] إلى ${to}: تسجيل صوتي [${audioUrlOrDataUrl.slice(0, 40)}...]`);
+      return { mock: true, success: true };
+    }
+
+    try {
+      let audioPayload: any = {};
+      if (audioUrlOrDataUrl.startsWith('data:audio/') || audioUrlOrDataUrl.startsWith('data:video/webm')) {
+        const mediaId = await this.uploadMedia(audioUrlOrDataUrl, customPhoneNumberId, customToken);
+        audioPayload = { id: mediaId };
+      } else {
+        audioPayload = { link: audioUrlOrDataUrl };
+      }
+
+      const payload: any = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: to,
+        type: 'audio',
+        audio: audioPayload,
+      };
+
+      if (contextMessageId) {
+        payload.context = { message_id: contextMessageId };
+      }
+
+      const response = await axios.post(
+        this.getUrl(customPhoneNumberId),
+        payload,
+        { headers: this.getHeaders(customToken) }
+      );
+
+      console.log(`[WhatsApp] تم إرسال التسجيل الصوتي للرقم ${to}`);
+      return response.data;
+    } catch (error: any) {
+      console.error('[WhatsApp Error] فشل إرسال التسجيل الصوتي:', error.response?.data || error.message);
+      const metaErrMsg = error.response?.data?.error?.message || error.message;
+      throw new Error(`فشل إرسال التسجيل الصوتي عبر الواتساب: ${metaErrMsg}`);
+    }
+  }
+
+  /**
+   * 2.6. إرسال ملصق (Sticker)
+   */
+  public async sendStickerMessage(
+    to: string,
+    stickerUrlOrDataUrl: string,
+    contextMessageId?: string,
+    customPhoneNumberId?: string,
+    customToken?: string
+  ): Promise<any> {
+    const token = customToken || this.token;
+    if (!token || token.includes('ضع_توكين') || token === 'mock-token' || token.startsWith('EAAG...')) {
+      console.log(`[WhatsApp Mock Sticker] إلى ${to}: ملصق [${stickerUrlOrDataUrl.slice(0, 40)}...]`);
+      return { mock: true, success: true };
+    }
+
+    try {
+      let stickerPayload: any = {};
+      if (stickerUrlOrDataUrl.startsWith('data:')) {
+        const mediaId = await this.uploadMedia(stickerUrlOrDataUrl, customPhoneNumberId, customToken);
+        stickerPayload = { id: mediaId };
+      } else {
+        stickerPayload = { link: stickerUrlOrDataUrl };
+      }
+
+      const payload: any = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: to,
+        type: 'sticker',
+        sticker: stickerPayload,
+      };
+
+      if (contextMessageId) {
+        payload.context = { message_id: contextMessageId };
+      }
+
+      const response = await axios.post(
+        this.getUrl(customPhoneNumberId),
+        payload,
+        { headers: this.getHeaders(customToken) }
+      );
+
+      console.log(`[WhatsApp] تم إرسال الملصق للرقم ${to}`);
+      return response.data;
+    } catch (error: any) {
+      console.error('[WhatsApp Error] فشل إرسال الملصق:', error.response?.data || error.message);
+      const metaErrMsg = error.response?.data?.error?.message || error.message;
+      throw new Error(`فشل إرسال الملصق عبر الواتساب: ${metaErrMsg}`);
     }
   }
 

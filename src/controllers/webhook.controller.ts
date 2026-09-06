@@ -123,8 +123,13 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
       const caption = message.document?.caption || message.document?.filename || '';
       messageText = caption ? `[📄 مستند مرفق]: ${caption}` : '[📄 مستند مرفق]';
       mediaId = message.document?.id || '';
+    } else if (message.type === 'audio' || message.type === 'voice') {
+      const audioObj = message.audio || message.voice;
+      messageText = '[🎙️ تسجيل صوتي]';
+      mediaId = audioObj?.id || '';
     } else if (message.type === 'sticker') {
       messageText = '[ملصق 🎨]';
+      mediaId = message.sticker?.id || '';
     } else if (message.type === 'interactive') {
       const interactive = message.interactive;
       if (interactive.type === 'button_reply') {
@@ -321,10 +326,12 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
         : (conversation.messages_json as any[]) || [];
     } catch (e) {}
 
+    const isAudioType = (message.type === 'audio' || message.type === 'voice');
     currentMsgs.push({
       role: 'user',
       content: messageText,
-      image_url: mediaUrl || undefined,
+      image_url: (!isAudioType && mediaUrl) ? mediaUrl : undefined,
+      audio_url: (isAudioType && mediaUrl) ? mediaUrl : undefined,
       timestamp: new Date().toISOString()
     });
     const isWasClosed = (conversation.status === 'CLOSED');
