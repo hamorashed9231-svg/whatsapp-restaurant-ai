@@ -16,11 +16,14 @@ async function main() {
   const oneYearFromNow = new Date();
   oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
 
+  const EISSA_TOKEN = 'EAAfbQuX71okBSb0OnQB8oEzZBEdjEyvHkf4Ljxj7JwtIFlK0lnLgLAXrOQZAKZCWdFZCHYKLFROBTZCyYpQGYIFISZAdZBkLP6Gm5G4SQikGlJQyqvetX2f1CKzmxRbZCPyjar6uvsBSyZACYasSOTTAZALCKwJhyYVbQYGP3ngla4ZCoN3p9IJJKKKhRJRK3xT0wZDZD';
+
   const restaurant = await prisma.restaurant.create({
     data: {
       name: 'مطعم عم عيسى',
       phone_number: '+201000000000',
       whatsapp_number_id: '1234567890',
+      whatsapp_access_token: EISSA_TOKEN,
       subscription_tier: 'PREMIUM',
       subscription_status: 'ACTIVE',
       subscription_expires_at: oneYearFromNow,
