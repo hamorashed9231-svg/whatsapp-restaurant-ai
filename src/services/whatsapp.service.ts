@@ -370,6 +370,33 @@ class WhatsAppService {
       throw new Error(`فشل إرسال رسالة الكتالوج المباشرة: ${JSON.stringify(error.response?.data || error.message)}`);
     }
   }
+
+  /**
+   * جلب وتحويل رابط/بيانات الوسائط الواردة من واتساب Meta Media API
+   */
+  public async getMediaUrl(mediaId: string, customToken?: string): Promise<string | null> {
+    const token = customToken || this.token;
+    if (!token || token.includes('ضع_توكين') || token === 'mock-token') return null;
+
+    try {
+      const metaRes = await axios.get(`https://graph.facebook.com/v18.0/${mediaId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const mediaDirectUrl = metaRes.data?.url;
+      if (!mediaDirectUrl) return null;
+
+      const binaryRes = await axios.get(mediaDirectUrl, {
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: 'arraybuffer'
+      });
+      const mimeType = metaRes.data?.mime_type || 'image/jpeg';
+      const base64Data = Buffer.from(binaryRes.data, 'binary').toString('base64');
+      return `data:${mimeType};base64,${base64Data}`;
+    } catch (err: any) {
+      console.error('[WhatsApp Media Fetch Error]:', err.response?.data || err.message);
+      return null;
+    }
+  }
 }
 
 export const whatsappService = new WhatsAppService();

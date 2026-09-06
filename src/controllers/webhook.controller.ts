@@ -62,12 +62,23 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // 2. استخراج رقم هاتف الزبون ومحتوى الرسالة
+    // 2. استخراج رقم هاتف الزبون ومحتوى الرسالة والوسائط
     const customerPhone = message.from;
     let messageText = '';
+    let mediaId = '';
 
     if (message.type === 'text') {
       messageText = message.text?.body || '';
+    } else if (message.type === 'image') {
+      const caption = message.image?.caption || '';
+      messageText = caption ? `[📷 صورة مرفقة]: ${caption}` : '[📷 صورة مرفقة]';
+      mediaId = message.image?.id || '';
+    } else if (message.type === 'document') {
+      const caption = message.document?.caption || message.document?.filename || '';
+      messageText = caption ? `[📄 مستند مرفق]: ${caption}` : '[📄 مستند مرفق]';
+      mediaId = message.document?.id || '';
+    } else if (message.type === 'sticker') {
+      messageText = '[ملصق 🎨]';
     } else if (message.type === 'interactive') {
       const interactive = message.interactive;
       if (interactive.type === 'button_reply') {
@@ -80,12 +91,12 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
     }
 
     if (!messageText.trim()) {
-      console.log(`[Webhook] تم استلام رسالة غير نصية أو فارغة من النوع (${message.type}). تم تخطي المعالجة.`);
-      res.status(200).json({ status: 'ignored_non_text' });
+      console.log(`[Webhook] تم استلام رسالة غير مدعومة من النوع (${message.type}). تم تخطي المعالجة.`);
+      res.status(200).json({ status: 'ignored_unsupported_type' });
       return;
     }
 
-    console.log(`[Webhook] تم استلام رسالة جديدة من [${customerPhone}]: "${messageText}".`);
+    console.log(`[Webhook] تم استلام رسالة جديدة من [${customerPhone}] (${message.type}): "${messageText}".`);
 
     // 3. دفع المهمة إلى Redis / BullMQ للمضي قدماً
     try {
@@ -94,6 +105,7 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
         whatsappNumberId,
         customerPhone,
         messageText,
+        mediaId,
         messageType: message.type,
         timestamp: new Date().toISOString(),
       });
@@ -113,6 +125,7 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
           whatsappNumberId,
           customerPhone,
           messageText: messageText.trim(),
+          mediaId,
           timestamp: new Date().toISOString(),
         },
         {
@@ -125,7 +138,7 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
     }
 
     // 4. في بيئة Vercel Serverless: تنفذ المعالجة المباشرة فوراً لضمان عدم تجميد العملية
-    await processDirectly(whatsappNumberId, customerPhone, messageText);
+    await processDirectly(whatsappNumberId, customerPhone, messageText, mediaId);
 
     res.status(200).json({ status: 'processed' });
   } catch (error: any) {
@@ -137,7 +150,7 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
 /**
  * معالجة الرسالة مباشرة لبيئات Serverless (مثل Vercel) حيث لا تضمن استمرار تشغيل Worker في الخلفية
  */
-async function processDirectly(whatsappNumberId: string, customerPhone: string, messageText: string) {
+async function processDirectly(whatsappNumberId: string, customerPhone: string, messageText: string, mediaId?: string) {
   try {
     const { prisma } = await import('../services/prisma.service');
     const { geminiService } = await import('../services/gemini.service');
@@ -157,6 +170,12 @@ async function processDirectly(whatsappNumberId: string, customerPhone: string, 
     if (!restaurant) {
       console.warn(`[DirectProcess] لم يتم العثور على مطعم نشط لرقم الواتساب: ${whatsappNumberId}`);
       return;
+    }
+
+    let mediaUrl: string | undefined = undefined;
+    if (mediaId && restaurant.whatsapp_access_token) {
+      const fetchedUrl = await whatsappService.getMediaUrl(mediaId, restaurant.whatsapp_access_token).catch(() => null);
+      if (fetchedUrl) mediaUrl = fetchedUrl;
     }
 
     // 2. جلب المحادثة النشطة أو الأخيرة
@@ -186,6 +205,28 @@ async function processDirectly(whatsappNumberId: string, customerPhone: string, 
         role: 'user',
         content: messageText,
       },
+    });
+
+    let currentMsgs: any[] = [];
+    try {
+      currentMsgs = typeof conversation.messages_json === 'string'
+        ? JSON.parse(conversation.messages_json)
+        : (conversation.messages_json as any[]) || [];
+    } catch (e) {}
+
+    currentMsgs.push({
+      role: 'user',
+      content: messageText,
+      image_url: mediaUrl || undefined,
+      timestamp: new Date().toISOString()
+    });
+
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        messages_json: currentMsgs as any,
+        updated_at: new Date()
+      }
     });
 
     // فحص تدخل العنصر البشري

@@ -5,6 +5,7 @@ export interface WhatsAppMessageJob {
   whatsappNumberId: string;
   customerPhone: string;
   messageText: string;
+  mediaId?: string;
   messageType?: string;
   timestamp: string;
 }
