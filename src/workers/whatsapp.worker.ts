@@ -44,8 +44,8 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
 
       console.log(`[BullMQ Worker] تم تجميع ${pendingList.length || 1} رسائل متتالية للزبون [${customerPhone}] في سياق واحد: "${combinedMessageText.replace(/\n/g, ' ')}"`);
 
-      // 2. تحديد المطعم المرتبط برقم الواتساب المستلم
-      const restaurant = await prisma.restaurant.findFirst({
+      // 2. تحديد المطعم المرتبط برقم الواتساب المستلم مع fallback للمطعم النشط
+      let restaurant = await prisma.restaurant.findFirst({
         where: {
           OR: [
             { whatsapp_number_id: targetWhatsappNumberId },
@@ -53,6 +53,21 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
           ]
         },
       });
+
+      if (!restaurant) {
+        restaurant = await prisma.restaurant.findFirst({
+          where: { subscription_status: 'ACTIVE' }
+        }) || await prisma.restaurant.findFirst();
+
+        if (restaurant && targetWhatsappNumberId) {
+          try {
+            await prisma.restaurant.update({
+              where: { id: restaurant.id },
+              data: { whatsapp_number_id: targetWhatsappNumberId }
+            });
+          } catch (e) {}
+        }
+      }
 
       if (!restaurant) {
         console.warn(`[BullMQ Worker] تحذير: لم يتم العثور على مطعم للرقم: ${targetWhatsappNumberId}`);

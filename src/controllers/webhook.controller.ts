@@ -198,8 +198,8 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
 
     const customerPhone = norm(rawCustomerPhone);
 
-    // 1. تحديد المطعم المرتبط برقم الواتساب فقط وبدون أي افتراضات عشوائية تسبب تداخل المحادثات
-    const restaurant = await prisma.restaurant.findFirst({
+    // 1. تحديد المطعم المرتبط برقم الواتساب، مع الدعم التلقائي للمطعم النشط إذا لم يطابق الرقم السجلات بعد
+    let restaurant = await prisma.restaurant.findFirst({
       where: {
         OR: [
           { whatsapp_number_id: whatsappNumberId },
@@ -207,6 +207,23 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
         ]
       },
     });
+
+    if (!restaurant) {
+      restaurant = await prisma.restaurant.findFirst({
+        where: { subscription_status: 'ACTIVE' }
+      }) || await prisma.restaurant.findFirst();
+
+      if (restaurant && whatsappNumberId) {
+        try {
+          await prisma.restaurant.update({
+            where: { id: restaurant.id },
+            data: { whatsapp_number_id: whatsappNumberId }
+          });
+        } catch (e) {
+          console.warn('[DirectProcess] تعذر تحديث whatsapp_number_id للمطعم:', e);
+        }
+      }
+    }
 
     if (!restaurant) {
       console.warn(`[DirectProcess] تم تجاهل الرسالة: لم يتم العثور على مطعم مرخص لرقم الواتساب: ${whatsappNumberId}`);
