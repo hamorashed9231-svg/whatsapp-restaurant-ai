@@ -91,10 +91,27 @@ interface Conversation {
   assigned_to?: string | null;
   closed_by?: string | null;
   is_archived?: boolean;
+  created_at?: string;
   updated_at: string;
   isWindowOpen?: boolean;
   windowExpiresAt?: string | null;
   remainingHours?: number;
+}
+
+interface ChatMessage {
+  id?: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  sender_name?: string;
+  senderName?: string;
+  sender?: string;
+  text?: string;
+  image_url?: string;
+  timestamp?: string;
+  created_at?: string;
+  is_template?: boolean;
+  template_name?: string;
+  isStaff?: boolean;
 }
 
 const getStoredDeletedIds = (restId?: string): string[] => {
@@ -181,6 +198,10 @@ const syncMenuItemsWithStorage = (serverItems?: any, restId?: string): MenuItem[
     saveMenuItemsToStorage(validStored, restId);
     return validStored;
   }
+
+  saveMenuItemsToStorage([], restId);
+  return [];
+};
 
 class ChatErrorBoundary extends React.Component<
   { children: React.ReactNode; onReset?: () => void },
@@ -282,6 +303,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState<string>('');
+  const [chatImageUrl, setChatImageUrl] = useState<string>('');
   // حالات نافذة الـ 24 ساعة وقوالب واتساب الرسمية
   const [selectedConvWindowOpen, setSelectedConvWindowOpen] = useState<boolean>(true);
   const [selectedConvExpiresAt, setSelectedConvExpiresAt] = useState<string | null>(null);
