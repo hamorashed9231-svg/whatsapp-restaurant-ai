@@ -59,7 +59,20 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
           where: { subscription_status: 'ACTIVE' }
         }) || await prisma.restaurant.findFirst();
 
-        if (restaurant && targetWhatsappNumberId) {
+        if (!restaurant) {
+          const oneYearFromNow = new Date();
+          oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
+          restaurant = await prisma.restaurant.create({
+            data: {
+              name: 'مطعم ومطبخ البركة شاورما',
+              phone_number: '+201000000000',
+              whatsapp_number_id: targetWhatsappNumberId || '1234567890',
+              subscription_tier: 'PREMIUM',
+              subscription_status: 'ACTIVE',
+              subscription_expires_at: oneYearFromNow,
+            }
+          });
+        } else if (targetWhatsappNumberId) {
           try {
             await prisma.restaurant.update({
               where: { id: restaurant.id },

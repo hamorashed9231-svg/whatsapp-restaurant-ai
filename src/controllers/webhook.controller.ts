@@ -213,7 +213,20 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
         where: { subscription_status: 'ACTIVE' }
       }) || await prisma.restaurant.findFirst();
 
-      if (restaurant && whatsappNumberId) {
+      if (!restaurant) {
+        const oneYearFromNow = new Date();
+        oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
+        restaurant = await prisma.restaurant.create({
+          data: {
+            name: 'مطعم ومطبخ البركة شاورما',
+            phone_number: '+201000000000',
+            whatsapp_number_id: whatsappNumberId || '1234567890',
+            subscription_tier: 'PREMIUM',
+            subscription_status: 'ACTIVE',
+            subscription_expires_at: oneYearFromNow,
+          }
+        });
+      } else if (whatsappNumberId) {
         try {
           await prisma.restaurant.update({
             where: { id: restaurant.id },
