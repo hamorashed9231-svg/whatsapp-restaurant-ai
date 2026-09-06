@@ -64,24 +64,23 @@ class GeminiService {
     }
 
     // سياق النظام المخصص للـ AI ليتصرف كمساعد ذكي للمطعم المحدد
-    const systemPrompt = `أنت مساعد ذكي ومرحب تعمل لصالح مطعم "${restaurantName}" على واتساب.
-أجب دائماً باللغة العربية بأسلوب لبق، ودود، ومختصر ومناسب لمحادثات واتساب.
+    const systemPrompt = `أنت المساعد الذكي لمطعم "${restaurantName}" على واتساب، مهمتك مساعدة العملاء بلغة عربية ودودة ومباشرة ومهنية.
 تأكد دائماً أن جميع الأسعار والتعاملات المالية معروضة ومحسوبة بالجنيه المصري (ج.م).
 
-يمكنك مساعدة العملاء في:
-1. استعراض قائمة الطعام (المنيو) للمطعم بالأسعار بالجنيه المصري.
-2. إجراء طلبات الطعام الجديدة.
-3. حجز طاولات في المطعم.
+⚠️ قاعدة حاسمة وإلزامية:
+- لا تذكر أو تؤكد أي سعر أو صنف من وحي خيالك إطلاقاً. استدعِ دالة "get_menu" دائماً للحصول على القائمة والأسعار الرسمية المتاحة في المطعم قبل إعطاء أي تفاصيل للعميل.
 
-تعليمات هامة للتصنيف والتفاعل:
-- عندما يشتكي العميل من أي شيء (مثل تأخير في التوصيل، طعام سيء، خدمة سيئة، طلب غير صحيح)، استخدم أداة "set_conversation_category" فوراً وحدد التصنيف كـ 'COMPLAINT' (شكاوى).
-- عندما يطلب العميل الطعام فعلياً، أو يسأل عن حالة أوردر سابق، أو يستفسر عن أسعار وجبات، استخدم أداة "set_conversation_category" وحدد التصنيف كـ 'ORDER' (طلبات).
-- عندما يستفسر العميل استفساراً عاماً أو تبدأ المحادثة بالسلام والتحية دون أي غرض آخر، تأكد من استدعاء أداة "set_conversation_category" بتصنيف 'INQUIRY' (استفسارات).
-- عندما يطلب العميل رؤية المنيو أو الطعام المتاح، استخدم أداة "get_menu" فوراً. لا تخترع أطعمة من عندك.
-- عندما يطلب العميل طلب طعام، اسأله عن الأصناف والكميات بدقة، ثم استخدم أداة "create_order". احسب الأسعار بناءً على القائمة الفعلية المسترجعة من الأداة موضحاً الإجمالي بالجنيه المصري (ج.م).
-- عندما يطلب العميل حجز طاولة، اسأله عن التاريخ، الوقت، وعدد الأشخاص (party_size)، ثم استخدم أداة "create_reservation".
-- تجنب الردود الطويلة جداً.
-- الوقت الحالي للنظام هو: ${new Date().toISOString()}. استخدم هذا المرجع لتحديد الأوقات النسبية (مثل اليوم، غداً، إلخ).` + customInstructions;
+تعليمات التفاعل والتصنيف:
+1. عند استعراض المنيو: استدعِ "get_menu" أو "send_interactive_menu" فوراً.
+2. عند طلب العميل لأوردر: اعرض عليه الأصناف والأسعار بالجنيه المصري (ج.م) بدقة، وعند تأكيد طلبه مع التفاصيل، استدعِ دالة "create_order" فوراً لتسجيل الطلب.
+3. عند حجز طاولة: اسأل العميل عن الاسم، عدد الأفراد، والتاريخ والوقت، ثم استدعِ دالة "create_reservation".
+4. تصنيف المحادثة آلياً:
+   - عند طلب الطعام أو الاستفسار عن الوجبات والطلبات: استخدم أداة "set_conversation_category" بتصنيف 'ORDER'.
+   - عند وجود أي مشكلة أو اعتراض أو شكوى (تأخير الطلب، جودة الطعام، إلخ): استخدم أداة "set_conversation_category" بتصنيف 'COMPLAINT'، واعتذر للعميل بلباقة وأخبره بأن فريق خدمة العملاء يتابع معه فوراً.
+   - عند الاستفسارات العامة والتحية: استخدم أداة "set_conversation_category" بتصنيف 'INQUIRY'.
+
+تجنب الإطالة في الردود واجعلها مناسبة لشاشة محادثة واتساب.
+الوقت الحالي للنظام هو: ${new Date().toISOString()}. استخدم هذا المرجع لتحديد الأوقات النسبية (مثل اليوم، غداً، إلخ).` + customInstructions;
 
     // تحويل السجل الداخلي لتنسيق متوافق مع متطلبات Gemini SDK
     const geminiHistory: any[] = [];
@@ -106,35 +105,45 @@ class GeminiService {
           const model = genAI.getGenerativeModel({
             model: targetModelName,
             systemInstruction: systemPrompt,
+            generationConfig: {
+              temperature: 0.1,
+              topP: 0.8,
+            },
             tools: [
               {
                 functionDeclarations: [
                   {
                     name: 'get_menu',
-                    description: 'استرجاع قائمة المأكولات والمشروبات المتاحة في المطعم بمجرد طلب العميل للمنيو أو الأكل أو الطعام',
+                    description: 'استرجاع قائمة المأكولات والمشروبات المتاحة في المطعم بالأصناف والأسعار الحالية الرسمية',
                     parameters: {
                       type: SchemaType.OBJECT,
                       properties: {
                         restaurant_id: { type: SchemaType.STRING, description: 'المعرف الفريد للمطعم' },
+                        category: { type: SchemaType.STRING, description: 'تصنيف اختياري لتصفية المنيو (مثل بيتزا، برجر، مشروبات)' },
                       },
                       required: ['restaurant_id'],
                     },
                   },
                   {
                     name: 'create_order',
-                    description: 'إنشاء طلب طعام جديد للزبون وحفظه في قاعدة البيانات',
+                    description: 'تسجيل طلب طعام جديد للزبون بعد تأكيد العميل للأصناف والأسعار الإجمالية بالجنيه المصري',
                     parameters: {
                       type: SchemaType.OBJECT,
                       properties: {
                         restaurant_id: { type: SchemaType.STRING, description: 'المعرف الفريد للمطعم' },
                         customer_phone: { type: SchemaType.STRING, description: 'رقم هاتف الزبون' },
+                        delivery_address: { type: SchemaType.STRING, description: 'عنوان التوصيل (في حال طلب الدليفري)' },
+                        notes: { type: SchemaType.STRING, description: 'ملاحظات إضافية على الطلب' },
                         items: {
                           type: SchemaType.ARRAY,
                           items: {
                             type: SchemaType.OBJECT,
                             properties: {
+                              itemId: { type: SchemaType.STRING, description: 'معرف الصنف اختياري' },
                               name: { type: SchemaType.STRING, description: 'اسم الوجبة أو المشروب بدقة كما في المنيو' },
                               quantity: { type: SchemaType.INTEGER, description: 'الكمية المطلوبة (يجب أن تكون 1 أو أكثر)' },
+                              unitPrice: { type: SchemaType.NUMBER, description: 'سعر الوحدة بالجنيه المصري (ج.م)' },
+                              itemNotes: { type: SchemaType.STRING, description: 'ملاحظات خاصة بالصنف' },
                             },
                             required: ['name', 'quantity'],
                           },
@@ -151,16 +160,18 @@ class GeminiService {
                       type: SchemaType.OBJECT,
                       properties: {
                         restaurant_id: { type: SchemaType.STRING, description: 'المعرف الفريد للمطعم' },
+                        customer_name: { type: SchemaType.STRING, description: 'اسم الزبون صاحب الحجز' },
                         customer_phone: { type: SchemaType.STRING, description: 'رقم هاتف الزبون' },
-                        date_time: { type: SchemaType.STRING, description: 'تاريخ ووقت الحجز بصيغة ISO 8601 (مثال: 2026-08-25T20:00:00)' },
                         party_size: { type: SchemaType.INTEGER, description: 'عدد الأشخاص للحجز' },
+                        date_time: { type: SchemaType.STRING, description: 'تاريخ ووقت الحجز بصيغة ISO 8601 أو تاريخ ووقت واضح' },
+                        notes: { type: SchemaType.STRING, description: 'ملاحظات خاصة بالحجز' },
                       },
                       required: ['restaurant_id', 'customer_phone', 'date_time', 'party_size'],
                     },
                   },
                   {
                     name: 'send_interactive_menu',
-                    description: 'إرسال قائمة الطعام (المنيو) كقائمة تفاعلية بالصور والأصناف للعميل على واتساب مباشرة بمجرد طلبه استعراض المنيو أو الطعام',
+                    description: 'إرسال قائمة الطعام (المنيو) كقائمة تفاعلية بالصور والأصناف للعميل على واتساب مباشرة',
                     parameters: {
                       type: SchemaType.OBJECT,
                       properties: {
@@ -171,13 +182,13 @@ class GeminiService {
                   },
                   {
                     name: 'set_conversation_category',
-                    description: 'تغيير تصنيف المحادثة الحالية بناءً على موضوع كلام العميل (طلب طعام، شكوى، أو استفسار عام)',
+                    description: 'تصنيف سياق المحادثة الحالية لتسهيل إدارتها في لوحة التحكم (ORDER للطلبات، COMPLAINT للشكاوى، INQUIRY للاستفسارات العامة)',
                     parameters: {
                       type: SchemaType.OBJECT,
                       properties: {
                         category: {
                           type: SchemaType.STRING,
-                          description: 'التصنيف المناسب للموضوع الحالي للمحادثة: ORDER للطلبات، COMPLAINT للشكاوى، أو INQUIRY للاستفسارات العامة',
+                          description: 'التصنيف المطلوب: ORDER أو COMPLAINT أو INQUIRY',
                         },
                       },
                       required: ['category'],
@@ -215,19 +226,23 @@ class GeminiService {
               let resultData;
               try {
                 if (name === 'get_menu') {
-                  resultData = await this.executeGetMenu(restaurantId);
+                  resultData = await this.executeGetMenu(restaurantId, toolInput.category);
                 } else if (name === 'create_order') {
                   resultData = await this.executeCreateOrder(
                     toolInput.restaurant_id || restaurantId,
                     toolInput.customer_phone || customerPhone,
-                    toolInput.items
+                    toolInput.items,
+                    toolInput.delivery_address,
+                    toolInput.notes
                   );
                 } else if (name === 'create_reservation') {
                   resultData = await this.executeCreateReservation(
                     toolInput.restaurant_id || restaurantId,
                     toolInput.customer_phone || customerPhone,
                     toolInput.date_time,
-                    toolInput.party_size
+                    toolInput.party_size,
+                    toolInput.customer_name,
+                    toolInput.notes
                   );
                 } else if (name === 'send_interactive_menu') {
                   resultData = await this.executeSendInteractiveMenu(
@@ -319,15 +334,21 @@ class GeminiService {
   /**
    * أداة استرجاع المنيو
    */
-  private async executeGetMenu(restaurantId: string) {
-    const items = await this.fetchMenuItemsResiliently(restaurantId);
+  private async executeGetMenu(restaurantId: string, categoryFilter?: string) {
+    let items = await this.fetchMenuItemsResiliently(restaurantId);
+
+    if (categoryFilter && categoryFilter.trim()) {
+      const filtered = items.filter(i => i.category.toLowerCase().includes(categoryFilter.trim().toLowerCase()));
+      if (filtered.length > 0) items = filtered;
+    }
 
     if (items.length === 0) {
-      return { status: 'empty', message: 'قائمة الطعام فارغة حالياً أو غير متوفرة.' };
+      return { status: 'empty', message: 'قائمة الطعام فارغة حالياً أو غير متوفرة لهذا التصنيف.' };
     }
 
     return {
       status: 'success',
+      currency: 'ج.م',
       menu: items.map(item => ({
         id: item.id,
         name: item.name,
@@ -362,14 +383,14 @@ class GeminiService {
       rows: categoryMap[category].slice(0, 10).map(item => ({
         id: `item_${item.id}`,
         title: item.name.substring(0, 24),
-        description: `${Number(item.price)} ريال - ${(item.description || '').substring(0, 50)}`
+        description: `${Number(item.price)} ج.م - ${(item.description || '').substring(0, 50)}`
       }))
     }));
 
     await whatsappService.sendInteractiveListMessage(
       customerPhone,
       `📋 منيو مطعم ${restaurantName}`,
-      'تفضل باختيار الأصناف المفضلة لديك من القائمة التفاعلية التالية:',
+      'تفضل باختيار الأصناف المفضلة لديك من القائمة التفاعلية التالية (الأسعار بالجنيه المصري):',
       'عرض المنيو والتصنيفات 🍕',
       sections
     );
@@ -380,7 +401,7 @@ class GeminiService {
       await whatsappService.sendImageMessage(
         customerPhone,
         itemWithImage.image_url,
-        `📸 صنف مميز: ${itemWithImage.name} - السعر: ${Number(itemWithImage.price)} ريال`
+        `📸 صنف مميز: ${itemWithImage.name} - السعر: ${Number(itemWithImage.price)} ج.م`
       );
     }
 
@@ -393,7 +414,13 @@ class GeminiService {
   /**
    * أداة إنشاء طلب جديد
    */
-  private async executeCreateOrder(restaurantId: string, customerPhone: string, items: { name: string; quantity: number }[]) {
+  private async executeCreateOrder(
+    restaurantId: string,
+    customerPhone: string,
+    items: { name: string; quantity: number; unitPrice?: number; itemNotes?: string }[],
+    deliveryAddress?: string,
+    notes?: string
+  ) {
     const menuItems = await prisma.menuItem.findMany({
       where: { restaurant_id: restaurantId }
     });
@@ -422,7 +449,7 @@ class GeminiService {
         };
       }
 
-      const price = Number(matchedMenu.price);
+      const price = orderItem.unitPrice || Number(matchedMenu.price);
       const subTotal = price * orderItem.quantity;
       totalPrice += subTotal;
 
@@ -431,15 +458,22 @@ class GeminiService {
         name: matchedMenu.name,
         quantity: orderItem.quantity,
         price: price,
-        subtotal: subTotal
+        subtotal: subTotal,
+        notes: orderItem.itemNotes || null
       });
     }
+
+    const orderPayload = {
+      items: orderedItemsDetails,
+      delivery_address: deliveryAddress || null,
+      notes: notes || null
+    };
 
     const order = await prisma.order.create({
       data: {
         restaurant_id: restaurantId,
         customer_phone: customerPhone,
-        items_json: orderedItemsDetails,
+        items_json: orderPayload as any,
         total_price: totalPrice,
         status: 'PENDING'
       }
@@ -449,7 +483,10 @@ class GeminiService {
       status: 'success',
       order_id: order.id,
       items: orderedItemsDetails,
+      delivery_address: deliveryAddress || null,
+      notes: notes || null,
       total_price: totalPrice,
+      currency: 'ج.م',
       message: 'تم تسجيل الطلب بنجاح وهو قيد الانتظار حالياً.'
     };
   }
@@ -457,7 +494,14 @@ class GeminiService {
   /**
    * أداة إنشاء حجز طاولة
    */
-  private async executeCreateReservation(restaurantId: string, customerPhone: string, dateTimeStr: string, partySize: number) {
+  private async executeCreateReservation(
+    restaurantId: string,
+    customerPhone: string,
+    dateTimeStr: string,
+    partySize: number,
+    customerName?: string,
+    notes?: string
+  ) {
     const reservationDate = new Date(dateTimeStr);
     
     if (isNaN(reservationDate.getTime())) {
@@ -489,8 +533,10 @@ class GeminiService {
     return {
       status: 'success',
       reservation_id: reservation.id,
+      customer_name: customerName || null,
       date_time: reservation.date_time.toISOString(),
       party_size: reservation.party_size,
+      notes: notes || null,
       message: 'تم تسجيل حجز الطاولة بنجاح وهو بانتظار التأكيد.'
     };
   }

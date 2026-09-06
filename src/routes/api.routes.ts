@@ -17,6 +17,7 @@ import {
   updateConversationStatus,
   archiveConversation,
   sendManualMessage,
+  sendTemplateMessageEndpoint,
   handleDemoChat,
   importMenu,
   updateRestaurant,
@@ -68,6 +69,8 @@ router.put('/conversations/:id/category', authMiddleware, updateConversationCate
 router.put('/conversations/:id/status', authMiddleware, updateConversationStatus);
 router.put('/conversations/:id/archive', authMiddleware, archiveConversation);
 router.post('/conversations/:id/messages', authMiddleware, sendManualMessage);
+router.post('/conversations/:id/send-manual', authMiddleware, sendManualMessage);
+router.post('/conversations/:id/send-template', authMiddleware, sendTemplateMessageEndpoint);
 
 // إدارة المستخدمين (للمسؤول فقط)
 router.post('/users', authMiddleware, createUser);

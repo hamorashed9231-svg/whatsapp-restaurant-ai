@@ -4,7 +4,9 @@ import jwt from 'jsonwebtoken';
 import * as XLSX from 'xlsx';
 import { prisma } from '../services/prisma.service';
 import { geminiService } from '../services/gemini.service';
+import { whatsappService } from '../services/whatsapp.service';
 import { hashPassword, comparePassword } from '../utils/auth';
+import { checkSessionWindow } from '../utils/sessionWindow';
 
 /**
  * 1. تسجيل الدخول لمسؤول لوحة تحكم المطعم
@@ -501,7 +503,7 @@ let memoryConversations: any[] = [
 ];
 
 /**
- * 11. جلب محادثات المطعم الحقيقية
+ * 11. جلب محادثات المطعم الحقيقية وإثرائها ببيانات نافذة الـ 24 ساعة
  */
 export const getConversations = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params; // restaurant_id
@@ -512,42 +514,81 @@ export const getConversations = async (req: Request, res: Response): Promise<voi
         orderBy: { updated_at: 'desc' }
       });
       if (conversations && conversations.length > 0) {
-        res.status(200).json(conversations);
+        const enriched = conversations.map(c => {
+          let msgs: any[] = [];
+          try {
+            msgs = typeof c.messages_json === 'string' ? JSON.parse(c.messages_json) : (c.messages_json as any[]) || [];
+          } catch (e) {}
+          const lastUserMsg = msgs.slice().reverse().find((m: any) => m.role === 'user');
+          const windowInfo = checkSessionWindow(lastUserMsg?.timestamp || lastUserMsg?.created_at || c.updated_at || c.created_at);
+          return {
+            ...c,
+            isWindowOpen: windowInfo.isWindowOpen,
+            windowExpiresAt: windowInfo.windowExpiresAt,
+            remainingHours: windowInfo.remainingHours
+          };
+        });
+        res.status(200).json(enriched);
         return;
       }
     } catch (e) {}
 
-    res.status(200).json(memoryConversations);
+    const enrichedMemory = memoryConversations.map(c => {
+      const lastUserMsg = (c.messages_json || []).slice().reverse().find((m: any) => m.role === 'user');
+      const windowInfo = checkSessionWindow(lastUserMsg?.timestamp || c.updated_at);
+      return {
+        ...c,
+        isWindowOpen: windowInfo.isWindowOpen,
+        windowExpiresAt: windowInfo.windowExpiresAt,
+        remainingHours: windowInfo.remainingHours
+      };
+    });
+    res.status(200).json(enrichedMemory);
   } catch (error: any) {
     res.status(200).json(memoryConversations);
   }
 };
 
 /**
- * 12. جلب رسائل محادثة معينة
+ * 12. جلب رسائل محادثة معينة مدعومة ببيانات نافذة الـ 24 ساعة للفرونت إند
  */
 export const getConversationMessages = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params; // conversation_id
   try {
+    let msgs: any[] = [];
+    let lastActivityDate: any = null;
+
     try {
       const conversation = await prisma.conversation.findUnique({
         where: { id }
       });
       if (conversation) {
-        res.status(200).json(conversation.messages_json);
-        return;
+        try {
+          msgs = typeof conversation.messages_json === 'string' ? JSON.parse(conversation.messages_json) : (conversation.messages_json as any[]) || [];
+        } catch (e) {}
+        lastActivityDate = conversation.updated_at || conversation.created_at;
       }
     } catch (e) {}
 
-    const memConv = memoryConversations.find(c => c.id === id);
-    if (memConv) {
-      res.status(200).json(memConv.messages_json);
-      return;
+    if (msgs.length === 0) {
+      const memConv = memoryConversations.find(c => c.id === id);
+      if (memConv) {
+        msgs = memConv.messages_json || [];
+        lastActivityDate = memConv.updated_at;
+      }
     }
 
-    res.status(200).json([]);
+    const lastUserMsg = msgs.slice().reverse().find((m: any) => m.role === 'user');
+    const windowInfo = checkSessionWindow(lastUserMsg?.timestamp || lastUserMsg?.created_at || lastActivityDate);
+
+    res.status(200).json({
+      messages: msgs,
+      isWindowOpen: windowInfo.isWindowOpen,
+      windowExpiresAt: windowInfo.windowExpiresAt,
+      remainingHours: windowInfo.remainingHours
+    });
   } catch (error: any) {
-    res.status(200).json([]);
+    res.status(200).json({ messages: [], isWindowOpen: false, windowExpiresAt: null, remainingHours: 0 });
   }
 };
 
@@ -948,44 +989,106 @@ export const updateConversationStatus = async (req: AuthenticatedRequest, res: R
 };
 
 /**
- * إرسال رد يدوي من الموظف وتحديث الحالة لـ IN_PROGRESS
+ * إرسال رد يدوي من الموظف وتحديث الحالة لـ IN_PROGRESS (مع التحقق الإجباري من نافذة الـ 24 ساعة)
  */
 export const sendManualMessage = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { id } = req.params; // conversation_id
-  const { content, image_url } = req.body;
+  const content = req.body.content || req.body.text;
+  const image_url = req.body.image_url;
   const currentUsername = req.user?.username || 'موظف الخدمة';
 
-  const newMsg = {
-    role: 'assistant',
-    content: content || '',
-    image_url: image_url || undefined,
-    sender_name: currentUsername,
-    timestamp: new Date().toISOString()
-  };
-
   try {
+    let msgs: any[] = [];
+    let customerPhone = '';
+    let restaurantId = '';
+    let conv: any = null;
+
     try {
-      const conv = await prisma.conversation.findUnique({ where: { id } });
+      conv = await prisma.conversation.findUnique({ where: { id } });
       if (conv) {
-        let msgs: any[] = [];
+        customerPhone = conv.customer_phone;
+        restaurantId = conv.restaurant_id;
         try {
           msgs = typeof conv.messages_json === 'string' ? JSON.parse(conv.messages_json) : (conv.messages_json as any[]) || [];
         } catch (e) {}
-        msgs.push(newMsg);
-
-        const updated = await prisma.conversation.update({
-          where: { id },
-          data: {
-            messages_json: msgs,
-            status: 'IN_PROGRESS',
-            assigned_to: conv.assigned_to || currentUsername,
-            updated_at: new Date()
-          }
-        });
-        res.status(200).json({ status: 'success', message: 'تم إرسال الرسالة وحفظ المحادثة!', conversation: updated, messageObj: newMsg });
-        return;
       }
     } catch (e) {}
+
+    if (!conv) {
+      const memConv = memoryConversations.find(c => c.id === id);
+      if (memConv) {
+        conv = memConv;
+        customerPhone = memConv.customer_phone;
+        restaurantId = memConv.restaurant_id;
+        msgs = memConv.messages_json || [];
+      }
+    }
+
+    // 1. فحص نافذة الـ 24 ساعة من تاريخ أحدث رسالة صادرة من العميل
+    const lastUserMsg = msgs.slice().reverse().find((m: any) => m.role === 'user');
+    const windowInfo = checkSessionWindow(lastUserMsg?.timestamp || lastUserMsg?.created_at || conv?.created_at);
+
+    if (!windowInfo.isWindowOpen) {
+      res.status(400).json({
+        status: 'error',
+        error: 'SESSION_WINDOW_EXPIRED',
+        message: 'انتهت مهلة الـ 24 ساعة للتواصل المباشر مع العميل. يجب إرسال رسالة قالب معتمدة (Template Message) لإعادة فتح المحادثة.',
+        isWindowOpen: false,
+        windowExpiresAt: windowInfo.windowExpiresAt
+      });
+      return;
+    }
+
+    const newMsg = {
+      role: 'assistant',
+      content: content || '',
+      image_url: image_url || undefined,
+      sender_name: currentUsername,
+      timestamp: new Date().toISOString()
+    };
+
+    // 2. إرسال الرسالة عبر WhatsApp Cloud API إن وُجد تفاصيل رقم المطعم
+    if (customerPhone && restaurantId) {
+      try {
+        const restaurant = await prisma.restaurant.findUnique({ where: { id: restaurantId } });
+        if (restaurant) {
+          if (image_url && image_url.trim()) {
+            await whatsappService.sendImageMessage(
+              customerPhone,
+              image_url,
+              content,
+              restaurant.whatsapp_number_id,
+              restaurant.whatsapp_access_token || undefined
+            );
+          } else if (content && content.trim()) {
+            await whatsappService.sendTextMessage(
+              customerPhone,
+              content,
+              restaurant.whatsapp_number_id,
+              restaurant.whatsapp_access_token || undefined
+            );
+          }
+        }
+      } catch (wsErr: any) {
+        console.warn('[Manual Message] تحذير الإرسال عبر واتساب:', wsErr.message);
+      }
+    }
+
+    // 3. تحديث السجل في الداتابيز
+    if (conv && conv.id && conv.restaurant_id) {
+      msgs.push(newMsg);
+      const updated = await prisma.conversation.update({
+        where: { id: conv.id },
+        data: {
+          messages_json: msgs,
+          status: 'IN_PROGRESS',
+          assigned_to: conv.assigned_to || currentUsername,
+          updated_at: new Date()
+        }
+      });
+      res.status(200).json({ status: 'success', message: 'تم إرسال الرسالة وحفظ المحادثة!', conversation: updated, messageObj: newMsg });
+      return;
+    }
 
     const memConv = memoryConversations.find(c => c.id === id);
     if (memConv) {
@@ -1002,6 +1105,98 @@ export const sendManualMessage = async (req: AuthenticatedRequest, res: Response
 
     res.status(200).json({ status: 'success', message: 'تم الإرسال بنجاح!', messageObj: newMsg });
   } catch (error: any) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+/**
+ * إرسال قالب رسمي معتمد من Meta بالـ Endpoint المخصص لوحات التحكم عند انقضاء الـ 24 ساعة
+ */
+export const sendTemplateMessageEndpoint = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const { id } = req.params; // conversation_id
+  const { templateName, languageCode, components } = req.body;
+  const currentUsername = req.user?.username || 'موظف الخدمة';
+
+  if (!templateName || !templateName.trim()) {
+    res.status(400).json({ status: 'error', message: 'اسم القالب الرسمي (templateName) مطلوب.' });
+    return;
+  }
+
+  try {
+    let customerPhone = '';
+    let restaurantId = '';
+    let conv: any = null;
+
+    try {
+      conv = await prisma.conversation.findUnique({ where: { id } });
+      if (conv) {
+        customerPhone = conv.customer_phone;
+        restaurantId = conv.restaurant_id;
+      }
+    } catch (e) {}
+
+    if (!conv) {
+      const memConv = memoryConversations.find(c => c.id === id);
+      if (memConv) {
+        conv = memConv;
+        customerPhone = memConv.customer_phone;
+        restaurantId = memConv.restaurant_id;
+      }
+    }
+
+    if (!customerPhone) {
+      res.status(404).json({ status: 'error', message: 'المحادثة غير موجودة أو رقم العميل مفقود.' });
+      return;
+    }
+
+    const restaurant = await prisma.restaurant.findUnique({ where: { id: restaurantId } });
+
+    // إرسال القالب من خلال خدمة واتساب
+    await whatsappService.sendTemplateMessage(
+      customerPhone,
+      templateName,
+      languageCode || 'ar',
+      components,
+      restaurant?.whatsapp_number_id,
+      restaurant?.whatsapp_access_token || undefined
+    );
+
+    const templateMsgObj = {
+      role: 'assistant',
+      content: `[قالب رسمي معتمد: ${templateName}]`,
+      sender_name: currentUsername,
+      is_template: true,
+      timestamp: new Date().toISOString()
+    };
+
+    if (conv && conv.id && conv.restaurant_id) {
+      let msgs: any[] = [];
+      try {
+        msgs = typeof conv.messages_json === 'string' ? JSON.parse(conv.messages_json) : (conv.messages_json as any[]) || [];
+      } catch (e) {}
+      msgs.push(templateMsgObj);
+
+      const updated = await prisma.conversation.update({
+        where: { id: conv.id },
+        data: {
+          messages_json: msgs,
+          status: 'IN_PROGRESS',
+          assigned_to: conv.assigned_to || currentUsername,
+          updated_at: new Date()
+        }
+      });
+      res.status(200).json({
+        status: 'success',
+        message: `تم إرسال القالب الرسمي (${templateName}) بنجاح وإعادة تفعيل التواصل مع العميل!`,
+        conversation: updated,
+        messageObj: templateMsgObj
+      });
+      return;
+    }
+
+    res.status(200).json({ status: 'success', message: 'تم إرسال القالب بنجاح!', messageObj: templateMsgObj });
+  } catch (error: any) {
+    console.error('خطأ إرسال القالب الرسمي:', error);
     res.status(500).json({ status: 'error', message: error.message });
   }
 };

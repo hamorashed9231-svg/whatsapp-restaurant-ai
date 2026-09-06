@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { whatsappQueue } from '../queues/whatsapp.queue';
+import { redisClient } from '../services/redis.service';
 
 /**
  * التحقق من خادم الويب هوك (Webhook Verification) من فيسبوك
@@ -27,7 +28,7 @@ export const verifyWebhook = async (req: Request, res: Response): Promise<void> 
 };
 
 /**
- * استقبال أحداث ورسائل واتساب وإضافتها فوراً إلى طابور BullMQ
+ * استقبال أحداث ورسائل واتساب وإضافتها لمؤقت التجميع (Debouncing) عبر Redis و BullMQ
  */
 export const handleWebhook = async (req: Request, res: Response): Promise<void> => {
   // إرجاع حالة 200 لـ WhatsApp فوراً لمنع تكرار الإرسال وتفادي انتهاء المهلة (Timeout)
@@ -79,23 +80,48 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    console.log(`[Webhook] تم استلام رسالة وإضافتها لطابور BullMQ [${customerPhone}] -> [${whatsappNumberId}]: "${messageText}"`);
+    console.log(`[Webhook] تم استلام رسالة جديدة من [${customerPhone}]: "${messageText}". جاري التجميع بـ Redis (Debouncing)...`);
 
-    // 3. إضافة الرسالة فوراً لمصفوفة طابور BullMQ للمعالجة المنظمة بالخلفية
+    // 3. تخزين الرسالة مؤقتاً في Redis تحت قائمة (List) بـ TTL قصير
+    const pendingKey = `pending_messages:${customerPhone}`;
+    const payload = JSON.stringify({
+      whatsappNumberId,
+      customerPhone,
+      messageText,
+      messageType: message.type,
+      timestamp: new Date().toISOString(),
+    });
+
+    await redisClient.rpush(pendingKey, payload);
+    await redisClient.expire(pendingKey, 120); // وقت انتهاء الصلاحية 120 ثانية
+
+    // 4. آلية Debouncing في BullMQ باستخدام jobId ثابت لتجميع الرسائل المتتالية
+    const jobId = `chat_${customerPhone}`;
+    try {
+      const existingJob = await whatsappQueue.getJob(jobId);
+      if (existingJob) {
+        await existingJob.remove();
+        console.log(`[Webhook] تم إلغاء الوظيفة المؤجلة السابقة للرقم [${customerPhone}] وتجديد النافذة الزمنية (Debouncing).`);
+      }
+    } catch (removeErr: any) {
+      // إغفال الخطأ إن كانت الوظيفة قيد التنفيذ أو غير موجودة
+    }
+
+    // إضافة الوظيفة بتأخير زمني قدره 2500ms (2.5 ثانية)
     await whatsappQueue.add(
       'process-whatsapp-message',
       {
         whatsappNumberId,
         customerPhone,
-        messageText,
-        messageType: message.type,
+        messageText: '', // سيتم سحب كامل الرسائل المجمعة من Redis داخل الـ Worker
         timestamp: new Date().toISOString(),
       },
       {
-        jobId: `msg_${customerPhone}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        jobId,
+        delay: 2500,
       }
     );
   } catch (error: any) {
-    console.error('[Webhook] خطأ أثناء دفع الرسالة إلى طابور BullMQ:', error.message);
+    console.error('[Webhook] خطأ أثناء معالجة الـ Webhook والدفع إلى Redis/BullMQ:', error.message);
   }
 };

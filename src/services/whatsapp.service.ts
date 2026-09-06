@@ -223,6 +223,54 @@ class WhatsAppService {
       throw new Error(`فشل إرسال الكتالوج: ${JSON.stringify(error.response?.data || error.message)}`);
     }
   }
+
+  /**
+   * 5. إرسال قالب رسمي معتمد من Meta (Official WhatsApp Template Message)
+   * يُستخدم لإعادة فتح المحادثة بعد انتهاء نافذة الـ 24 ساعة (24-Hour Session Window Expiry)
+   */
+  public async sendTemplateMessage(
+    to: string,
+    templateName: string,
+    languageCode: string = 'ar',
+    components?: any[],
+    customPhoneNumberId?: string,
+    customToken?: string
+  ): Promise<any> {
+    const token = customToken || this.token;
+    if (!token || token.includes('ضع_توكين') || token === 'mock-token' || token.startsWith('EAAG...')) {
+      console.log('-----------------------------------------------------------');
+      console.log(`📋 [WhatsApp Mock Template] إلى: ${to}`);
+      console.log(`🏷️ [اسم القالب]: ${templateName} | اللغة: ${languageCode}`);
+      console.log('-----------------------------------------------------------');
+      return { mock: true, success: true };
+    }
+
+    try {
+      const response = await axios.post(
+        this.getUrl(customPhoneNumberId),
+        {
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: to,
+          type: 'template',
+          template: {
+            name: templateName,
+            language: {
+              code: languageCode,
+            },
+            ...(components && components.length > 0 ? { components } : {}),
+          },
+        },
+        { headers: this.getHeaders(customToken) }
+      );
+
+      console.log(`[WhatsApp] تم إرسال القالب الرسمي (${templateName}) للرقم ${to}`);
+      return response.data;
+    } catch (error: any) {
+      console.error('[WhatsApp Error] فشل إرسال القالب الرسمي:', error.response?.data || error.message);
+      throw new Error(`فشل إرسال قالب واتساب الرسمي: ${JSON.stringify(error.response?.data || error.message)}`);
+    }
+  }
 }
 
 export const whatsappService = new WhatsAppService();

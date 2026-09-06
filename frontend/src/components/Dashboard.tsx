@@ -24,7 +24,10 @@ import {
   Menu,
   X,
   Copy,
-  Download
+  Download,
+  Lock,
+  AlertTriangle,
+  FileText
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -89,6 +92,9 @@ interface Conversation {
   closed_by?: string | null;
   is_archived?: boolean;
   updated_at: string;
+  isWindowOpen?: boolean;
+  windowExpiresAt?: string | null;
+  remainingHours?: number;
 }
 
 const getStoredDeletedIds = (): string[] => {
@@ -149,6 +155,7 @@ interface ChatMessage {
   image_url?: string;
   sender_name?: string;
   timestamp?: string;
+  is_template?: boolean;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({
@@ -176,8 +183,36 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [chatInput, setChatInput] = useState('');
-  const [chatImageUrl, setChatImageUrl] = useState('');
+  // حالات نافذة الـ 24 ساعة وقوالب واتساب الرسمية
+  const [selectedConvWindowOpen, setSelectedConvWindowOpen] = useState<boolean>(true);
+  const [selectedConvExpiresAt, setSelectedConvExpiresAt] = useState<string | null>(null);
+  const [showTemplateModal, setShowTemplateModal] = useState<boolean>(false);
+  const [selectedTemplateName, setSelectedTemplateName] = useState<string>('order_update');
+  const [templateLanguage, setTemplateLanguage] = useState<string>('ar');
+  const [templateLoading, setTemplateLoading] = useState<boolean>(false);
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [templateSuccess, setTemplateSuccess] = useState<string | null>(null);
+
+  const AVAILABLE_TEMPLATES = [
+    {
+      name: 'order_update',
+      title: '📦 متابعة وتحديث حالة الطلب (Order Update)',
+      description: 'يُستخدم لإخطار العميل بتحديث حالة طلبه وإعادة فتح المحادثة بعد انقضاء 24 ساعة.',
+      preview: 'أهلاً بك! نود إبلاغك بأنه تم تحديث حالة طلبك لدى المطعم. يسعدنا تواصلك معنا لمتابعة تفاصيل الطلب.'
+    },
+    {
+      name: 'issue_followup',
+      title: '⚠️ متابعة الشكوى والدعم الفني (Issue Followup)',
+      description: 'يُستخدم للمتابعة مع العميل بخصوص شكوى سابقة أو استفسار معلق.',
+      preview: 'مرحباً بك من فريق خدمة العملاء! نتابع معك بخصوص ملاحظاتك الأخيرة، ويرجى التواصل معنا لضمان رضاك التام.'
+    },
+    {
+      name: 'general_reconnect',
+      title: '💬 إعادة التواصل واستعادة المحادثة (General Reconnect)',
+      description: 'يُستخدم للتواصل العام واستعراض العروض وتجديد جلسة المحادثة.',
+      preview: 'أهلاً بك مجدداً في مطعمنا! يسعدنا تقديم أحدث العروض والوجبات الخاصة لك. كيف يمكننا خدمتك اليوم؟'
+    }
+  ];
 
   // إعدادات وتصنيفات المستخدمين والمحادثات
   const [userRole, setUserRole] = useState<'admin' | 'staff'>('staff');
@@ -644,7 +679,15 @@ const Dashboard: React.FC<DashboardProps> = ({
     setSelectedConversation(conversation);
     try {
       const res = await api.get(`/conversations/${conversation.id}/messages`);
-      setChatMessages(res.data || []);
+      const msgList = Array.isArray(res.data) ? res.data : (res.data?.messages || []);
+      setChatMessages(msgList);
+      if (res.data && res.data.isWindowOpen !== undefined) {
+        setSelectedConvWindowOpen(res.data.isWindowOpen);
+        setSelectedConvExpiresAt(res.data.windowExpiresAt || null);
+      } else {
+        setSelectedConvWindowOpen(conversation.isWindowOpen ?? true);
+        setSelectedConvExpiresAt(conversation.windowExpiresAt ?? null);
+      }
       // تمرير الشات لأسفل
       setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     } catch (err) {
@@ -656,6 +699,10 @@ const Dashboard: React.FC<DashboardProps> = ({
   const handleSendManualMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if ((!chatInput.trim() && !chatImageUrl.trim()) || !selectedConversation || !restaurant) return;
+    if (!selectedConvWindowOpen) {
+      setShowTemplateModal(true);
+      return;
+    }
 
     const textToSend = chatInput;
     const imgToSend = chatImageUrl;
@@ -682,15 +729,55 @@ const Dashboard: React.FC<DashboardProps> = ({
       };
       setConversations(prev => prev.map(c => c.id === selectedConversation.id ? { ...c, ...updatedData } : c));
       setSelectedConversation(prev => prev ? { ...prev, ...updatedData } : null);
-    } catch (err) {
+    } catch (err: any) {
       console.error('خطأ إرسال رد يدوي:', err);
-      const updatedData = {
-        status: 'IN_PROGRESS',
-        assigned_to: selectedConversation.assigned_to || currentUsername,
-        updated_at: new Date().toISOString()
+      if (err.response?.status === 400 && (err.response?.data?.error === 'SESSION_WINDOW_EXPIRED' || err.response?.data?.message?.includes('24'))) {
+        setSelectedConvWindowOpen(false);
+        setShowTemplateModal(true);
+        setChatMessages(prev => prev.filter(m => m !== newMsg));
+      } else {
+        const updatedData = {
+          status: 'IN_PROGRESS',
+          assigned_to: selectedConversation.assigned_to || currentUsername,
+          updated_at: new Date().toISOString()
+        };
+        setConversations(prev => prev.map(c => c.id === selectedConversation.id ? { ...c, ...updatedData } : c));
+        setSelectedConversation(prev => prev ? { ...prev, ...updatedData } : null);
+      }
+    }
+  };
+
+  // إرسال قالب موثق من Meta وإعادة فتح الجلسة 24 ساعة
+  const handleSendTemplateMessage = async () => {
+    if (!selectedConversation) return;
+    setTemplateLoading(true);
+    setTemplateError(null);
+    setTemplateSuccess(null);
+    try {
+      const res = await api.post(`/conversations/${selectedConversation.id}/send-template`, {
+        templateName: selectedTemplateName,
+        language: templateLanguage
+      });
+      setTemplateSuccess('تم إرسال القالب وتجديد نافذة الـ 24 ساعة بنجاح!');
+      setSelectedConvWindowOpen(true);
+      const selTempObj = AVAILABLE_TEMPLATES.find(t => t.name === selectedTemplateName);
+      const newTemplateMsg: ChatMessage = {
+        role: 'assistant',
+        content: `[قالب موثّق من Meta: ${selTempObj?.name || selectedTemplateName}]\n${selTempObj?.preview || ''}`,
+        sender_name: currentUsername,
+        timestamp: new Date().toISOString(),
+        is_template: true
       };
-      setConversations(prev => prev.map(c => c.id === selectedConversation.id ? { ...c, ...updatedData } : c));
-      setSelectedConversation(prev => prev ? { ...prev, ...updatedData } : null);
+      setChatMessages(prev => [...prev, newTemplateMsg]);
+      setTimeout(() => {
+        setShowTemplateModal(false);
+        setTemplateSuccess(null);
+      }, 1500);
+    } catch (err: any) {
+      console.error('Error sending template message:', err);
+      setTemplateError(err.response?.data?.message || 'فشل إرسال القالب الرسمي عبر Meta Graph API.');
+    } finally {
+      setTemplateLoading(false);
     }
   };
 
@@ -2412,6 +2499,47 @@ const Dashboard: React.FC<DashboardProps> = ({
                       </div>
 
                       <form onSubmit={handleSendManualMessage} style={{ ...styles.chatPaneInputArea, flexDirection: 'column', gap: '8px' }}>
+                        {/* شريط التحذير الأصفر عند انتهاء نافذة الـ 24 ساعة للعميل */}
+                        {!selectedConvWindowOpen && (
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            backgroundColor: darkMode ? 'rgba(217, 119, 6, 0.15)' : '#FEF3C7',
+                            border: '1px solid #F59E0B',
+                            borderRadius: '8px',
+                            padding: '10px 14px',
+                            width: '100%',
+                            gap: '12px'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: darkMode ? '#FBBF24' : '#92400E', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                              <AlertTriangle size={18} color="#F59E0B" />
+                              <span>انتهت نافذة الـ 24 ساعة للعميل. تم إغلاق الرسائل النصية العادية وفقاً لسياسات Meta الرسمية.</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setShowTemplateModal(true)}
+                              style={{
+                                backgroundColor: '#F59E0B',
+                                color: '#FFFFFF',
+                                border: 'none',
+                                borderRadius: '6px',
+                                padding: '6px 12px',
+                                fontSize: '0.8rem',
+                                fontWeight: 'bold',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                whiteSpace: 'nowrap'
+                              }}
+                            >
+                              <FileText size={14} />
+                              <span>📋 إرسال قالب رسمي (Template)</span>
+                            </button>
+                          </div>
+                        )}
+
                         {/* معاينة الصورة المرفقة من الجهاز قبل الإرسال */}
                         {chatImageUrl && (
                           <div style={{ 
@@ -2465,25 +2593,28 @@ const Dashboard: React.FC<DashboardProps> = ({
                             accept="image/*"
                             style={{ display: 'none' }}
                             onChange={handleChatImageFileChange}
+                            disabled={!selectedConvWindowOpen}
                           />
 
                           <button
                             type="button"
                             onClick={() => chatFileInputRef.current?.click()}
+                            disabled={!selectedConvWindowOpen}
                             style={{
                               border: '1px solid #CBD5E1',
                               backgroundColor: chatImageUrl ? '#EFF6FF' : '#FFFFFF',
-                              color: '#3B82F6',
+                              color: !selectedConvWindowOpen ? '#94A3B8' : '#3B82F6',
                               borderRadius: '8px',
                               padding: '8px 14px',
                               fontSize: '0.85rem',
                               fontWeight: 'bold',
-                              cursor: 'pointer',
+                              cursor: !selectedConvWindowOpen ? 'not-allowed' : 'pointer',
                               display: 'flex',
                               alignItems: 'center',
                               gap: '6px',
                               transition: 'all 0.2s',
-                              whiteSpace: 'nowrap'
+                              whiteSpace: 'nowrap',
+                              opacity: !selectedConvWindowOpen ? 0.6 : 1
                             }}
                             title="اختيار صورة مباشرة من الجهاز"
                           >
@@ -2495,11 +2626,24 @@ const Dashboard: React.FC<DashboardProps> = ({
                             type="text"
                             value={chatInput}
                             onChange={e => setChatInput(e.target.value)}
-                            placeholder={`اكتب رسالة للرد كـ (${currentUsername})...`}
-                            style={styles.chatPaneInput}
+                            placeholder={selectedConvWindowOpen ? `اكتب رسالة للرد كـ (${currentUsername})...` : 'إرسال الرسائل العادية معطل - يرجى اختيار قالب رسمي من الزر بالأعلى'}
+                            disabled={!selectedConvWindowOpen}
+                            style={{
+                              ...styles.chatPaneInput,
+                              backgroundColor: !selectedConvWindowOpen ? (darkMode ? '#1E293B' : '#F1F5F9') : styles.chatPaneInput.backgroundColor,
+                              cursor: !selectedConvWindowOpen ? 'not-allowed' : 'text'
+                            }}
                           />
 
-                          <button type="submit" style={styles.chatPaneSendBtn} disabled={!chatInput.trim() && !chatImageUrl.trim()}>
+                          <button
+                            type="submit"
+                            style={{
+                              ...styles.chatPaneSendBtn,
+                              backgroundColor: !selectedConvWindowOpen ? '#94A3B8' : '#0066FF',
+                              cursor: (!selectedConvWindowOpen || (!chatInput.trim() && !chatImageUrl.trim())) ? 'not-allowed' : 'pointer'
+                            }}
+                            disabled={!selectedConvWindowOpen || (!chatInput.trim() && !chatImageUrl.trim())}
+                          >
                             <Send size={18} color="#FFFFFF" style={{ transform: 'rotate(180deg)' }} />
                           </button>
                         </div>
@@ -2513,6 +2657,106 @@ const Dashboard: React.FC<DashboardProps> = ({
                   )}
                 </div>
               </div>
+
+              {/* مودال إرسال قوالب واتساب الرسمية عند انتهاء نافذة 24 ساعة */}
+              {showTemplateModal && (
+                <div style={styles.modalOverlay}>
+                  <div className="glass-card" style={{ ...styles.modal, maxWidth: '650px', width: '90%' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <FileText size={22} color="#0066FF" />
+                        <h3 style={{ margin: 0, fontWeight: 'bold', fontSize: '1.2rem', color: 'var(--text-main)' }}>
+                          إرسال قالب رسمي موثّق (WhatsApp Template)
+                        </h3>
+                      </div>
+                      <button
+                        onClick={() => { setShowTemplateModal(false); setTemplateError(null); setTemplateSuccess(null); }}
+                        style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                      >
+                        <X size={20} />
+                      </button>
+                    </div>
+
+                    <div style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', padding: '12px 16px', borderRadius: '8px', marginBottom: '20px', fontSize: '0.85rem', color: '#D97706', textAlign: 'right' }}>
+                      <strong>⚠️ تنبيه نافذة التفاعل (24-Hour Session Window):</strong>
+                      <p style={{ margin: '4px 0 0 0' }}>
+                        وفقاً لسياسات Meta الرسمية، انقضت 24 ساعة منذ آخر رسالة أرسلها العميل ({selectedConversation?.customer_phone}). لا يمكن التواصل سوى عبر قالب موثق معتمد لإعادة فتح الجلسة.
+                      </p>
+                    </div>
+
+                    {templateError && (
+                      <div style={{ display: 'flex', alignItems: 'center', backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '12px', borderRadius: '8px', color: '#EF4444', fontSize: '0.9rem', marginBottom: '16px', textAlign: 'right' }}>
+                        <AlertCircle size={20} color="#EF4444" style={{ marginLeft: 8 }} />
+                        <span>{templateError}</span>
+                      </div>
+                    )}
+
+                    {templateSuccess && (
+                      <div style={{ display: 'flex', alignItems: 'center', backgroundColor: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '12px', borderRadius: '8px', color: '#10B981', fontSize: '0.9rem', marginBottom: '16px', textAlign: 'right' }}>
+                        <CheckCircle size={20} color="#10B981" style={{ marginLeft: 8 }} />
+                        <span>{templateSuccess}</span>
+                      </div>
+                    )}
+
+                    <div style={{ marginBottom: '20px' }}>
+                      <label style={{ ...styles.formLabel, marginBottom: '8px', display: 'block' }}>اختر القالب المعتمد للإرسال:</label>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {AVAILABLE_TEMPLATES.map((tmpl) => (
+                          <div
+                            key={tmpl.name}
+                            onClick={() => setSelectedTemplateName(tmpl.name)}
+                            style={{
+                              padding: '14px',
+                              borderRadius: '10px',
+                              border: selectedTemplateName === tmpl.name ? '2px solid #0066FF' : '1px solid var(--border-color)',
+                              backgroundColor: selectedTemplateName === tmpl.name ? 'rgba(0, 102, 255, 0.06)' : 'var(--card-bg)',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s'
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                              <span style={{ fontWeight: 'bold', fontSize: '0.95rem', color: selectedTemplateName === tmpl.name ? '#0066FF' : 'var(--text-main)' }}>
+                                {tmpl.title}
+                              </span>
+                              {selectedTemplateName === tmpl.name && <CheckCircle size={18} color="#0066FF" />}
+                            </div>
+                            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0 0 8px 0' }}>{tmpl.description}</p>
+                            <div style={{ backgroundColor: 'rgba(0,0,0,0.03)', padding: '8px 12px', borderRadius: '6px', fontSize: '0.8rem', color: 'var(--text-main)', fontStyle: 'italic', borderRight: '3px solid #0066FF' }}>
+                              "{tmpl.preview}"
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+                      <button
+                        type="button"
+                        onClick={() => { setShowTemplateModal(false); setTemplateError(null); setTemplateSuccess(null); }}
+                        className="btn btn-secondary"
+                        disabled={templateLoading}
+                      >
+                        إلغاء
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSendTemplateMessage}
+                        className="btn btn-primary"
+                        disabled={templateLoading || !selectedTemplateName}
+                      >
+                        {templateLoading ? (
+                          <span className="spinner" style={{ width: 16, height: 16 }}></span>
+                        ) : (
+                          <>
+                            <Send size={16} style={{ transform: 'rotate(180deg)' }} />
+                            <span>تأكيد وإرسال القالب الآن</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
