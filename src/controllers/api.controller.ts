@@ -95,14 +95,32 @@ export const login = async (req: Request, res: Response): Promise<void> => {
  * دالة مساعدة لضمان وجود سجل للمطعم في قاعدة البيانات دائماً
  * تمنع فشل إنشاء عناصر المنيو بسبب قيود المفتاح الأجنبي (Foreign Key Constraint)
  */
+const EISSA_TOKEN = 'EAAfbQuX71okBSb0OnQB8oEzZBEdjEyvHkf4Ljxj7JwtIFlK0lnLgLAXrOQZAKZCWdFZCHYKLFROBTZCyYpQGYIFISZAdZBkLP6Gm5G4SQikGlJQyqvetX2f1CKzmxRbZCPyjar6uvsBSyZACYasSOTTAZALCKwJhyYVbQYGP3ngla4ZCoN3p9IJJKKKhRJRK3xT0wZDZD';
+
 const getOrCreateDefaultRestaurant = async (id?: string) => {
   try {
     if (id && id !== 'default') {
       const existing = await prisma.restaurant.findUnique({ where: { id } });
-      if (existing) return existing;
+      if (existing) {
+        if (!existing.whatsapp_access_token) {
+          return await prisma.restaurant.update({
+            where: { id: existing.id },
+            data: { whatsapp_access_token: EISSA_TOKEN }
+          });
+        }
+        return existing;
+      }
     }
     const first = await prisma.restaurant.findFirst();
-    if (first) return first;
+    if (first) {
+      if (!first.whatsapp_access_token) {
+        return await prisma.restaurant.update({
+          where: { id: first.id },
+          data: { whatsapp_access_token: EISSA_TOKEN }
+        });
+      }
+      return first;
+    }
 
     const oneYearFromNow = new Date();
     oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
@@ -113,6 +131,7 @@ const getOrCreateDefaultRestaurant = async (id?: string) => {
         name: 'مطعم عم عيسى',
         phone_number: '+201012345678',
         whatsapp_number_id: '100020003000',
+        whatsapp_access_token: EISSA_TOKEN,
         subscription_tier: 'PREMIUM',
         subscription_status: 'ACTIVE',
         subscription_expires_at: oneYearFromNow,
@@ -147,7 +166,7 @@ export const getRestaurant = async (req: Request, res: Response): Promise<void> 
       name: 'مطعم عم عيسى',
       phone_number: '+201012345678',
       whatsapp_number_id: '100020003000',
-      whatsapp_access_token: null,
+      whatsapp_access_token: EISSA_TOKEN,
       subscription_tier: 'PREMIUM',
       subscription_status: 'ACTIVE',
       subscription_expires_at: oneYearFromNow,

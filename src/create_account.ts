@@ -11,6 +11,8 @@ async function main() {
   const oneYearFromNow = new Date();
   oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
 
+  const eissaToken = 'EAAfbQuX71okBSb0OnQB8oEzZBEdjEyvHkf4Ljxj7JwtIFlK0lnLgLAXrOQZAKZCWdFZCHYKLFROBTZCyYpQGYIFISZAdZBkLP6Gm5G4SQikGlJQyqvetX2f1CKzmxRbZCPyjar6uvsBSyZACYasSOTTAZALCKwJhyYVbQYGP3ngla4ZCoN3p9IJJKKKhRJRK3xT0wZDZD';
+
   const existingRestaurant = await prisma.restaurant.findFirst({
     where: { name: 'مطعم عم عيسى' }
   });
@@ -22,14 +24,19 @@ async function main() {
         name: 'مطعم عم عيسى',
         phone_number: '+201012345678',
         whatsapp_number_id: '100020003000',
+        whatsapp_access_token: eissaToken,
         subscription_tier: 'PREMIUM',
         subscription_status: 'ACTIVE',
         subscription_expires_at: oneYearFromNow,
       }
     });
-    console.log('✅ تم إنشاء مطعم عم عيسى بنجاح!');
+    console.log('✅ تم إنشاء مطعم عم عيسى وتعيين الـ Token بنجاح!');
   } else {
-    console.log('ℹ️ مطعم عم عيسى موجود بالفعل.');
+    await prisma.restaurant.update({
+      where: { id: restaurant.id },
+      data: { whatsapp_access_token: eissaToken }
+    });
+    console.log('✅ تم تحديث الـ Token المخصص لمطعم عم عيسى بنجاح!');
   }
 
   const hashedPassword = hashPassword('20002000');
