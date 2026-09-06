@@ -48,6 +48,7 @@ app.use(express.static(frontendDistPath, {
 
 app.use('/health', healthRoutes);
 app.use('/webhook', webhookRoutes);
+app.use('/api/webhook', webhookRoutes);
 app.use('/api', apiRoutes);
 
 app.get('/api-info', (req, res) => {

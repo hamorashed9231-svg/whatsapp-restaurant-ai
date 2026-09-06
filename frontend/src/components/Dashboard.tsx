@@ -676,15 +676,22 @@ const Dashboard: React.FC<DashboardProps> = ({
       return;
     }
 
+    // دالة مساعدة: تحويل base64 لنص بديل، واقتطاع أي نص يتجاوز حد Excel (32767 حرف)
+    const safeText = (val: string | undefined | null, maxLen = 32000): string => {
+      if (!val) return '';
+      if (val.startsWith('data:image')) return '[صورة مضمنة]';
+      return val.length > maxLen ? val.substring(0, maxLen) + '...' : val;
+    };
+
     try {
       const dataToExport = menuItems.map((item, index) => ({
         'م': index + 1,
-        'اسم الصنف': item.name,
-        'الوصف': item.description || '',
+        'اسم الصنف': safeText(item.name),
+        'الوصف': safeText(item.description),
         'السعر (ج.م)': Number(item.price),
-        'التصنيف': item.category,
+        'التصنيف': safeText(item.category),
         'حالة التوفر': item.is_available ? 'متوفر' : 'غير متوفر',
-        'رابط الصورة': item.image_url || ''
+        'رابط الصورة': safeText(item.image_url)
       }));
 
       const worksheet = XLSX.utils.json_to_sheet(dataToExport);
@@ -700,19 +707,30 @@ const Dashboard: React.FC<DashboardProps> = ({
       ];
 
       const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'قائمة الطعام');
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Menu');
 
-      const restName = (restaurant?.name || 'مطعم_عم_عيسى').replace(/\s+/g, '_');
-      const fileName = `منيو_${restName}_${new Date().toISOString().split('T')[0]}.xlsx`;
+      // استخدام Blob + createObjectURL بدلاً من XLSX.writeFile لضمان التوافق مع جميع المتصفحات
+      const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([wbout], { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
 
-      XLSX.writeFile(workbook, fileName);
+      const restName = (restaurant?.name || 'restaurant').replace(/\s+/g, '_');
+      const fileName = `menu_${restName}_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
     } catch (err) {
       console.error('فشل تصدير ملف الإكسيل:', err);
       alert('حدث خطأ أثناء تصدير ملف الإكسيل.');
     }
   };
 
-const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): Promise<string> => {
+const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): Promise<string> => {
   return new Promise((resolve) => {
     if (!dataUrl || !dataUrl.startsWith('data:image/') || dataUrl.startsWith('data:image/svg')) {
       return resolve(dataUrl);
@@ -865,19 +883,18 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
     selectedConversationIdRef.current = selectedConversation?.id || null;
   }, [selectedConversation?.id]);
 
-  // تحديث الشات والمحتوى والمشتركات المباشرة والمنيو تلقائياً وبشكل لحظي كلي عبر كافة الأجهزة دون ريفريش
+  // تحديث الشات تلقائياً كل 3 ثواني وبشكل خفيف (بدون سحب المنيو والتصنيفات الثقيلة)
   useEffect(() => {
     if (!restaurant) return;
     const interval = setInterval(async () => {
       try {
-        const [resConvs, resMenu, resCats] = await Promise.all([
-          api.get(`/restaurants/${restaurant.id}/conversations`),
-          api.get(`/restaurants/${restaurant.id}/menu`),
-          api.get(`/restaurants/${restaurant.id}/categories`)
-        ]);
+        // ✅ جلب المحادثات فقط لتخفيف الضغط على الشبكة والسيرفر (المنيو يُجلب عند التحميل فقط)
+        const resConvs = await api.get(`/restaurants/${restaurant.id}/conversations`);
 
         const freshConvs: Conversation[] = resConvs.data;
         if (Array.isArray(freshConvs)) {
+          let hasActiveConvChanged = false;
+          
           setConversations(prev => {
             let hasNewMessage = false;
             const newUnreads = new Set(unreadConvIds);
@@ -888,6 +905,9 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
                 if (fc.status === 'UNANSWERED' || fc.category === 'INQUIRY' || fc.category === 'ORDER') {
                   hasNewMessage = true;
                   newUnreads.add(fc.id);
+                }
+                if (fc.id === selectedConversationIdRef.current) {
+                  hasActiveConvChanged = true;
                 }
               } else if (!prevFc && prev.length > 0) {
                 hasNewMessage = true;
@@ -907,23 +927,23 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
 
           const currentActiveId = selectedConversationIdRef.current;
           if (currentActiveId) {
-            const freshActive = freshConvs.find(c => c.id === currentActiveId);
-            if (freshActive) {
-              api.get(`/conversations/${currentActiveId}/messages`).then(msgRes => {
-                if (selectedConversationIdRef.current === currentActiveId) {
-                  const msgList = Array.isArray(msgRes.data) ? msgRes.data : (msgRes.data?.messages || []);
-                  setChatMessages(msgList);
-                }
-              }).catch(() => {});
-            }
+            api.get(`/conversations/${currentActiveId}/messages`).then(msgRes => {
+              if (selectedConversationIdRef.current === currentActiveId) {
+                const msgList = Array.isArray(msgRes.data) ? msgRes.data : (msgRes.data?.messages || []);
+                setChatMessages(prev => {
+                  if (prev.length !== msgList.length) {
+                    return msgList;
+                  }
+                  const lastPrev = prev[prev.length - 1];
+                  const lastNew = msgList[msgList.length - 1];
+                  if (lastPrev?.content !== lastNew?.content || lastPrev?.timestamp !== lastNew?.timestamp) {
+                    return msgList;
+                  }
+                  return prev;
+                });
+              }
+            }).catch(() => {});
           }
-        }
-
-        if (Array.isArray(resMenu.data)) {
-          setMenuItems(resMenu.data);
-        }
-        if (Array.isArray(resCats.data)) {
-          setCustomCategories(resCats.data);
         }
       } catch (e) {}
     }, 3000);
@@ -1079,33 +1099,28 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
       }
     } catch (err: any) {
       console.error('Error updating status:', err);
-      const updated = {
-        status: newStatus,
-        assigned_to: newStatus === 'UNANSWERED' ? null : (newStatus === 'IN_PROGRESS' ? currentUsername : selectedConversation?.assigned_to || currentUsername),
-        closed_by: newStatus === 'CLOSED' ? currentUsername : null,
-        updated_at: new Date().toISOString()
-      };
-      setConversations(prev => prev.map(c => c.id === conversationId ? { ...c, ...updated } : c));
-      if (selectedConversation?.id === conversationId) {
-        setSelectedConversation(prev => prev ? { ...prev, ...updated } : null);
-      }
+      alert('حدث خطأ أثناء تحديث حالة المحادثة.');
     }
   };
 
-  // أرشفة أو إلغاء أرشفة المحادثة
+  // أرشفة أو إلغاء أرشفة المحادثة والتحديث الفوري المباشر (Optimistic UI Update)
   const handleToggleArchive = async (conversationId: string, is_archived: boolean) => {
+    // 1. تحديث الحالة فوراً في الذاكرة المباشرة بدون أي انتظار
+    setConversations(prev => prev.map(c => c.id === conversationId ? { ...c, is_archived } : c));
+    if (selectedConversation?.id === conversationId) {
+      setSelectedConversation(prev => prev ? { ...prev, is_archived } : null);
+    }
+
     try {
       await api.put(`/conversations/${conversationId}/archive`, { is_archived });
-      setConversations(prev => prev.map(c => c.id === conversationId ? { ...c, is_archived } : c));
-      if (selectedConversation?.id === conversationId) {
-        setSelectedConversation(prev => prev ? { ...prev, is_archived } : null);
-      }
     } catch (err: any) {
       console.error('Error toggling archive:', err);
-      setConversations(prev => prev.map(c => c.id === conversationId ? { ...c, is_archived } : c));
+      // التراجع الفوري في حال حدوث خطأ في الشبكة
+      setConversations(prev => prev.map(c => c.id === conversationId ? { ...c, is_archived: !is_archived } : c));
       if (selectedConversation?.id === conversationId) {
-        setSelectedConversation(prev => prev ? { ...prev, is_archived } : null);
+        setSelectedConversation(prev => prev ? { ...prev, is_archived: !is_archived } : null);
       }
+      alert('حدث خطأ أثناء حفظ التغييرات، يرجى الفحص والتحقق من الاتصال بالشبكة.');
     }
   };
 
@@ -1120,10 +1135,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
       }
     } catch (err: any) {
       console.error('Error deleting conversation:', err);
-      setConversations(prev => prev.filter(c => c.id !== conversationId));
-      if (selectedConversation?.id === conversationId) {
-        setSelectedConversation(null);
-      }
+      alert('حدث خطأ أثناء محاولة الحذف.');
     }
   };
 
@@ -1245,17 +1257,36 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
   const handleSelectConversation = async (conversation: Conversation) => {
     selectedConversationIdRef.current = conversation.id;
     setSelectedConversation(conversation);
-    setChatMessages([]); // تفريغ رسائل المحادثة السابقة فوراً لتجنب ظهور شات قديم
+
+    // ✅ عرض الرسائل الموجودة فوراً من الـ conversation object (بدون انتظار)
+    const existingMsgs: ChatMessage[] = Array.isArray((conversation as any).messages_json)
+      ? (conversation as any).messages_json
+      : [];
+    if (existingMsgs.length > 0) {
+      setChatMessages(existingMsgs);
+    } else {
+      setChatMessages([]); // نفرغ فقط لو مفيش رسائل مؤقتة
+    }
+
     setUnreadConvIds(prev => {
       const next = new Set(prev);
       next.delete(conversation.id);
       return next;
     });
+
+    // تمرير الشات لأسفل فوراً إذا في رسائل
+    if (existingMsgs.length > 0) {
+      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'auto' }), 50);
+    }
+
     try {
       const res = await api.get(`/conversations/${conversation.id}/messages`);
       if (selectedConversationIdRef.current === conversation.id) {
         const msgList = Array.isArray(res.data) ? res.data : (res.data?.messages || []);
-        setChatMessages(msgList);
+        // نُحدِّث الرسائل فقط لو الـ API رجع بيانات أحدث أو أكثر
+        if (msgList.length >= existingMsgs.length) {
+          setChatMessages(msgList);
+        }
         if (res.data && res.data.isWindowOpen !== undefined) {
           setSelectedConvWindowOpen(res.data.isWindowOpen);
           setSelectedConvExpiresAt(res.data.windowExpiresAt || null);
@@ -1263,7 +1294,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
           setSelectedConvWindowOpen(conversation.isWindowOpen ?? true);
           setSelectedConvExpiresAt(conversation.windowExpiresAt ?? null);
         }
-        // تمرير الشات لأسفل
+        // تمرير الشات لأسفل بعد التحديث
         setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
       }
     } catch (err) {
@@ -3365,7 +3396,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
                                 </button>
                               )}
 
-                              {(selectedConversation.status || '').toUpperCase() !== 'CLOSED' && (
+                              {(selectedConversation.status || '').toUpperCase() !== 'CLOSED' ? (
                                 <button
                                   type="button"
                                   onClick={() => handleUpdateStatus(selectedConversation.id, 'CLOSED')}
@@ -3377,7 +3408,26 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
                                     borderRadius: '6px',
                                     fontSize: '0.75rem',
                                     fontWeight: 'bold',
-                                    cursor: 'pointer'
+                                    cursor: 'pointer',
+                                    boxShadow: '0 2px 6px rgba(239, 68, 68, 0.3)'
+                                  }}
+                                >
+                                  🔴 إغلاق المحادثة
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateStatus(selectedConversation.id, 'IN_PROGRESS')}
+                                  style={{
+                                    border: 'none',
+                                    backgroundColor: '#10B981',
+                                    color: '#FFFFFF',
+                                    padding: '6px 12px',
+                                    borderRadius: '6px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 'bold',
+                                    cursor: 'pointer',
+                                    boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
                                   }}
                                 >
                                   🔄 إعادة فتح الدردشة
@@ -3435,12 +3485,13 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
                                   <div
                                     style={{
                                       ...styles.chatPaneBubble,
-                                      backgroundColor: isUser ? (darkMode ? '#1E293B' : '#EBF3FF') : (darkMode ? '#0F172A' : '#FFFFFF'),
-                                      border: isUser ? '1px solid #BFDBFE' : '1px solid #E2E8F0',
-                                      borderRadius: isUser ? '12px 12px 12px 0px' : '12px 12px 0px 12px',
-                                      boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                                      backgroundColor: isUser ? (darkMode ? '#202C33' : '#FFFFFF') : (darkMode ? '#005C4B' : '#D9FDD3'),
+                                      color: isUser ? (darkMode ? '#E9EDEF' : '#111B21') : (darkMode ? '#E9EDEF' : '#111B21'),
+                                      border: isUser ? (darkMode ? '1px solid #2A3942' : '1px solid #E2E8F0') : (darkMode ? 'none' : '1px solid #C6F6D5'),
+                                      borderRadius: isUser ? '14px 14px 14px 2px' : '14px 14px 2px 14px',
+                                      boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
                                       position: 'relative',
-                                      minWidth: '180px'
+                                      minWidth: '200px'
                                     }}
                                   >
                                     {senderName && !isUser && (
@@ -4841,20 +4892,21 @@ const getDashboardStyles = (isDark: boolean): Record<string, React.CSSProperties
     },
     conversationsLayout: {
       display: 'grid',
-      gridTemplateColumns: '320px 1fr',
-      height: 'calc(100vh - 170px)',
-      maxHeight: 'calc(100vh - 170px)',
+      gridTemplateColumns: '300px 1fr',
+      height: 'calc(100vh - 105px)',
+      maxHeight: 'calc(100vh - 105px)',
       borderRadius: '16px',
       overflow: 'hidden',
       border: `1px solid ${borderColor}`,
       backgroundColor: cardBg,
+      boxShadow: isDark ? '0 8px 32px rgba(0,0,0,0.45)' : '0 8px 32px rgba(0,0,0,0.06)',
     },
     conversationsListPane: {
       borderLeft: `1px solid ${borderColor}`,
       display: 'flex',
       flexDirection: 'column',
       textAlign: 'right',
-      backgroundColor: isDark ? '#081427' : '#F8FAFC',
+      backgroundColor: isDark ? '#111B21' : '#F0F2F5',
       height: '100%',
       maxHeight: '100%',
       overflowY: 'auto',
@@ -4863,15 +4915,15 @@ const getDashboardStyles = (isDark: boolean): Record<string, React.CSSProperties
       display: 'flex',
       justifyContent: 'space-between',
       alignItems: 'center',
-      padding: '16px',
+      padding: '14px 16px',
       borderBottom: `1px solid ${borderColor}`,
       cursor: 'pointer',
       transition: 'all 0.2s',
       color: textMain,
     },
     convAvatar: {
-      width: '34px',
-      height: '34px',
+      width: '36px',
+      height: '36px',
       borderRadius: '50%',
       backgroundColor: 'rgba(0, 210, 255, 0.12)',
       display: 'flex',
@@ -4884,43 +4936,47 @@ const getDashboardStyles = (isDark: boolean): Record<string, React.CSSProperties
       height: '100%',
       maxHeight: '100%',
       overflow: 'hidden',
-      backgroundColor: cardBg,
+      backgroundColor: isDark ? '#0B141A' : '#EFEAE2',
     },
     chatPaneHeader: {
-      padding: '16px',
+      padding: '12px 18px',
       borderBottom: `1px solid ${borderColor}`,
       textAlign: 'right',
-      backgroundColor: isDark ? '#081427' : '#F8FAFC',
+      backgroundColor: isDark ? '#202C33' : '#FFFFFF',
       color: textMain,
+      boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+      zIndex: 2,
     },
     chatPaneBody: {
       flex: 1,
-      padding: '20px',
+      padding: '24px 28px',
       overflowY: 'auto',
       minHeight: 0,
       maxHeight: '100%',
-      backgroundColor: inputBg,
+      backgroundColor: isDark ? '#0B141A' : '#EFEAE2',
       display: 'flex',
       flexDirection: 'column',
-      gap: '12px',
+      gap: '14px',
       scrollbarWidth: 'thin',
-      scrollbarColor: '#0066FF rgba(0,0,0,0.1)',
+      scrollbarColor: '#00A884 rgba(0,0,0,0.1)',
     },
     chatPaneMessageRow: {
       display: 'flex',
       width: '100%',
     },
     chatPaneBubble: {
-      maxWidth: '75%',
-      padding: '12px 16px',
-      boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
+      maxWidth: '78%',
+      padding: '12px 18px',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+      lineHeight: '1.6',
     },
     chatPaneInputArea: {
-      padding: '14px',
+      padding: '14px 18px',
       borderTop: `1px solid ${borderColor}`,
       display: 'flex',
-      gap: '10px',
-      backgroundColor: isDark ? '#081427' : '#F8FAFC',
+      gap: '12px',
+      backgroundColor: isDark ? '#202C33' : '#F0F2F5',
+      alignItems: 'center',
     },
     chatPaneInput: {
       flex: 1,

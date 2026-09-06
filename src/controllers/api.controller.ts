@@ -369,7 +369,7 @@ export const updateReservationStatus = async (req: Request, res: Response): Prom
   }
 };
 
-let memoryConversations: any[] = [
+export let memoryConversations: any[] = [
   {
     id: 'conv-101',
     restaurant_id: 'restaurant-am-eissa',
@@ -458,31 +458,55 @@ export const getConversationMessages = async (req: Request, res: Response): Prom
     let msgs: any[] = [];
     let lastActivityDate: any = null;
 
-    const conversation = await prisma.conversation.findUnique({
-      where: { id }
-    });
+    const conversation = await prisma.conversation.findUnique({ where: { id } });
 
     if (conversation) {
+      lastActivityDate = conversation.updated_at || conversation.created_at;
+
+      // 1. اقرأ messages_json (يحتوي على image_url وبيانات كاملة)
+      let jsonMsgs: any[] = [];
       try {
-        msgs = typeof conversation.messages_json === 'string' ? JSON.parse(conversation.messages_json) : (conversation.messages_json as any[]) || [];
+        jsonMsgs = typeof conversation.messages_json === 'string'
+          ? JSON.parse(conversation.messages_json)
+          : (conversation.messages_json as any[]) || [];
       } catch (e) {}
 
-      if (msgs.length === 0) {
-        const dbMsgs = await prisma.message.findMany({
-          where: { conversation_id: id },
-          orderBy: { created_at: 'asc' }
-        });
-        if (dbMsgs && dbMsgs.length > 0) {
-          msgs = dbMsgs.map(m => ({
-            id: m.id,
-            role: m.role,
-            content: m.content,
-            timestamp: m.created_at.toISOString()
-          }));
-        }
-      }
+      // 2. اقرأ Message table (الأحدث والأكثر دقة للنصوص)
+      const dbMsgs = await prisma.message.findMany({
+        where: { conversation_id: id },
+        orderBy: { created_at: 'asc' }
+      });
 
-      lastActivityDate = conversation.updated_at || conversation.created_at;
+      if (dbMsgs && dbMsgs.length > 0) {
+        // دمج المصدرين: ابدأ بـ messages_json (له image_url)
+        // وأضف أي رسائل جديدة من Message table غير موجودة في messages_json
+        if (jsonMsgs.length >= dbMsgs.length) {
+          // messages_json أكتمل - استخدمه كمصدر أساسي (يحفظ image_url)
+          msgs = jsonMsgs;
+        } else {
+          // Message table أحدث - استخدمه لكن أضف image_url من messages_json لو متاح
+          msgs = dbMsgs.map((m, idx) => {
+            const matchingJsonMsg = jsonMsgs[idx];
+            return {
+              id: m.id,
+              role: m.role,
+              content: m.content,
+              // استرجاع image_url من messages_json إذا كانت نفس الرسالة
+              image_url: matchingJsonMsg?.image_url || undefined,
+              sender_name: matchingJsonMsg?.sender_name || undefined,
+              timestamp: m.created_at.toISOString()
+            };
+          });
+          // أضف أي رسائل في messages_json غير موجودة في DB (برسائل الصور مثلاً)
+          if (jsonMsgs.length > dbMsgs.length) {
+            const extraJsonMsgs = jsonMsgs.slice(dbMsgs.length);
+            msgs = [...msgs, ...extraJsonMsgs];
+          }
+        }
+      } else if (jsonMsgs.length > 0) {
+        // لا يوجد في Message table - استخدم messages_json مباشرة
+        msgs = jsonMsgs;
+      }
     }
 
     const lastUserMsg = msgs.slice().reverse().find((m: any) => m.role === 'user');
@@ -968,7 +992,30 @@ export const sendManualMessage = async (req: AuthenticatedRequest, res: Response
       timestamp: new Date().toISOString()
     };
 
-    // 2. إرسال الرسالة عبر WhatsApp Cloud API إن وُجد تفاصيل رقم المطعم
+    // 2. حفظ الرسالة في DB أولاً (دائماً، بغض النظر عن نتيجة الإرسال عبر واتساب)
+    let whatsappWarning: string | null = null;
+    if (conv && conv.id && conv.restaurant_id) {
+      msgs.push(newMsg);
+      await prisma.message.create({
+        data: {
+          conversation_id: conv.id,
+          role: 'assistant',
+          content: content || (image_url ? '[صورة مرفقة]' : '')
+        }
+      }).catch(() => {});
+
+      await prisma.conversation.update({
+        where: { id: conv.id },
+        data: {
+          messages_json: msgs,
+          status: 'IN_PROGRESS',
+          assigned_to: conv.assigned_to || currentUsername,
+          updated_at: new Date()
+        }
+      });
+    }
+
+    // 3. إرسال الرسالة عبر WhatsApp Cloud API (بعد الحفظ مباشرة)
     if (customerPhone && restaurantId) {
       try {
         const restaurant = await prisma.restaurant.findUnique({ where: { id: restaurantId } });
@@ -991,36 +1038,24 @@ export const sendManualMessage = async (req: AuthenticatedRequest, res: Response
           }
         }
       } catch (wsErr: any) {
-        console.error('[Manual Message Error] فشل الإرسال عبر واتساب:', wsErr.message);
-        res.status(400).json({
-          status: 'error',
-          message: wsErr.message || 'فشل إرسال الرسالة عبر الواتساب.'
-        });
-        return;
+        // ⚠️ فشل الإرسال لا يمنع الحفظ - الرسالة محفوظة، نُبلغ فقط بتحذير
+        console.error('[Manual Message Error] فشل الإرسال عبر واتساب (الرسالة محفوظة في DB):', wsErr.message);
+        whatsappWarning = wsErr.message || 'تم حفظ الرسالة لكن فشل إرسالها عبر واتساب.';
       }
     }
 
-    // 3. تحديث السجل في الداتابيز
-    if (conv && conv.id && conv.restaurant_id) {
-      msgs.push(newMsg);
-      await prisma.message.create({
-        data: {
-          conversation_id: conv.id,
-          role: 'assistant',
-          content: content || (image_url ? '[صورة مرفقة]' : '')
-        }
-      }).catch(() => {});
-
-      const updated = await prisma.conversation.update({
-        where: { id: conv.id },
-        data: {
-          messages_json: msgs,
-          status: 'IN_PROGRESS',
-          assigned_to: conv.assigned_to || currentUsername,
-          updated_at: new Date()
-        }
+    // 4. إرجاع النتيجة
+    if (conv && conv.id) {
+      const updatedConv = await prisma.conversation.findUnique({ where: { id: conv.id } }).catch(() => conv);
+      res.status(200).json({
+        status: 'success',
+        message: whatsappWarning
+          ? `تم حفظ الرسالة لكن فشل إرسالها عبر واتساب: ${whatsappWarning}`
+          : 'تم إرسال الرسالة وحفظ المحادثة!',
+        whatsappWarning,
+        conversation: updatedConv || conv,
+        messageObj: newMsg
       });
-      res.status(200).json({ status: 'success', message: 'تم إرسال الرسالة وحفظ المحادثة!', conversation: updated, messageObj: newMsg });
       return;
     }
 

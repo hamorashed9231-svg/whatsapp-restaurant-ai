@@ -12,7 +12,7 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
   async (job: Job<WhatsAppMessageJob>) => {
     try {
       const { whatsappNumberId, customerPhone: rawCustomerPhone, messageText: defaultMessageText } = job.data;
-      const customerPhone = normalizePhone(rawCustomerPhone);
+      const customerPhone = normalizePhone(rawCustomerPhone) || (rawCustomerPhone ? String(rawCustomerPhone).trim() : 'unknown_user');
       console.log(`[BullMQ Worker] بدء معالجة المهمة #${job.id} للزبون [${customerPhone}] متجهة للمطعم [${whatsappNumberId}]`);
 
       // 1. سحب كافة الرسائل المجمعة في القائمة المؤقتة المعزولة برقم المطعم والزبون من Redis
@@ -242,42 +242,78 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
         }
       }
 
-      // 7. استدعاء خدمة الذكاء الاصطناعي Gemini API
-      const { responseText, updatedHistory } = await geminiService.processMessage(
-        conversation.id,
-        restaurant.id,
-        restaurant.name,
-        customerPhone,
-        history,
-        combinedMessageText
-      );
+      // 7. استدعاء خدمة الذكاء الاصطناعي Gemini API أو الرد التلقائي
+      let responseText = '';
+      let updatedHistory = history;
 
-      // 8. حفظ رد الـ AI في جدول Message وتحديث messages_json للتوافق مع واجهة الأدمن
-      await prisma.message.create({
-        data: {
-          conversation_id: conversation.id,
-          role: 'assistant',
-          content: responseText,
-        },
-      });
+      const isAiDisabled = process.env.DISABLE_AI === 'true' || process.env.DISABLE_AI === '1';
 
-      await prisma.conversation.update({
-        where: { id: conversation.id },
-        data: {
-          messages_json: updatedHistory as any,
-          updated_at: new Date(),
-        },
-      });
+      if (isAiDisabled) {
+        console.log(`[BullMQ Worker] ⚠️ الذكاء الاصطناعي معطل. استخدام الرد التلقائي المباشر للزبون [${customerPhone}]`);
+        responseText = `أهلاً بك في مطعم ${restaurant.name}! 🌸\nتم استلام رسالتك بنجاح وسنتابع معك فوراً.`;
+        updatedHistory = [
+          ...history,
+          { role: 'user', content: combinedMessageText, timestamp: new Date().toISOString() },
+          { role: 'assistant', content: responseText, timestamp: new Date().toISOString() }
+        ];
+      } else {
+        try {
+          const aiResult = await geminiService.processMessage(
+            conversation.id,
+            restaurant.id,
+            restaurant.name,
+            customerPhone,
+            history,
+            combinedMessageText
+          );
+          responseText = aiResult.responseText;
+          updatedHistory = aiResult.updatedHistory;
+        } catch (aiErr: any) {
+          console.error('[BullMQ Worker AI Error] ⚠️ تعذر استدعاء الذكاء الاصطناعي، يتم استخدام الرد التلقائي المباشر:', aiErr.message || aiErr);
+          responseText = `أهلاً بك في مطعم ${restaurant.name}! 🌸\nتم استلام رسالتك بنجاح وسنتابع معك فوراً.`;
+          updatedHistory = [
+            ...history,
+            { role: 'user', content: combinedMessageText, timestamp: new Date().toISOString() },
+            { role: 'assistant', content: responseText, timestamp: new Date().toISOString() }
+          ];
+        }
+      }
 
-      // 9. إرسال رد الـ AI للزبون عبر واتساب
-      await whatsappService.sendTextMessage(
+      // 8 & 9. إرسال رد الـ AI وحفظ السجل بالتوازي لتسريع وصول الرسالة للزبون فوراً
+      const sendPromise = whatsappService.sendTextMessage(
         customerPhone,
         responseText,
         restaurant.whatsapp_number_id,
         restaurant.whatsapp_access_token || undefined
-      );
+      ).then(() => {
+        console.log(`[BullMQ Worker] اكتملت معالجة المهمة #${job.id} وإرسال الرد الموحد للزبون [${customerPhone}] بنجاح.`);
+      }).catch((sendErr: any) => {
+        console.error(`[BullMQ Worker WhatsApp Send Error] ❌ فشل إرسال الرسالة عبر واتساب للزبون [${customerPhone}]:`, sendErr.message || sendErr);
+      });
 
-      console.log(`[BullMQ Worker] اكتملت معالجة المهمة #${job.id} وإرسال الرد الموحد للزبون [${customerPhone}] بنجاح.`);
+      const dbSavePromise = (async () => {
+        try {
+          await prisma.message.create({
+            data: {
+              conversation_id: conversation.id,
+              role: 'assistant',
+              content: responseText,
+            },
+          });
+
+          await prisma.conversation.update({
+            where: { id: conversation.id },
+            data: {
+              messages_json: updatedHistory as any,
+              updated_at: new Date(),
+            },
+          });
+        } catch (dbErr: any) {
+          console.error('[BullMQ Worker DB Save Error]:', dbErr.message || dbErr);
+        }
+      })();
+
+      await Promise.all([sendPromise, dbSavePromise]);
     } catch (workerErr: any) {
       console.error(`[BullMQ Worker ❌] خطأ غير متوقع أثناء معالجة المهمة #${job?.id}:`, workerErr.message || workerErr);
       throw workerErr;

@@ -8,9 +8,9 @@ class PrismaService {
 
   public static getInstance(): PrismaClient {
     if (!PrismaService.instance) {
-      let dbUrl = process.env.DB_URL || process.env.DATABASE_URL || '';
-      if (!dbUrl || dbUrl.includes('ep-morning-tree-sy423kmo')) {
-        dbUrl = 'postgresql://neondb_owner:npg_uwftzrUp5Is0@ep-wild-art-aewy2ecu-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require';
+      const dbUrl = process.env.DB_URL || process.env.DATABASE_URL;
+      if (!dbUrl) {
+        throw new Error('خطأ: لم يتم ضبط متغير البيئة DB_URL أو DATABASE_URL للاتصال بقاعدة البيانات.');
       }
 
       PrismaService.instance = new PrismaClient({
