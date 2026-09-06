@@ -114,6 +114,41 @@ interface ChatMessage {
   isStaff?: boolean;
 }
 
+interface QuickReplyItem {
+  id: string;
+  label: string;
+  text: string;
+}
+
+const DEFAULT_QUICK_REPLIES: QuickReplyItem[] = [
+  { id: '1', label: '👋 ترحيب بالعميل', text: 'أهلاً بك في مطعم عيسى! 🌯 كيف أقدر أساعدك النهاردة؟' },
+  { id: '2', label: '📦 حالة الطلب', text: 'تم تسجيل طلبك وجاري إعداده في المطبخ وسيصلك خلال 30 دقيقة!' },
+  { id: '3', label: '⏰ مواعيد العمل', text: 'بنفتح يومياً من الساعة 11 صباحاً وحتى الساعة 2 صباحاً. مرحباً بك في أي وقت!' },
+  { id: '4', label: '🛵 خدمة التوصيل', text: 'التوصيل مجاناً للطلبات الأكثر من 150 جنيه داخل المنطقة.' },
+  { id: '5', label: '✅ تأكيد الاستلام', text: 'شكراً لتواصلك معنا! سعداء بخدمتك ونتمنى لك وجبة شهية.' }
+];
+
+const getStoredQuickReplies = (restId?: string): QuickReplyItem[] => {
+  try {
+    const key = restId ? `rivix_quick_replies_${restId}` : 'rivix_quick_replies_v1';
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+    return DEFAULT_QUICK_REPLIES;
+  } catch (e) {
+    return DEFAULT_QUICK_REPLIES;
+  }
+};
+
+const saveQuickRepliesToStorage = (replies: QuickReplyItem[], restId?: string) => {
+  try {
+    const key = restId ? `rivix_quick_replies_${restId}` : 'rivix_quick_replies_v1';
+    localStorage.setItem(key, JSON.stringify(replies));
+  } catch (e) {}
+};
+
 const getStoredDeletedIds = (restId?: string): string[] => {
   try {
     const key = restId ? `rivix_deleted_menu_items_${restId}` : 'rivix_deleted_menu_items';
@@ -305,6 +340,11 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState<string>('');
   const [chatImageUrl, setChatImageUrl] = useState<string>('');
+  // حالات الردود المحفوظة القابلة للإضافة والتعديل من قبل الأدمن
+  const [savedReplies, setSavedReplies] = useState<QuickReplyItem[]>(() => getStoredQuickReplies(restaurantId));
+  const [showAddReplyModal, setShowAddReplyModal] = useState<boolean>(false);
+  const [newReplyLabel, setNewReplyLabel] = useState<string>('');
+  const [newReplyText, setNewReplyText] = useState<string>('');
   // حالات نافذة الـ 24 ساعة وقوالب واتساب الرسمية
   const [selectedConvWindowOpen, setSelectedConvWindowOpen] = useState<boolean>(true);
   const [selectedConvExpiresAt, setSelectedConvExpiresAt] = useState<string | null>(null);
@@ -737,6 +777,35 @@ const Dashboard: React.FC<DashboardProps> = ({
         setSelectedConversation(null);
       }
     }
+  };
+
+  // إضافة رد محفوظ جديد بواسطة الأدمن
+  const handleAddQuickReply = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newReplyLabel.trim() || !newReplyText.trim()) return;
+
+    const newItem: QuickReplyItem = {
+      id: `reply_${Date.now()}`,
+      label: newReplyLabel.trim(),
+      text: newReplyText.trim()
+    };
+
+    const updated = [...savedReplies, newItem];
+    setSavedReplies(updated);
+    saveQuickRepliesToStorage(updated, restaurantId);
+
+    setNewReplyLabel('');
+    setNewReplyText('');
+    setShowAddReplyModal(false);
+  };
+
+  // حذف رد محفوظ من قبل الأدمن
+  const handleDeleteQuickReply = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm('هل أنت متأكد من حذف هذا الرد المحفوظ؟')) return;
+    const updated = savedReplies.filter(r => r.id !== id);
+    setSavedReplies(updated);
+    saveQuickRepliesToStorage(updated, restaurantId);
   };
 
   // دالة تحديد الألوان والبادجات للحالات الـ 3 (غير مردود، جاري الرد، مغلقة)
@@ -2736,29 +2805,73 @@ const Dashboard: React.FC<DashboardProps> = ({
                                 <Sparkles size={14} color="#0066FF" />
                                 <span>ردود محفوظة:</span>
                               </span>
-                              {SAVED_QUICK_REPLIES.map((reply, idx) => (
-                                <button
-                                  key={idx}
-                                  type="button"
-                                  onClick={() => setChatInput(reply.text)}
+                              {savedReplies.map((reply) => (
+                                <div
+                                  key={reply.id}
                                   style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
                                     border: '1px solid #BFDBFE',
                                     backgroundColor: darkMode ? '#1E293B' : '#EFF6FF',
                                     color: darkMode ? '#93C5FD' : '#1E40AF',
                                     borderRadius: '16px',
-                                    padding: '4px 10px',
+                                    padding: '3px 10px',
                                     fontSize: '0.72rem',
                                     fontWeight: 'bold',
-                                    cursor: 'pointer',
                                     whiteSpace: 'nowrap',
-                                    transition: 'all 0.2s',
                                     boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
                                   }}
-                                  title={`إدراج الرد: "${reply.text}"`}
                                 >
-                                  {reply.label}
-                                </button>
+                                  <span
+                                    onClick={() => setChatInput(reply.text)}
+                                    style={{ cursor: 'pointer' }}
+                                    title={`إدراج الرد: "${reply.text}"`}
+                                  >
+                                    {reply.label}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleDeleteQuickReply(reply.id, e)}
+                                    style={{
+                                      border: 'none',
+                                      background: 'none',
+                                      color: darkMode ? '#94A3B8' : '#64748B',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      padding: 0,
+                                      marginLeft: '2px'
+                                    }}
+                                    title="حذف هذا الرد المحفوظ"
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                </div>
                               ))}
+                              {/* زر إضافة رد محفوظ جديد للأدمن */}
+                              <button
+                                type="button"
+                                onClick={() => setShowAddReplyModal(true)}
+                                style={{
+                                  border: '1px dashed #0066FF',
+                                  backgroundColor: darkMode ? 'rgba(0, 102, 255, 0.15)' : '#EBF3FF',
+                                  color: '#0066FF',
+                                  borderRadius: '16px',
+                                  padding: '3px 10px',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 'bold',
+                                  cursor: 'pointer',
+                                  whiteSpace: 'nowrap',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}
+                                title="إضافة رد جديد مخصص لقائمة الردود المحفوظة"
+                              >
+                                <Plus size={13} />
+                                <span>إضافة رد</span>
+                              </button>
                             </div>
                           )}
 
@@ -3023,6 +3136,90 @@ const Dashboard: React.FC<DashboardProps> = ({
               )}
             </div>
           )}
+
+              {/* مودال إضافة رد محفوظ جديد للأدمن */}
+              {showAddReplyModal && (
+                <div style={styles.modalOverlay}>
+                  <div className="glass-card" style={{ ...styles.modal, maxWidth: '520px', width: '90%' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <Sparkles size={22} color="#0066FF" />
+                        <h3 style={{ margin: 0, fontWeight: 'bold', fontSize: '1.15rem', color: 'var(--text-main)' }}>
+                          إضافة رد جديد مخصص لقائمة الردود المحفوظة
+                        </h3>
+                      </div>
+                      <button
+                        onClick={() => setShowAddReplyModal(false)}
+                        style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                      >
+                        <X size={20} />
+                      </button>
+                    </div>
+
+                    <form onSubmit={handleAddQuickReply} style={{ display: 'flex', flexDirection: 'column', gap: '16px', textAlign: 'right' }}>
+                      <div>
+                        <label style={{ ...styles.formLabel, marginBottom: '6px', display: 'block' }}>عنوان الرد / الإيموجي الاختصاري:</label>
+                        <input
+                          type="text"
+                          value={newReplyLabel}
+                          onChange={(e) => setNewReplyLabel(e.target.value)}
+                          placeholder="مثال: 🍕 عرض البيتزا"
+                          required
+                          style={styles.formInput}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ ...styles.formLabel, marginBottom: '6px', display: 'block' }}>نص الرسالة الذي سيتم إرساله للعميل:</label>
+                        <textarea
+                          rows={4}
+                          value={newReplyText}
+                          onChange={(e) => setNewReplyText(e.target.value)}
+                          placeholder="اكتب النص الكلي للرد هنا ليتم إدراجه بنقرة زر واحدة..."
+                          required
+                          style={{ ...styles.formInput, resize: 'vertical' }}
+                        />
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+                        <button
+                          type="button"
+                          onClick={() => setShowAddReplyModal(false)}
+                          style={{
+                            border: '1px solid var(--border-color)',
+                            backgroundColor: 'transparent',
+                            color: 'var(--text-muted)',
+                            borderRadius: '8px',
+                            padding: '8px 16px',
+                            fontSize: '0.85rem',
+                            fontWeight: 'bold',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          إلغاء
+                        </button>
+
+                        <button
+                          type="submit"
+                          style={{
+                            border: 'none',
+                            backgroundColor: '#0066FF',
+                            color: '#FFFFFF',
+                            borderRadius: '8px',
+                            padding: '8px 20px',
+                            fontSize: '0.85rem',
+                            fontWeight: 'bold',
+                            cursor: 'pointer',
+                            boxShadow: '0 2px 8px rgba(0, 102, 255, 0.3)'
+                          }}
+                        >
+                          💾 حفظ الرد في القائمة
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
 
           {/* 6. التبويب السادس: الإعدادات (Settings) */}
           {activeTab === 'settings' && (
@@ -3867,8 +4064,9 @@ const getDashboardStyles = (isDark: boolean): Record<string, React.CSSProperties
     },
     conversationsLayout: {
       display: 'grid',
-      gridTemplateColumns: '1fr 2.5fr',
-      height: '100%',
+      gridTemplateColumns: '320px 1fr',
+      height: 'calc(100vh - 170px)',
+      maxHeight: 'calc(100vh - 170px)',
       borderRadius: '16px',
       overflow: 'hidden',
       border: `1px solid ${borderColor}`,
@@ -3880,6 +4078,9 @@ const getDashboardStyles = (isDark: boolean): Record<string, React.CSSProperties
       flexDirection: 'column',
       textAlign: 'right',
       backgroundColor: isDark ? '#081427' : '#F8FAFC',
+      height: '100%',
+      maxHeight: '100%',
+      overflowY: 'auto',
     },
     conversationItem: {
       display: 'flex',
@@ -3904,6 +4105,8 @@ const getDashboardStyles = (isDark: boolean): Record<string, React.CSSProperties
       display: 'flex',
       flexDirection: 'column',
       height: '100%',
+      maxHeight: '100%',
+      overflow: 'hidden',
       backgroundColor: cardBg,
     },
     chatPaneHeader: {
@@ -3918,6 +4121,7 @@ const getDashboardStyles = (isDark: boolean): Record<string, React.CSSProperties
       padding: '20px',
       overflowY: 'auto',
       minHeight: 0,
+      maxHeight: '100%',
       backgroundColor: inputBg,
       display: 'flex',
       flexDirection: 'column',

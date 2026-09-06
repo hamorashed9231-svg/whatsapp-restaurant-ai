@@ -55,16 +55,18 @@ body {
 
 /* تخصيص مسطرة التمرير الشاملة (Custom Visual Scrollbar) لجميع الدردشات والنوافذ */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-track {
-  background: rgba(0, 102, 255, 0.06);
+  background: rgba(0, 102, 255, 0.08);
   border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb {
   background: #0066FF;
   border-radius: 10px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.3);
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #004ECC;
