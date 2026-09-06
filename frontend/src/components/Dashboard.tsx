@@ -847,10 +847,12 @@ const Dashboard: React.FC<DashboardProps> = ({
       const updatedData = {
         status: 'IN_PROGRESS',
         assigned_to: selectedConversation.assigned_to || currentUsername,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        isWindowOpen: true
       };
       setConversations(prev => prev.map(c => c.id === selectedConversation.id ? { ...c, ...updatedData } : c));
       setSelectedConversation(prev => prev ? { ...prev, ...updatedData } : null);
+      setSelectedConvWindowOpen(true);
     } catch (err: any) {
       console.error('خطأ إرسال رد يدوي:', err);
       if (err.response?.status === 400 && (err.response?.data?.error === 'SESSION_WINDOW_EXPIRED' || err.response?.data?.message?.includes('24'))) {
@@ -861,10 +863,12 @@ const Dashboard: React.FC<DashboardProps> = ({
         const updatedData = {
           status: 'IN_PROGRESS',
           assigned_to: selectedConversation.assigned_to || currentUsername,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
+          isWindowOpen: true
         };
         setConversations(prev => prev.map(c => c.id === selectedConversation.id ? { ...c, ...updatedData } : c));
         setSelectedConversation(prev => prev ? { ...prev, ...updatedData } : null);
+        setSelectedConvWindowOpen(true);
       }
     }
   };

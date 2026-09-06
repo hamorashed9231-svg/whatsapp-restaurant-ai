@@ -10,11 +10,21 @@ export interface SessionWindowInfo {
 
 export const checkSessionWindow = (lastCustomerMessageDate?: Date | string | null): SessionWindowInfo => {
   if (!lastCustomerMessageDate) {
-    return { isWindowOpen: false, windowExpiresAt: null, remainingHours: 0 };
+    const now = Date.now();
+    return {
+      isWindowOpen: true,
+      windowExpiresAt: new Date(now + 24 * 60 * 60 * 1000).toISOString(),
+      remainingHours: 24,
+    };
   }
   const lastTime = new Date(lastCustomerMessageDate).getTime();
   if (isNaN(lastTime)) {
-    return { isWindowOpen: false, windowExpiresAt: null, remainingHours: 0 };
+    const now = Date.now();
+    return {
+      isWindowOpen: true,
+      windowExpiresAt: new Date(now + 24 * 60 * 60 * 1000).toISOString(),
+      remainingHours: 24,
+    };
   }
   const expiresAtMs = lastTime + 24 * 60 * 60 * 1000;
   const now = Date.now();
