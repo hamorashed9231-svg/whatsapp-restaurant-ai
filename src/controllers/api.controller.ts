@@ -180,52 +180,8 @@ export const getRestaurant = async (req: Request, res: Response): Promise<void> 
   }
 };
 
-let memoryMenuItems: any[] = [
-  {
-    id: 'item-1',
-    restaurant_id: 'restaurant-am-eissa',
-    name: 'شاورما دجاج جامبو',
-    description: 'شاورما دجاج بخبز الصاج المميز مع الثوم والبطاطس والخلطة الخاصة',
-    price: 15,
-    category: 'وجبات رئيسية',
-    image_url: 'https://images.unsplash.com/photo-1529006557810-274b9b2fc783?auto=format&fit=crop&w=600&q=80',
-    is_available: true
-  },
-  {
-    id: 'item-2',
-    restaurant_id: 'restaurant-am-eissa',
-    name: 'بطاطس مقلية مع الجبنة',
-    description: 'أصابع بطاطس مقرمشة مغطاة بصلصة الجبن الغنية',
-    price: 10,
-    category: 'مقبلات',
-    image_url: 'https://images.unsplash.com/photo-1573080496219-bb080dd4f877?auto=format&fit=crop&w=600&q=80',
-    is_available: true
-  },
-  {
-    id: 'item-3',
-    restaurant_id: 'restaurant-am-eissa',
-    name: 'كولا بارد',
-    description: 'علبة كولا مثلجة 330 مل',
-    price: 5,
-    category: 'مشروبات',
-    image_url: 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?auto=format&fit=crop&w=600&q=80',
-    is_available: true
-  },
-  {
-    id: 'item-4',
-    restaurant_id: 'restaurant-am-eissa',
-    name: 'بيتزا مارغريتا وسط',
-    description: 'عجينة بيتزا هشة مع صلصة الطماطم الإيطالية وجبنة الموزاريلا الفاخرة والأوريغانو',
-    price: 25,
-    category: 'وجبات رئيسية',
-    image_url: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=600&q=80',
-    is_available: true
-  }
-];
-
 /**
- * 3. جلب قائمة الطعام (المنيو) للمطعم
- * قاعدة البيانات هي المصدر الرئيسي الوحيد - لا يتم دمج الذاكرة المؤقتة
+ * 3. جلب قائمة الطعام (المنيو) للمطعم من قاعدة البيانات مباشرة
  */
 export const getMenu = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
@@ -233,43 +189,15 @@ export const getMenu = async (req: Request, res: Response): Promise<void> => {
     const rest = await getOrCreateDefaultRestaurant(id);
     const targetRestId = rest ? rest.id : id;
 
-    let dbItems: any[] = [];
-    try {
-      dbItems = await prisma.menuItem.findMany({
-        where: targetRestId && targetRestId !== 'default' ? { restaurant_id: targetRestId } : undefined,
-        orderBy: { category: 'asc' }
-      });
+    const dbItems = await prisma.menuItem.findMany({
+      where: targetRestId && targetRestId !== 'default' ? { restaurant_id: targetRestId } : undefined,
+      orderBy: { category: 'asc' }
+    });
 
-      if (dbItems.length === 0 && memoryMenuItems.length > 0) {
-        for (const mItem of memoryMenuItems) {
-          try {
-            await prisma.menuItem.create({
-              data: {
-                restaurant_id: targetRestId,
-                name: mItem.name,
-                description: mItem.description || '',
-                price: Number(mItem.price) || 0,
-                category: mItem.category || 'وجبات رئيسية',
-                image_url: mItem.image_url || '',
-                is_available: mItem.is_available !== undefined ? mItem.is_available : true
-              }
-            });
-          } catch (e) {}
-        }
-        dbItems = await prisma.menuItem.findMany({
-          where: targetRestId && targetRestId !== 'default' ? { restaurant_id: targetRestId } : undefined,
-          orderBy: { category: 'asc' }
-        });
-      }
-    } catch (dbErr: any) {
-      console.warn('تنبيه: تعذر الوصول لقاعدة البيانات، يتم إرجاع البيانات المؤقتة.');
-      res.status(200).json(memoryMenuItems);
-      return;
-    }
-
-    res.status(200).json(dbItems.length > 0 ? dbItems : memoryMenuItems);
+    res.status(200).json(dbItems);
   } catch (error: any) {
-    res.status(200).json(memoryMenuItems);
+    console.error('خطأ جلب المنيو:', error);
+    res.status(500).json({ status: 'error', message: error.message });
   }
 };
 
@@ -296,9 +224,6 @@ export const addMenuItem = async (req: Request, res: Response): Promise<void> =>
       }
     });
 
-    memoryMenuItems = memoryMenuItems.filter(m => m.id !== dbItem.id);
-    memoryMenuItems.push(dbItem);
-
     res.status(201).json({
       status: 'success',
       item: dbItem,
@@ -306,25 +231,7 @@ export const addMenuItem = async (req: Request, res: Response): Promise<void> =>
     });
   } catch (e: any) {
     console.error('خطأ أثناء حفظ الصنف في DB:', e);
-    const fallbackItem = {
-      id: `item-${Date.now()}`,
-      restaurant_id: id,
-      name,
-      description: description || '',
-      price: parseFloat(price) || 0,
-      category: category || 'وجبات رئيسية',
-      image_url: image_url || '',
-      is_available: is_available !== undefined ? is_available : true
-    };
-
-    memoryMenuItems = memoryMenuItems.filter(m => m.id !== fallbackItem.id);
-    memoryMenuItems.push(fallbackItem);
-
-    res.status(201).json({
-      status: 'success',
-      item: fallbackItem,
-      message: 'تم إضافة الصنف بنجاح!'
-    });
+    res.status(500).json({ status: 'error', message: e.message || 'فشل إضافة الصنف.' });
   }
 };
 
@@ -345,38 +252,32 @@ export const updateMenuItem = async (req: Request, res: Response): Promise<void>
   };
 
   try {
-    await prisma.menuItem.update({
+    const updated = await prisma.menuItem.update({
       where: { id: itemId },
       data: updatedFields
     });
-  } catch (e) {}
-
-  memoryMenuItems = memoryMenuItems.map(m => m.id === itemId ? { ...m, ...updatedFields } : m);
-  const found = memoryMenuItems.find(m => m.id === itemId) || { id: itemId, ...updatedFields };
-
-  res.status(200).json({
-    status: 'success',
-    item: found,
-    message: 'تم تحديث الصنف بنجاح!'
-  });
+    res.status(200).json({
+      status: 'success',
+      item: updated,
+      message: 'تم تحديث الصنف بنجاح!'
+    });
+  } catch (e: any) {
+    console.error('خطأ أثناء تعديل الصنف:', e);
+    res.status(500).json({ status: 'error', message: e.message || 'فشل تحديث الصنف.' });
+  }
 };
 
 /**
  * 6. حذف صنف من المنيو
- * يحذف من قاعدة البيانات والذاكرة المؤقتة معاً
  */
 export const deleteMenuItem = async (req: Request, res: Response): Promise<void> => {
   const { itemId } = req.params;
-
-  // حذف من الذاكرة المؤقتة دائماً لمنع عودة الصنف
-  memoryMenuItems = memoryMenuItems.filter(m => m.id !== itemId);
 
   try {
     await prisma.menuItem.delete({
       where: { id: itemId }
     });
   } catch (e: any) {
-    // لو الصنف مش موجود في DB أصلاً - مش مشكلة
     console.warn('تنبيه حذف المنيو:', e.code === 'P2025' ? 'الصنف غير موجود في DB' : e.message);
   }
 

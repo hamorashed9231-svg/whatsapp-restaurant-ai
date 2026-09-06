@@ -846,13 +846,18 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
     selectedConversationIdRef.current = selectedConversation?.id || null;
   }, [selectedConversation?.id]);
 
-  // تحديث الشات الدوري واستماع الرسائل الجديدة لتشغيل صوت الإشعار وتحديث قائمة المحادثات تلقائياً
+  // تحديث الشات والمحتوى والمشتركات المباشرة والمنيو تلقائياً وبشكل لحظي كلي عبر كافة الأجهزة دون ريفريش
   useEffect(() => {
     if (!restaurant) return;
     const interval = setInterval(async () => {
       try {
-        const res = await api.get(`/restaurants/${restaurant.id}/conversations`);
-        const freshConvs: Conversation[] = res.data;
+        const [resConvs, resMenu, resCats] = await Promise.all([
+          api.get(`/restaurants/${restaurant.id}/conversations`),
+          api.get(`/restaurants/${restaurant.id}/menu`),
+          api.get(`/restaurants/${restaurant.id}/categories`)
+        ]);
+
+        const freshConvs: Conversation[] = resConvs.data;
         if (Array.isArray(freshConvs)) {
           setConversations(prev => {
             let hasNewMessage = false;
@@ -894,8 +899,15 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
             }
           }
         }
+
+        if (Array.isArray(resMenu.data)) {
+          setMenuItems(resMenu.data);
+        }
+        if (Array.isArray(resCats.data)) {
+          setCustomCategories(resCats.data);
+        }
       } catch (e) {}
-    }, 4000);
+    }, 3000);
 
     return () => clearInterval(interval);
   }, [restaurant, unreadConvIds, soundEnabled]);
