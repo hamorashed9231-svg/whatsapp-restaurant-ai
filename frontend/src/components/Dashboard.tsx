@@ -556,6 +556,70 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
+  const [copiedMsgIndex, setCopiedMsgIndex] = useState<number | null>(null);
+
+  const handleCopyMessageText = (content: string, index: number) => {
+    if (!content) return;
+    navigator.clipboard.writeText(content);
+    setCopiedMsgIndex(index);
+    setTimeout(() => setCopiedMsgIndex(null), 2000);
+  };
+
+  const handlePasteInChat = async (e: React.ClipboardEvent) => {
+    const clipboardData = e.clipboardData;
+    if (!clipboardData) return;
+
+    const items = Array.from(clipboardData.items || []);
+    const files = Array.from(clipboardData.files || []);
+
+    const imageItems = items.filter(item => item.type.startsWith('image/'));
+    const imageFiles = files.filter(file => file.type.startsWith('image/'));
+
+    if (imageItems.length > 0 || imageFiles.length > 0) {
+      e.preventDefault();
+
+      const readPromises: Promise<string>[] = [];
+
+      for (const item of imageItems) {
+        const file = item.getAsFile();
+        if (file) {
+          readPromises.push(
+            new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = async () => {
+                const raw = reader.result as string;
+                const compressed = await compressImageDataUrl(raw);
+                resolve(compressed);
+              };
+              reader.readAsDataURL(file);
+            })
+          );
+        }
+      }
+
+      if (readPromises.length === 0 && imageFiles.length > 0) {
+        for (const file of imageFiles) {
+          readPromises.push(
+            new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = async () => {
+                const raw = reader.result as string;
+                const compressed = await compressImageDataUrl(raw);
+                resolve(compressed);
+              };
+              reader.readAsDataURL(file);
+            })
+          );
+        }
+      }
+
+      if (readPromises.length > 0) {
+        const results = await Promise.all(readPromises);
+        setChatImageUrls(prev => [...prev, ...results]);
+      }
+    }
+  };
+
   const handleSyncCatalog = async () => {
     if (!restaurant) return;
     setCatalogSyncLoading(true);
@@ -3400,6 +3464,14 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
                                           <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                                             <button
                                               type="button"
+                                              onClick={() => handleCopyMessageText(msgContent, i)}
+                                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: copiedMsgIndex === i ? '#10B981' : (darkMode ? '#94A3B8' : '#64748B'), opacity: 0.85 }}
+                                              title="نسخ النص (Ctrl+C)"
+                                            >
+                                              {copiedMsgIndex === i ? <CheckCircle size={13} color="#10B981" /> : <Copy size={13} />}
+                                            </button>
+                                            <button
+                                              type="button"
                                               onClick={() => {
                                                 setEditingMessageIndex(i);
                                                 setEditingMessageText(msgContent);
@@ -3438,7 +3510,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
                           <div ref={chatEndRef} />
                         </div>
 
-                        <form onSubmit={handleSendManualMessage} style={{ ...styles.chatPaneInputArea, flexDirection: 'column', gap: '8px' }}>
+                        <form onSubmit={handleSendManualMessage} onPaste={handlePasteInChat} style={{ ...styles.chatPaneInputArea, flexDirection: 'column', gap: '8px' }}>
                           {/* شريط الردود السريعة المحفوظة */}
                           {selectedConvWindowOpen && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflowX: 'auto', width: '100%', paddingBottom: '4px', scrollbarWidth: 'thin' }}>
@@ -3652,7 +3724,8 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
                               type="text"
                               value={chatInput}
                               onChange={e => setChatInput(e.target.value)}
-                              placeholder={selectedConvWindowOpen ? `اكتب رسالة للرد كـ (${currentUsername})...` : 'إرسال الرسائل العادية معطل - يرجى اختيار قالب رسمي من الزر بالأعلى'}
+                              onPaste={handlePasteInChat}
+                              placeholder={selectedConvWindowOpen ? `اكتب رسالة للرد كـ (${currentUsername}) أو الصق صورة/نص (Ctrl+V)...` : 'إرسال الرسائل العادية معطل - يرجى اختيار قالب رسمي من الزر بالأعلى'}
                               disabled={!selectedConvWindowOpen}
                               style={{
                                 ...styles.chatPaneInput,
