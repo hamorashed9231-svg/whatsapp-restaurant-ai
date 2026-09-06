@@ -465,6 +465,12 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [lang, setLang] = useState<Language>(() => (localStorage.getItem('rivix_lang') as Language) || 'ar');
   const [replyToMessage, setReplyToMessage] = useState<ChatMessage | null>(null);
+
+  const toggleLang = () => {
+    const nextLang: Language = lang === 'ar' ? 'en' : 'ar';
+    setLang(nextLang);
+    localStorage.setItem('rivix_lang', nextLang);
+  };
   const [showEmojiPicker, setShowEmojiPicker] = useState<boolean>(false);
 
   // Chat Pane state variables
@@ -535,11 +541,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     setShowAddReplyModal(false);
   };
 
-  const toggleLang = () => {
-    const nextLang: Language = lang === 'ar' ? 'en' : 'ar';
-    setLang(nextLang);
-    localStorage.setItem('rivix_lang', nextLang);
-  };
+
 
   const startVoiceRecording = async () => {
     try {
@@ -2136,9 +2138,34 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
 
             <div>
               <h2 style={{ fontSize: '1.2rem', fontWeight: '800', margin: 0, color: darkMode ? '#FFFFFF' : '#0F1E36' }}>
-                مرحباً، {currentUsername}
+                {t[lang]?.welcome || 'مرحباً،'} {currentUsername}
               </h2>
             </div>
+
+            <button
+              type="button"
+              onClick={toggleLang}
+              style={{
+                backgroundColor: darkMode ? '#1E293B' : '#EFF6FF',
+                color: darkMode ? '#60A5FA' : '#1D4ED8',
+                border: '1px solid #93C5FD',
+                borderRadius: '20px',
+                padding: '6px 14px',
+                fontSize: '0.82rem',
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.2s',
+                marginRight: 'auto',
+                marginLeft: '12px'
+              }}
+              title="تغيير لغة لوحة التحكم (Arabic / English)"
+            >
+              <span>🌐</span>
+              <span>{lang === 'ar' ? 'English' : 'عربي'}</span>
+            </button>
           </div>
         </header>
 
