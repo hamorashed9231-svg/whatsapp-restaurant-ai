@@ -902,15 +902,18 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
 
             freshConvs.forEach(fc => {
               const prevFc = prev.find(p => p.id === fc.id);
+              // ✅ تشغيل الإشعار الصوتي فقط للرسايل القادمة من العملاء (حالة UNANSWERED)
+              const isCustomerMessage = (fc.status === 'UNANSWERED');
+
               if (prevFc && new Date(fc.updated_at).getTime() > new Date(prevFc.updated_at).getTime()) {
-                if (fc.status === 'UNANSWERED' || fc.category === 'INQUIRY' || fc.category === 'ORDER') {
+                if (isCustomerMessage) {
                   hasNewMessage = true;
                   newUnreads.add(fc.id);
                 }
                 if (fc.id === selectedConversationIdRef.current) {
                   hasActiveConvChanged = true;
                 }
-              } else if (!prevFc && prev.length > 0) {
+              } else if (!prevFc && prev.length > 0 && isCustomerMessage) {
                 hasNewMessage = true;
                 newUnreads.add(fc.id);
               }
