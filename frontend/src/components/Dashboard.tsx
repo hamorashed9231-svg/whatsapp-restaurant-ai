@@ -129,6 +129,30 @@ const DEFAULT_QUICK_REPLIES: QuickReplyItem[] = [
   { id: '5', label: '✅ تأكيد الاستلام', text: 'شكراً لتواصلك معنا! سعداء بخدمتك ونتمنى لك وجبة شهية.' }
 ];
 
+const playNotificationSound = () => {
+  try {
+    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+    osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1);
+
+    gain.gain.setValueAtTime(0, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.3, ctx.currentTime + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.4);
+  } catch (e) {}
+};
+
 const getStoredQuickReplies = (restId?: string): QuickReplyItem[] => {
   try {
     const key = restId ? `rivix_quick_replies_${restId}` : 'rivix_quick_replies_v1';
@@ -338,6 +362,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const [unreadConvIds, setUnreadConvIds] = useState<Set<string>>(new Set());
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState<string>('');
   const [chatImageUrls, setChatImageUrls] = useState<string[]>([]);
@@ -659,6 +685,57 @@ const Dashboard: React.FC<DashboardProps> = ({
     fetchBaseData();
   }, [restaurantId, token]);
 
+  // تحديث الشات الدوري واستماع الرسائل الجديدة لتشغيل صوت الإشعار وتحديث قائمة المحادثات تلقائياً
+  useEffect(() => {
+    if (!restaurant) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await api.get(`/restaurants/${restaurant.id}/conversations`);
+        const freshConvs: Conversation[] = res.data;
+        if (Array.isArray(freshConvs)) {
+          setConversations(prev => {
+            let hasNewMessage = false;
+            const newUnreads = new Set(unreadConvIds);
+
+            freshConvs.forEach(fc => {
+              const prevFc = prev.find(p => p.id === fc.id);
+              if (prevFc && new Date(fc.updated_at).getTime() > new Date(prevFc.updated_at).getTime()) {
+                if (fc.status === 'UNANSWERED' || fc.category === 'INQUIRY' || fc.category === 'ORDER') {
+                  hasNewMessage = true;
+                  newUnreads.add(fc.id);
+                }
+              } else if (!prevFc && prev.length > 0) {
+                hasNewMessage = true;
+                newUnreads.add(fc.id);
+              }
+            });
+
+            if (hasNewMessage && soundEnabled) {
+              playNotificationSound();
+            }
+            if (hasNewMessage) {
+              setUnreadConvIds(newUnreads);
+            }
+
+            return freshConvs;
+          });
+
+          if (selectedConversation) {
+            const freshActive = freshConvs.find(c => c.id === selectedConversation.id);
+            if (freshActive) {
+              api.get(`/conversations/${selectedConversation.id}/messages`).then(msgRes => {
+                const msgList = Array.isArray(msgRes.data) ? msgRes.data : (msgRes.data?.messages || []);
+                setChatMessages(msgList);
+              }).catch(() => {});
+            }
+          }
+        }
+      } catch (e) {}
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [restaurant, selectedConversation, unreadConvIds, soundEnabled]);
+
   // تحديث التبويب النشط أو تنشيط جلب بيانات إضافية
   const changeTab = async (tab: typeof activeTab) => {
     setActiveTab(tab);
@@ -865,8 +942,8 @@ const Dashboard: React.FC<DashboardProps> = ({
       return {
         label: conv.closed_by ? `✅ مغلقة بواسطة: ${conv.closed_by}` : '✅ مغلقة',
         shortLabel: 'مغلقة',
-        color: '#475569',
-        bgColor: '#F1F5F9',
+        color: darkMode ? '#94A3B8' : '#475569',
+        bgColor: darkMode ? '#1E293B' : '#F1F5F9',
         borderColor: '#64748B',
         badgeBg: '#64748B'
       };
@@ -875,8 +952,8 @@ const Dashboard: React.FC<DashboardProps> = ({
       return {
         label: conv.assigned_to ? `🔵 جاري المتابعة: ${conv.assigned_to}` : '🔵 جاري المتابعة',
         shortLabel: 'جاري المتابعة',
-        color: '#1E40AF',
-        bgColor: '#EFF6FF',
+        color: darkMode ? '#60A5FA' : '#1E40AF',
+        bgColor: darkMode ? 'rgba(30, 64, 175, 0.25)' : '#EFF6FF',
         borderColor: '#3B82F6',
         badgeBg: '#2563EB'
       };
@@ -884,8 +961,8 @@ const Dashboard: React.FC<DashboardProps> = ({
     return {
       label: '🟠 لم يتم الرد عليه بعد',
       shortLabel: 'لم يتم الرد',
-      color: '#B45309',
-      bgColor: '#FFFBEB',
+      color: darkMode ? '#FBBF24' : '#B45309',
+      bgColor: darkMode ? 'rgba(217, 119, 6, 0.25)' : '#FFFBEB',
       borderColor: '#F59E0B',
       badgeBg: '#D97706'
     };
@@ -944,6 +1021,11 @@ const Dashboard: React.FC<DashboardProps> = ({
   // جلب رسائل محادثة معينة
   const handleSelectConversation = async (conversation: Conversation) => {
     setSelectedConversation(conversation);
+    setUnreadConvIds(prev => {
+      const next = new Set(prev);
+      next.delete(conversation.id);
+      return next;
+    });
     try {
       const res = await api.get(`/conversations/${conversation.id}/messages`);
       const msgList = Array.isArray(res.data) ? res.data : (res.data?.messages || []);
@@ -2295,9 +2377,31 @@ const Dashboard: React.FC<DashboardProps> = ({
               <div style={styles.conversationsLayout}>
                 {/* قائمة المحادثات (يسار) */}
                 <div style={styles.conversationsListPane}>
-                  <h4 style={{ padding: '14px 16px', borderBottom: '1px solid rgba(0,0,0,0.05)', fontWeight: 'bold', marginBottom: 0, fontSize: '0.95rem' }}>
-                    دردشات خدمة العملاء 💬
-                  </h4>
+                  <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(0,0,0,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h4 style={{ fontWeight: 'bold', margin: 0, fontSize: '0.95rem' }}>
+                      دردشات خدمة العملاء 💬
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={() => setSoundEnabled(prev => !prev)}
+                      style={{
+                        padding: '4px 8px',
+                        fontSize: '0.72rem',
+                        fontWeight: 'bold',
+                        borderRadius: '6px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        backgroundColor: soundEnabled ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                        color: soundEnabled ? '#10B981' : '#EF4444',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                      title={soundEnabled ? 'كتم صوت الإشعارات' : 'تفعيل صوت الإشعارات'}
+                    >
+                      {soundEnabled ? '🔔 الصوت: مفعّل' : '🔇 مكتوم'}
+                    </button>
+                  </div>
                   
                   {/* مفتاح التنقل بين الدردشات النشطة والأرشيف */}
                   <div style={{ display: 'flex', borderBottom: '1px solid rgba(0,0,0,0.08)', backgroundColor: '#F1F5F9', padding: '4px', gap: '4px' }}>
@@ -2592,8 +2696,8 @@ const Dashboard: React.FC<DashboardProps> = ({
                                 </div>
                               </div>
 
-                              {/* الشارات الملونة لهوية الموظف والحالة الـ 3 */}
-                              <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              {/* الشارات الملونة لهوية الموظف والحالة الـ 3 والإشعارات */}
+                              <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '4px' }}>
                                 <span style={{
                                   fontSize: '0.68rem',
                                   fontWeight: 'bold',
@@ -2604,6 +2708,20 @@ const Dashboard: React.FC<DashboardProps> = ({
                                 }}>
                                   {statusInfo.label}
                                 </span>
+                                {unreadConvIds.has(conv.id) && (
+                                  <span style={{
+                                    fontSize: '0.68rem',
+                                    fontWeight: 'bold',
+                                    padding: '2px 8px',
+                                    borderRadius: '10px',
+                                    backgroundColor: '#EF4444',
+                                    color: '#FFFFFF',
+                                    animation: 'pulse 1.5s infinite',
+                                    boxShadow: '0 0 8px rgba(239, 68, 68, 0.5)'
+                                  }}>
+                                    🔔 رسالة جديدة
+                                  </span>
+                                )}
                               </div>
                             </div>
                           );

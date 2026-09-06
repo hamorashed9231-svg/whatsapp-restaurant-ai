@@ -225,6 +225,7 @@ async function processDirectly(whatsappNumberId: string, customerPhone: string, 
       where: { id: conversation.id },
       data: {
         messages_json: currentMsgs as any,
+        is_archived: false,
         updated_at: new Date()
       }
     });

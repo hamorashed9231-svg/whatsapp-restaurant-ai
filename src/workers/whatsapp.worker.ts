@@ -145,6 +145,7 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
           where: { id: conversation.id },
           data: {
             messages_json: updatedMessagesJson as any,
+            is_archived: false,
             updated_at: new Date(),
             // إذا كانت المحادثة مغلقة واستلمت رسالة جديدة، نعيد فتحها كـ UNANSWERED لتنبيه موظفي الكول سنتر
             ...(conversation.status === 'CLOSED' ? { status: 'UNANSWERED', closed_by: null } : {}),
