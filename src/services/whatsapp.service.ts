@@ -271,7 +271,11 @@ class WhatsAppService {
       return response.data;
     } catch (error: any) {
       console.error('[WhatsApp Error] فشل إرسال الكتالوج:', error.response?.data || error.message);
-      throw new Error(`فشل إرسال الكتالوج: ${JSON.stringify(error.response?.data || error.message)}`);
+      const metaErr = error.response?.data?.error;
+      if (metaErr?.code === 131009 || metaErr?.error_data?.details?.includes('catalog')) {
+        throw new Error('لم يتم ربط الكتالوج بحساب الواتساب التجاري في مدير أعمال Meta (Meta Business Manager). يرجى فتح إعدادات الواتساب (WhatsApp Accounts -> Commerce Settings) وربط الكتالوج.');
+      }
+      throw new Error(`فشل إرسال الكتالوج: ${metaErr?.message || error.message}`);
     }
   }
 
@@ -367,7 +371,11 @@ class WhatsAppService {
       return response.data;
     } catch (error: any) {
       console.error('[WhatsApp Error] فشل إرسال رسالة الكتالوج المباشرة:', error.response?.data || error.message);
-      throw new Error(`فشل إرسال رسالة الكتالوج المباشرة: ${JSON.stringify(error.response?.data || error.message)}`);
+      const metaErr = error.response?.data?.error;
+      if (metaErr?.code === 131009 || metaErr?.error_data?.details?.includes('catalog')) {
+        throw new Error('لم يتم ربط الكتالوج بحساب الواتساب التجاري في مدير أعمال Meta (Meta Business Manager). يرجى فتح إعدادات الواتساب (WhatsApp Accounts -> Commerce Settings) وربط الكتالوج.');
+      }
+      throw new Error(`فشل إرسال رسالة الكتالوج المباشرة: ${metaErr?.message || error.message}`);
     }
   }
 
