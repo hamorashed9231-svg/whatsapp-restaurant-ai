@@ -174,6 +174,26 @@ const saveQuickRepliesToStorage = (replies: QuickReplyItem[], restId?: string) =
   } catch (e) {}
 };
 
+const DEFAULT_CATEGORIES = ['وجبات رئيسية', 'مقبلات', 'مشروبات', 'حلويات'];
+
+const getStoredCustomCategories = (restId?: string): string[] => {
+  try {
+    const key = restId ? `rivix_custom_categories_${restId}` : 'rivix_custom_categories_v1';
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+};
+
+const saveCustomCategoriesToStorage = (cats: string[], restId?: string) => {
+  try {
+    const key = restId ? `rivix_custom_categories_${restId}` : 'rivix_custom_categories_v1';
+    localStorage.setItem(key, JSON.stringify(cats));
+  } catch (e) {}
+};
+
+
 const getStoredDeletedIds = (restId?: string): string[] => {
   try {
     const key = restId ? `rivix_deleted_menu_items_${restId}` : 'rivix_deleted_menu_items';
@@ -346,6 +366,20 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   // بيانات التبويبات المختلفة
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [customCategories, setCustomCategories] = useState<string[]>(() => getStoredCustomCategories(restaurantId));
+  const [selectedMenuCategoryFilter, setSelectedMenuCategoryFilter] = useState<string>('ALL');
+  const [isAddingNewCategoryInForm, setIsAddingNewCategoryInForm] = useState<boolean>(false);
+  const [customCategoryInput, setCustomCategoryInput] = useState<string>('');
+  const [showCategoryManagerModal, setShowCategoryManagerModal] = useState<boolean>(false);
+  const [newCategoryManagerInput, setNewCategoryManagerInput] = useState<string>('');
+
+  const allCategories = Array.from(
+    new Set([
+      ...DEFAULT_CATEGORIES,
+      ...customCategories,
+      ...menuItems.map(item => item?.category).filter(Boolean)
+    ])
+  );
   const [orders, setOrders] = useState<Order[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -1225,6 +1259,12 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
 
     const restId = restaurant?.id || restaurantId;
 
+    if (menuForm.category && !customCategories.includes(menuForm.category) && !DEFAULT_CATEGORIES.includes(menuForm.category)) {
+      const updatedCats = [...customCategories, menuForm.category];
+      setCustomCategories(updatedCats);
+      saveCustomCategoriesToStorage(updatedCats, restId);
+    }
+
     // 1. التحديث الفوري المباشر في الـ State والـ LocalStorage (لا ينتظر الـ API)
     setMenuItems(prev => {
       let nextList: MenuItem[];
@@ -1879,16 +1919,101 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
                 </div>
               )}
 
+              {/* شريط تصفية وإدارة التصنيفات الديناميكية للمنيو */}
+              <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', padding: '10px 0', borderBottom: '1px solid var(--border-color)', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedMenuCategoryFilter('ALL')}
+                  style={{
+                    padding: '6px 16px',
+                    borderRadius: '20px',
+                    fontSize: '0.82rem',
+                    fontWeight: '700',
+                    border: 'none',
+                    cursor: 'pointer',
+                    backgroundColor: selectedMenuCategoryFilter === 'ALL' ? '#0066FF' : 'var(--card-bg)',
+                    color: selectedMenuCategoryFilter === 'ALL' ? '#FFFFFF' : 'var(--text-muted)',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.1)'
+                  }}
+                >
+                  🍔 الكل ({menuItems.length})
+                </button>
+                {allCategories.map(cat => {
+                  const count = menuItems.filter(item => item.category === cat).length;
+                  const isSelected = selectedMenuCategoryFilter === cat;
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setSelectedMenuCategoryFilter(cat)}
+                      style={{
+                        padding: '6px 16px',
+                        borderRadius: '20px',
+                        fontSize: '0.82rem',
+                        fontWeight: '700',
+                        border: isSelected ? 'none' : '1px solid var(--border-color)',
+                        cursor: 'pointer',
+                        backgroundColor: isSelected ? '#0066FF' : 'var(--card-bg)',
+                        color: isSelected ? '#FFFFFF' : 'var(--text-main)',
+                        boxShadow: '0 2px 6px rgba(0,0,0,0.05)'
+                      }}
+                    >
+                      {cat} ({count})
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => setShowCategoryManagerModal(true)}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: '20px',
+                    fontSize: '0.8rem',
+                    fontWeight: '700',
+                    border: '1px dashed #0066FF',
+                    cursor: 'pointer',
+                    backgroundColor: 'rgba(0, 102, 255, 0.08)',
+                    color: '#0066FF',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                  title="إدارة وإضافة تصنيفات جديدة للمنيو"
+                >
+                  <span>🏷️ إدارة التصنيفات</span>
+                </button>
+              </div>
+
               {menuItems.length === 0 ? (
                 <div className="glass-card" style={{ padding: '40px', textAlign: 'center' }}>
                   <Utensils size={48} color="#00D2FF" style={{ margin: '0 auto 16px auto' }} />
                   <p style={{ color: 'var(--text-main)', fontSize: '1.1rem', fontWeight: 'bold' }}>لا توجد أي أصناف في منيو المطعم حالياً.</p>
                   <button onClick={handleOpenAddModal} className="btn btn-primary" style={{ marginTop: '16px' }}>أضف أول صنف الآن</button>
                 </div>
-              ) : menuViewMode === 'grid' ? (
+              ) : (() => {
+                const filteredMenuItems = menuItems.filter(item => {
+                  if (!item) return false;
+                  if (selectedMenuCategoryFilter === 'ALL') return true;
+                  return item.category === selectedMenuCategoryFilter;
+                });
+
+                if (filteredMenuItems.length === 0) {
+                  return (
+                    <div className="glass-card" style={{ padding: '30px', textAlign: 'center', margin: '16px 0' }}>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>
+                        لا توجد أصناف تندرج تحت قسم <strong>"{selectedMenuCategoryFilter}"</strong> حالياً.
+                      </p>
+                      <button onClick={handleOpenAddModal} className="btn btn-primary" style={{ marginTop: '12px', fontSize: '0.85rem' }}>
+                        ➕ إضافة صنف لقسم {selectedMenuCategoryFilter}
+                      </button>
+                    </div>
+                  );
+                }
+
+                return menuViewMode === 'grid' ? (
                 /* عرض كروت المأكولات الفاخرة بالصور والأسعار (Cards Grid View) */
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '24px', marginTop: '16px' }}>
-                  {menuItems.map(item => (
+                  {filteredMenuItems.map(item => (
                     <div 
                       key={item.id} 
                       className="glass-card animate-fade-in"
@@ -2033,7 +2158,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
                       </tr>
                     </thead>
                     <tbody>
-                      {menuItems.map(item => (
+                      {filteredMenuItems.map(item => (
                         <tr key={item.id} style={styles.tableRow}>
                           <td style={styles.tableCell}>
                             <img 
@@ -2081,7 +2206,8 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
                     </tbody>
                   </table>
                 </div>
-              )}
+              );
+            })()}
 
               {/* مودال الإضافة والتعديل */}
               {showAddMenuModal && (
@@ -2185,16 +2311,84 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
 
                         <div style={styles.formGroup}>
                           <label style={styles.formLabel}>التصنيف</label>
-                          <select
-                            value={menuForm.category}
-                            onChange={e => setMenuForm({ ...menuForm, category: e.target.value })}
-                            style={styles.formInput}
-                          >
-                            <option value="وجبات رئيسية">وجبات رئيسية</option>
-                            <option value="مقبلات">مقبلات</option>
-                            <option value="مشروبات">مشروبات</option>
-                            <option value="حلويات">حلويات</option>
-                          </select>
+                          {!isAddingNewCategoryInForm ? (
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <select
+                                value={menuForm.category}
+                                onChange={e => {
+                                  if (e.target.value === 'ADD_NEW_CUSTOM_CATEGORY') {
+                                    setIsAddingNewCategoryInForm(true);
+                                    setCustomCategoryInput('');
+                                  } else {
+                                    setMenuForm({ ...menuForm, category: e.target.value });
+                                  }
+                                }}
+                                style={{ ...styles.formInput, flex: 1 }}
+                              >
+                                {allCategories.map(cat => (
+                                  <option key={cat} value={cat}>{cat}</option>
+                                ))}
+                                <option value="ADD_NEW_CUSTOM_CATEGORY">➕ إضافة تصنيف جديد...</option>
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsAddingNewCategoryInForm(true);
+                                  setCustomCategoryInput('');
+                                }}
+                                className="btn btn-secondary"
+                                style={{ padding: '8px 12px', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
+                                title="إضافة تصنيف جديد"
+                              >
+                                ➕ جديد
+                              </button>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              <input
+                                type="text"
+                                placeholder="أدخل اسم التصنيف الجديد (مثل: مشويات...)"
+                                value={customCategoryInput}
+                                onChange={e => {
+                                  setCustomCategoryInput(e.target.value);
+                                  setMenuForm({ ...menuForm, category: e.target.value });
+                                }}
+                                required
+                                style={{ ...styles.formInput, flex: 1 }}
+                                autoFocus
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (customCategoryInput.trim()) {
+                                    const newCat = customCategoryInput.trim();
+                                    if (!customCategories.includes(newCat) && !DEFAULT_CATEGORIES.includes(newCat)) {
+                                      const updated = [...customCategories, newCat];
+                                      setCustomCategories(updated);
+                                      saveCustomCategoriesToStorage(updated, restaurantId);
+                                    }
+                                    setMenuForm({ ...menuForm, category: newCat });
+                                  }
+                                  setIsAddingNewCategoryInForm(false);
+                                }}
+                                className="btn btn-primary"
+                                style={{ padding: '6px 12px', fontSize: '0.78rem' }}
+                              >
+                                حفظ
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsAddingNewCategoryInForm(false);
+                                  setMenuForm({ ...menuForm, category: allCategories[0] || 'وجبات رئيسية' });
+                                }}
+                                className="btn btn-secondary"
+                                style={{ padding: '6px 10px', fontSize: '0.78rem' }}
+                              >
+                                إلغاء
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -2270,6 +2464,114 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
                         </button>
                       </div>
                     </form>
+                  </div>
+                </div>
+              )}
+
+              {/* مودال إدارة التصنيفات للأدمن */}
+              {showCategoryManagerModal && (
+                <div style={styles.modalOverlay}>
+                  <div className="glass-card" style={{ ...styles.modal, maxWidth: '520px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                      <h3 style={{ fontWeight: 'bold', fontSize: '1.1rem', color: 'var(--text-main)', margin: 0 }}>🏷️ إدارة تصنيفات المنيو</h3>
+                      <button
+                        type="button"
+                        onClick={() => setShowCategoryManagerModal(false)}
+                        style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.2rem', padding: '4px' }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px', lineHeight: '1.5' }}>
+                      يمكن للأدمن إضافة تصنيفات مخصصة جديدة (مثل: مشويات, عروض وتوفير, ساندوتشات, عصائر...) لتنظيم قائمة الطعام على الواجهة والواتساب.
+                    </p>
+
+                    {/* نموذج إضافة تصنيف جديد */}
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (newCategoryManagerInput.trim()) {
+                          const catName = newCategoryManagerInput.trim();
+                          if (!customCategories.includes(catName) && !DEFAULT_CATEGORIES.includes(catName)) {
+                            const updated = [...customCategories, catName];
+                            setCustomCategories(updated);
+                            saveCustomCategoriesToStorage(updated, restaurantId);
+                          }
+                          setNewCategoryManagerInput('');
+                        }
+                      }}
+                      style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}
+                    >
+                      <input
+                        type="text"
+                        placeholder="أدخل اسم تصنيف جديد (مثل: مشويات، وجبات أطفال...)"
+                        value={newCategoryManagerInput}
+                        onChange={(e) => setNewCategoryManagerInput(e.target.value)}
+                        style={{ ...styles.formInput, flex: 1 }}
+                        required
+                      />
+                      <button type="submit" className="btn btn-primary" style={{ whiteSpace: 'nowrap' }}>
+                        ➕ إضافة
+                      </button>
+                    </form>
+
+                    {/* قائمة التصنيفات المتاحة حالياً */}
+                    <h4 style={{ fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '10px', color: 'var(--text-main)' }}>التصنيفات المتاحة حالياً:</h4>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', maxHeight: '200px', overflowY: 'auto', padding: '4px' }}>
+                      {allCategories.map((cat) => {
+                        const isCustom = customCategories.includes(cat);
+                        return (
+                          <div
+                            key={cat}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '6px 12px',
+                              borderRadius: '16px',
+                              backgroundColor: 'rgba(0, 102, 255, 0.12)',
+                              border: '1px solid rgba(0, 102, 255, 0.25)',
+                              fontSize: '0.85rem',
+                              fontWeight: 'bold',
+                              color: 'var(--text-main)'
+                            }}
+                          >
+                            <span>{cat}</span>
+                            {isCustom && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (window.confirm(`هل أنت متأكد من حذف تصنيف "${cat}"؟`)) {
+                                    const updated = customCategories.filter(c => c !== cat);
+                                    setCustomCategories(updated);
+                                    saveCustomCategoriesToStorage(updated, restaurantId);
+                                    if (selectedMenuCategoryFilter === cat) {
+                                      setSelectedMenuCategoryFilter('ALL');
+                                    }
+                                  }
+                                }}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: '#EF4444',
+                                  cursor: 'pointer',
+                                  fontSize: '0.75rem',
+                                  padding: '0 2px'
+                                }}
+                                title="حذف هذا التصنيف المخصص"
+                              >
+                                ✕
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px' }}>
+                      <button type="button" onClick={() => setShowCategoryManagerModal(false)} className="btn btn-secondary">إغلاق</button>
+                    </div>
                   </div>
                 </div>
               )}
