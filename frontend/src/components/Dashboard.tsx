@@ -27,7 +27,8 @@ import {
   Download,
   Lock,
   AlertTriangle,
-  FileText
+  FileText,
+  CornerUpLeft
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -3744,6 +3745,31 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                         {senderName}
                                       </div>
                                     )}
+
+                                    {/* عرض الرسالة المقتبس الرد عليها (Quoted Reply Box) */}
+                                    {msg.reply_to_id && (() => {
+                                      const quotedMsg = chatMessages.find(m => m.id === msg.reply_to_id || m.wamid === msg.reply_to_id);
+                                      if (!quotedMsg) return null;
+                                      return (
+                                        <div style={{
+                                          backgroundColor: darkMode ? 'rgba(0,0,0,0.25)' : 'rgba(0,102,255,0.08)',
+                                          borderRight: '3px solid #0066FF',
+                                          borderRadius: '6px',
+                                          padding: '4px 8px',
+                                          marginBottom: '6px',
+                                          fontSize: '0.75rem',
+                                          overflow: 'hidden'
+                                        }}>
+                                          <div style={{ fontWeight: 'bold', color: '#0066FF', fontSize: '0.7rem' }}>
+                                            {quotedMsg.sender_name || (quotedMsg.role === 'user' ? 'العميل' : 'الموظف')}
+                                          </div>
+                                          <div style={{ color: darkMode ? '#CBD5E1' : '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {quotedMsg.content || quotedMsg.text || '[وسائط]'}
+                                          </div>
+                                        </div>
+                                      );
+                                    })()}
+
                                      {msg.image_url && (
                                        <div style={{ marginBottom: '6px', position: 'relative', overflow: 'hidden', borderRadius: '10px' }}>
                                          <img
@@ -3892,10 +3918,10 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                             <button
                                               type="button"
                                               onClick={() => setReplyToMessage(msg)}
-                                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: '#0066FF', fontSize: '0.8rem', opacity: 0.85 }}
-                                              title="رد على هذه الرسالة"
+                                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: '#0066FF', opacity: 0.85, display: 'inline-flex', alignItems: 'center' }}
+                                              title="رد على هذه الرسالة (Reply)"
                                             >
-                                              ↩️
+                                              <CornerUpLeft size={13} />
                                             </button>
                                             <button
                                               type="button"
