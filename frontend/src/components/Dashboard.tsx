@@ -1211,9 +1211,15 @@ const Dashboard: React.FC<DashboardProps> = ({
             onClick={onToggleTheme}
             title="اضغط على اللوجو لتبديل المظهر (داكن / مضيء)"
           >
-            <img src="/logo.jpg" alt="RIVIX SYSTEM" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(0, 210, 255, 0.4)' }} />
+            <img 
+              src={restaurant?.logo_url || localStorage.getItem('restaurant_logo') || '/logo.jpg'} 
+              alt={restaurant?.name || "RIVIX SYSTEM"} 
+              style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(0, 210, 255, 0.4)' }} 
+            />
             <div style={styles.sidebarTitle}>
-              <div style={{ fontWeight: '800', fontSize: '1.15rem', color: darkMode ? '#FFFFFF' : '#0F1E36' }}>Rivix System</div>
+              <div style={{ fontWeight: '800', fontSize: '1.15rem', color: darkMode ? '#FFFFFF' : '#0F1E36' }}>
+                {restaurant?.name || 'Rivix System'}
+              </div>
               <div style={{ fontSize: '0.7rem', color: '#00D2FF' }}>تبديل المظهر 🌙/☀️</div>
             </div>
           </div>

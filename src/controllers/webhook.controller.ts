@@ -117,7 +117,7 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
         },
         {
           jobId,
-          delay: 2500,
+          delay: 0,
         }
       );
     } catch (redisErr: any) {
