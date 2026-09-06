@@ -97,56 +97,92 @@ interface Conversation {
   remainingHours?: number;
 }
 
-const getStoredDeletedIds = (): string[] => {
+const getStoredDeletedIds = (restId?: string): string[] => {
   try {
-    const raw = localStorage.getItem('rivix_deleted_menu_items');
+    const key = restId ? `rivix_deleted_menu_items_${restId}` : 'rivix_deleted_menu_items';
+    const raw = localStorage.getItem(key);
+    if (!raw && restId) {
+      const fallback = localStorage.getItem('rivix_deleted_menu_items');
+      return fallback ? JSON.parse(fallback) : [];
+    }
     return raw ? JSON.parse(raw) : [];
   } catch (e) {
     return [];
   }
 };
 
-const getStoredUserItems = (): MenuItem[] => {
+const getStoredUserItems = (restId?: string): MenuItem[] => {
   try {
-    const raw = localStorage.getItem('rivix_menu_v3');
-    return raw ? JSON.parse(raw) : [];
+    const key = restId ? `rivix_menu_${restId}` : 'rivix_menu_v3';
+    const raw = localStorage.getItem(key);
+    if (!raw && restId) {
+      const fallback = localStorage.getItem('rivix_menu_v3');
+      const items = fallback ? JSON.parse(fallback) : [];
+      return Array.isArray(items) ? items : [];
+    }
+    const items = raw ? JSON.parse(raw) : [];
+    return Array.isArray(items) ? items : [];
   } catch (e) {
     return [];
   }
 };
 
-const saveMenuItemsToStorage = (items: MenuItem[]) => {
+const saveMenuItemsToStorage = (items: MenuItem[], restId?: string) => {
   try {
-    localStorage.setItem('rivix_menu_v3', JSON.stringify(items));
+    if (!Array.isArray(items)) return;
+    const key = restId ? `rivix_menu_${restId}` : 'rivix_menu_v3';
+    localStorage.setItem(key, JSON.stringify(items));
+    if (restId) {
+      localStorage.setItem('rivix_menu_v3', JSON.stringify(items));
+    }
   } catch (e) {}
 };
 
-const saveDeletedIdsToStorage = (ids: string[]) => {
+const saveDeletedIdsToStorage = (ids: string[], restId?: string) => {
   try {
-    localStorage.setItem('rivix_deleted_menu_items', JSON.stringify(ids));
+    if (!Array.isArray(ids)) return;
+    const key = restId ? `rivix_deleted_menu_items_${restId}` : 'rivix_deleted_menu_items';
+    localStorage.setItem(key, JSON.stringify(ids));
+    if (restId) {
+      localStorage.setItem('rivix_deleted_menu_items', JSON.stringify(ids));
+    }
   } catch (e) {}
 };
 
-const syncMenuItemsWithStorage = (serverItems?: MenuItem[]): MenuItem[] => {
-  const deletedIds = getStoredDeletedIds();
-  const storedItems = getStoredUserItems();
+const syncMenuItemsWithStorage = (serverItems?: any, restId?: string): MenuItem[] => {
+  const deletedIds = getStoredDeletedIds(restId);
+  const storedItems = getStoredUserItems(restId);
 
-  const validStored = storedItems.filter(item => !deletedIds.includes(item.id));
+  const validStored = storedItems.filter(item => item && item.id && !deletedIds.includes(item.id));
 
-  if (serverItems && Array.isArray(serverItems) && serverItems.length > 0) {
-    const validServer = serverItems.filter(item => !deletedIds.includes(item.id));
-    const mergedMap = new Map<string, MenuItem>();
+  if (serverItems && Array.isArray(serverItems)) {
+    const validServer = serverItems.filter((item: any) => item && item.id && !deletedIds.includes(item.id));
 
-    validServer.forEach(item => mergedMap.set(item.id, item));
-    validStored.forEach(item => mergedMap.set(item.id, item));
+    if (validServer.length > 0) {
+      const mergedMap = new Map<string, MenuItem>();
+      validStored.forEach(item => mergedMap.set(item.id, item));
+      validServer.forEach(item => mergedMap.set(item.id, item));
 
-    const finalResult = Array.from(mergedMap.values()).filter(item => !deletedIds.includes(item.id));
-    saveMenuItemsToStorage(finalResult);
-    return finalResult;
+      const finalResult = Array.from(mergedMap.values()).filter(item => !deletedIds.includes(item.id));
+      saveMenuItemsToStorage(finalResult, restId);
+      return finalResult;
+    }
+
+    if (validStored.length > 0) {
+      saveMenuItemsToStorage(validStored, restId);
+      return validStored;
+    }
+
+    saveMenuItemsToStorage([], restId);
+    return [];
   }
 
-  saveMenuItemsToStorage(validStored);
-  return validStored;
+  if (validStored.length > 0) {
+    saveMenuItemsToStorage(validStored, restId);
+    return validStored;
+  }
+
+  return [];
 };
 
 interface ChatMessage {
@@ -421,7 +457,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         ]);
 
         // فحص وحفظ الأصناف بالذاكرة المحفوفة بالدمج الذكي ومنع عودة المحذوفات
-        const syncedMenu = syncMenuItemsWithStorage(resMenu?.data);
+        const syncedMenu = syncMenuItemsWithStorage(resMenu?.data, actualRestId);
         setMenuItems(syncedMenu);
 
         setOrders(resOrders.data);
@@ -447,7 +483,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     try {
       if (tab === 'menu') {
         const res = await api.get(`/restaurants/${restaurant.id}/menu`);
-        const syncedMenu = syncMenuItemsWithStorage(res?.data);
+        const syncedMenu = syncMenuItemsWithStorage(res?.data, restaurant.id);
         setMenuItems(syncedMenu);
       } else if (tab === 'orders') {
         const res = await api.get(`/restaurants/${restaurant.id}/orders`);
@@ -832,6 +868,8 @@ const Dashboard: React.FC<DashboardProps> = ({
 
 
 
+    const restId = restaurant?.id || restaurantId;
+
     // 1. التحديث الفوري المباشر في الـ State والـ LocalStorage (لا ينتظر الـ API)
     setMenuItems(prev => {
       let nextList: MenuItem[];
@@ -840,7 +878,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       } else {
         nextList = [...prev.filter(m => m.id !== targetId), fullItem];
       }
-      saveMenuItemsToStorage(nextList);
+      saveMenuItemsToStorage(nextList, restId);
       return nextList;
     });
 
@@ -854,7 +892,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           const serverItem = res.data.item;
           setMenuItems(prev => {
             const nextList = prev.map(m => m.id === editingItem.id ? serverItem : m);
-            saveMenuItemsToStorage(nextList);
+            saveMenuItemsToStorage(nextList, restId);
             return nextList;
           });
         }
@@ -864,7 +902,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           const serverItem = res.data.item;
           setMenuItems(prev => {
             const nextList = prev.map(m => (m.id === targetId || m.id === serverItem.id) ? serverItem : m);
-            saveMenuItemsToStorage(nextList);
+            saveMenuItemsToStorage(nextList, restId);
             return nextList;
           });
         }
@@ -897,7 +935,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       
       // تحديث قائمة الطعام من السيرفر ومزامنتها
       const resMenu = await api.get(`/restaurants/${restaurant.id}/menu`);
-      const syncedMenu = syncMenuItemsWithStorage(resMenu?.data);
+      const syncedMenu = syncMenuItemsWithStorage(resMenu?.data, restaurant.id);
       setMenuItems(syncedMenu);
 
       // إغلاق المودال بعد ثانيتين
@@ -917,20 +955,22 @@ const Dashboard: React.FC<DashboardProps> = ({
   const handleDeleteMenuItem = async (itemId: string) => {
     if (!window.confirm('هل أنت متأكد من رغبتك في حذف هذا الصنف من قائمة الطعام نهائياً؟')) return;
 
-    // 1. تسجيل الـ ID في المحذوفات الدائمة لمنع عودته عند أي ريفريش أو جلب من السيرفر
-    const currentDeleted = getStoredDeletedIds();
+    const restId = restaurant?.id || restaurantId;
+
+    // 1. تسجيل الـ ID في المحذوفات الدائمة المرتبطة بـ restaurantId لمنع عودته عند أي ريفريش
+    const currentDeleted = getStoredDeletedIds(restId);
     if (!currentDeleted.includes(itemId)) {
-      saveDeletedIdsToStorage([...currentDeleted, itemId]);
+      saveDeletedIdsToStorage([...currentDeleted, itemId], restId);
     }
 
-    // 2. حذف فوري من الـ State والـ localStorage لمنع التعليق
+    // 2. حذف فوري للعنصر المستهدف فقط عبر تصفية المصفوفة دون مسح الـ localStorage بالكامل أو تعيين []
     setMenuItems(prev => {
-      const nextList = prev.filter(m => m.id !== itemId);
-      saveMenuItemsToStorage(nextList);
+      const nextList = prev.filter(m => m && m.id !== itemId);
+      saveMenuItemsToStorage(nextList, restId);
       return nextList;
     });
 
-    // 3. إبلاغ الباك إند بالحذف
+    // 3. إبلاغ الباك إند بالحذف (السيرفر يحذف السجل المطلوب فقط)
     try {
       await api.delete(`/menu/${itemId}`);
     } catch (err) {
