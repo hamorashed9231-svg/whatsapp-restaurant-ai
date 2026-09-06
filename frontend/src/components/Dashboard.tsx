@@ -339,7 +339,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState<string>('');
-  const [chatImageUrl, setChatImageUrl] = useState<string>('');
+  const [chatImageUrls, setChatImageUrls] = useState<string[]>([]);
   // حالات الردود المحفوظة القابلة للإضافة والتعديل من قبل الأدمن
   const [savedReplies, setSavedReplies] = useState<QuickReplyItem[]>(() => getStoredQuickReplies(restaurantId));
   const [showAddReplyModal, setShowAddReplyModal] = useState<boolean>(false);
@@ -517,13 +517,26 @@ const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const handleChatImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setChatImageUrl(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const fileList = Array.from(files);
+      const readPromises = fileList.map(file => {
+        return new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(file);
+        });
+      });
+      Promise.all(readPromises).then(results => {
+        setChatImageUrls(prev => [...prev, ...results]);
+      });
+    }
+  };
+
+  const handleRemoveChatImage = (index: number) => {
+    setChatImageUrls(prev => prev.filter((_, i) => i !== index));
+    if (chatImageUrls.length <= 1 && chatFileInputRef.current) {
+      chatFileInputRef.current.value = '';
     }
   };
 
@@ -912,33 +925,53 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
-  // إرسال رد يدوي أو صورة من لوحة التحكم وتسجيل اسم الموظف وتغيير الحالة لـ IN_PROGRESS
+  // إرسال رد يدوي أو صور من لوحة التحكم وتسجيل اسم الموظف وتغيير الحالة لـ IN_PROGRESS
   const handleSendManualMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if ((!chatInput.trim() && !chatImageUrl.trim()) || !selectedConversation || !restaurant) return;
+    if ((!chatInput.trim() && chatImageUrls.length === 0) || !selectedConversation || !restaurant) return;
     if (!selectedConvWindowOpen) {
       setShowTemplateModal(true);
       return;
     }
 
     const textToSend = chatInput;
-    const imgToSend = chatImageUrl;
+    const imagesToSend = [...chatImageUrls];
     setChatInput('');
-    setChatImageUrl('');
+    setChatImageUrls([]);
     if (chatFileInputRef.current) chatFileInputRef.current.value = '';
 
-    const newMsg: ChatMessage = {
-      role: 'assistant',
-      content: textToSend,
-      image_url: imgToSend || undefined,
-      sender_name: currentUsername,
-      timestamp: new Date().toISOString()
-    };
+    const newMsgs: ChatMessage[] = [];
+    if (imagesToSend.length > 0) {
+      imagesToSend.forEach((img, idx) => {
+        newMsgs.push({
+          role: 'assistant',
+          content: idx === 0 ? textToSend : '',
+          image_url: img,
+          sender_name: currentUsername,
+          timestamp: new Date().toISOString()
+        });
+      });
+    } else {
+      newMsgs.push({
+        role: 'assistant',
+        content: textToSend,
+        sender_name: currentUsername,
+        timestamp: new Date().toISOString()
+      });
+    }
 
-    setChatMessages(prev => [...prev, newMsg]);
+    setChatMessages(prev => [...prev, ...newMsgs]);
 
     try {
-      await api.post(`/conversations/${selectedConversation.id}/messages`, { content: textToSend, image_url: imgToSend });
+      if (imagesToSend.length > 0) {
+        for (let i = 0; i < imagesToSend.length; i++) {
+          const caption = i === 0 ? textToSend : '';
+          await api.post(`/conversations/${selectedConversation.id}/messages`, { content: caption, image_url: imagesToSend[i] });
+        }
+      } else {
+        await api.post(`/conversations/${selectedConversation.id}/messages`, { content: textToSend });
+      }
+
       const updatedData = {
         status: 'IN_PROGRESS',
         assigned_to: selectedConversation.assigned_to || currentUsername,
@@ -953,7 +986,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       if (err.response?.status === 400 && (err.response?.data?.error === 'SESSION_WINDOW_EXPIRED' || err.response?.data?.message?.includes('24'))) {
         setSelectedConvWindowOpen(false);
         setShowTemplateModal(true);
-        setChatMessages(prev => prev.filter(m => m !== newMsg));
+        setChatMessages(prev => prev.filter(m => !newMsgs.includes(m)));
       } else {
         const updatedData = {
           status: 'IN_PROGRESS',
@@ -2916,48 +2949,56 @@ const Dashboard: React.FC<DashboardProps> = ({
                             </div>
                           )}
 
-                          {/* معاينة الصورة المرفقة من الجهاز قبل الإرسال */}
-                          {chatImageUrl && (
+                          {/* معاينة الصور المرفقة من الجهاز قبل الإرسال */}
+                          {chatImageUrls.length > 0 && (
                             <div style={{ 
                               display: 'flex', 
                               alignItems: 'center', 
-                              gap: '12px', 
+                              gap: '10px', 
                               backgroundColor: '#EFF6FF', 
-                              padding: '8px 12px', 
+                              padding: '10px 14px', 
                               borderRadius: '10px', 
                               border: '1px solid #BFDBFE',
-                              width: '100%' 
+                              width: '100%',
+                              overflowX: 'auto'
                             }}>
-                              <img 
-                                src={chatImageUrl} 
-                                alt="معاينة الصورة" 
-                                style={{ width: '44px', height: '44px', borderRadius: '8px', objectFit: 'cover', border: '1px solid #93C5FD' }} 
-                              />
-                              <div style={{ flex: 1, fontSize: '0.8rem', color: '#1E40AF', fontWeight: 'bold' }}>
-                                🖼️ تم اختيار صورة من الجهاز للرفع والإرسال
+                              <div style={{ fontSize: '0.8rem', color: '#1E40AF', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+                                🖼️ الصور المحددة ({chatImageUrls.length}):
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setChatImageUrl('');
-                                  if (chatFileInputRef.current) chatFileInputRef.current.value = '';
-                                }}
-                                style={{
-                                  border: 'none',
-                                  backgroundColor: '#EF4444',
-                                  color: '#FFFFFF',
-                                  borderRadius: '50%',
-                                  width: '26px',
-                                  height: '26px',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  cursor: 'pointer'
-                                }}
-                                title="إلغاء الصورة المرفقة"
-                              >
-                                <X size={14} />
-                              </button>
+                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                {chatImageUrls.map((img, idx) => (
+                                  <div key={idx} style={{ position: 'relative', display: 'inline-block' }}>
+                                    <img 
+                                      src={img} 
+                                      alt={`معاينة الصورة ${idx + 1}`} 
+                                      style={{ width: '48px', height: '48px', borderRadius: '8px', objectFit: 'cover', border: '1px solid #93C5FD' }} 
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveChatImage(idx)}
+                                      style={{
+                                        position: 'absolute',
+                                        top: '-6px',
+                                        right: '-6px',
+                                        border: 'none',
+                                        backgroundColor: '#EF4444',
+                                        color: '#FFFFFF',
+                                        borderRadius: '50%',
+                                        width: '20px',
+                                        height: '20px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        cursor: 'pointer',
+                                        boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                                      }}
+                                      title="إلغاء هذه الصورة"
+                                    >
+                                      <X size={12} />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
                           )}
 
@@ -2967,6 +3008,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                               type="file"
                               ref={chatFileInputRef}
                               accept="image/*"
+                              multiple
                               style={{ display: 'none' }}
                               onChange={handleChatImageFileChange}
                               disabled={!selectedConvWindowOpen}
@@ -2978,7 +3020,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                               disabled={!selectedConvWindowOpen}
                               style={{
                                 border: '1px solid #CBD5E1',
-                                backgroundColor: chatImageUrl ? '#EFF6FF' : '#FFFFFF',
+                                backgroundColor: chatImageUrls.length > 0 ? '#EFF6FF' : '#FFFFFF',
                                 color: !selectedConvWindowOpen ? '#94A3B8' : '#3B82F6',
                                 borderRadius: '8px',
                                 padding: '8px 14px',
@@ -2992,10 +3034,10 @@ const Dashboard: React.FC<DashboardProps> = ({
                                 whiteSpace: 'nowrap',
                                 opacity: !selectedConvWindowOpen ? 0.6 : 1
                               }}
-                              title="اختيار صورة مباشرة من الجهاز"
+                              title="اختيار صورة أو عدة صور مباشرة من الجهاز"
                             >
                               <Upload size={18} />
-                              <span>رفع صورة من الجهاز</span>
+                              <span>{chatImageUrls.length > 0 ? `صور مختارة (${chatImageUrls.length})` : 'رفع صور من الجهاز'}</span>
                             </button>
 
                             <input
@@ -3016,9 +3058,9 @@ const Dashboard: React.FC<DashboardProps> = ({
                               style={{
                                 ...styles.chatPaneSendBtn,
                                 backgroundColor: !selectedConvWindowOpen ? '#94A3B8' : '#0066FF',
-                                cursor: (!selectedConvWindowOpen || (!chatInput.trim() && !chatImageUrl.trim())) ? 'not-allowed' : 'pointer'
+                                cursor: (!selectedConvWindowOpen || (!chatInput.trim() && chatImageUrls.length === 0)) ? 'not-allowed' : 'pointer'
                               }}
-                              disabled={!selectedConvWindowOpen || (!chatInput.trim() && !chatImageUrl.trim())}
+                              disabled={!selectedConvWindowOpen || (!chatInput.trim() && chatImageUrls.length === 0)}
                             >
                               <Send size={18} color="#FFFFFF" style={{ transform: 'rotate(180deg)' }} />
                             </button>
