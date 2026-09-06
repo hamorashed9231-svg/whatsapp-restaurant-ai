@@ -3809,28 +3809,55 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                     })()}
 
                                       {(() => {
-                                        const displayImgUrl = msg.image_url || (msg as any).imageUrl || (msgContent && (msgContent.startsWith('data:image') || msgContent.startsWith('http://') || msgContent.startsWith('https://')) ? msgContent : (msgContent && msgContent.includes('[📷 صورة مرفقة]') ? 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500&q=80' : undefined));
-                                        if (!displayImgUrl) return null;
-                                        return (
-                                          <div style={{ marginBottom: '6px', position: 'relative', overflow: 'hidden', borderRadius: '10px' }}>
-                                            <img
-                                              src={displayImgUrl}
-                                              alt="صورة مرفقة"
-                                              onClick={() => setPreviewImageUrl(displayImgUrl)}
-                                              style={{
-                                                maxWidth: '260px',
-                                                maxHeight: '200px',
-                                                borderRadius: '10px',
-                                                objectFit: 'cover',
-                                                display: 'block',
-                                                cursor: 'pointer',
-                                                boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-                                                transition: 'transform 0.2s ease-in-out',
-                                              }}
-                                              title="انقر لتكبير الصورة وتحميلها على جهازك 🔍"
-                                            />
-                                          </div>
-                                        );
+                                        const displayImgUrl = msg.image_url || (msg as any).imageUrl || (msgContent && (msgContent.startsWith('data:image') || msgContent.startsWith('http://') || msgContent.startsWith('https://')) ? msgContent : undefined);
+                                        if (displayImgUrl) {
+                                          return (
+                                            <div style={{ marginBottom: '6px', position: 'relative', overflow: 'hidden', borderRadius: '10px' }}>
+                                              <img
+                                                src={displayImgUrl}
+                                                alt="صورة مرفقة"
+                                                onClick={() => setPreviewImageUrl(displayImgUrl)}
+                                                style={{
+                                                  maxWidth: '260px',
+                                                  maxHeight: '200px',
+                                                  borderRadius: '10px',
+                                                  objectFit: 'cover',
+                                                  display: 'block',
+                                                  cursor: 'pointer',
+                                                  boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                                                  transition: 'transform 0.2s ease-in-out',
+                                                }}
+                                                title="انقر لتكبير الصورة وتحميلها على جهازك 🔍"
+                                              />
+                                            </div>
+                                          );
+                                        } else if (msgContent && msgContent.includes('[📷 صورة مرفقة]')) {
+                                          const captionText = msgContent.includes(': ') ? msgContent.split(': ').slice(1).join(': ') : '';
+                                          return (
+                                            <div style={{
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              gap: '10px',
+                                              padding: '10px 14px',
+                                              borderRadius: '10px',
+                                              backgroundColor: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+                                              color: darkMode ? '#F8FAFC' : '#1E293B',
+                                              fontSize: '0.85rem',
+                                              marginBottom: '6px'
+                                            }}>
+                                              <span style={{ fontSize: '1.4rem' }}>📷</span>
+                                              <div>
+                                                <div style={{ fontWeight: 'bold' }}>صورة مرفقة من العميل</div>
+                                                {captionText ? (
+                                                  <div style={{ fontSize: '0.8rem', opacity: 0.9, marginTop: '2px' }}>{captionText}</div>
+                                                ) : (
+                                                  <div style={{ fontSize: '0.75rem', opacity: 0.75 }}>تعذر معاينة الصورة المباشرة من Meta</div>
+                                                )}
+                                              </div>
+                                            </div>
+                                          );
+                                        }
+                                        return null;
                                       })()}
 
                                      {msg.audio_url && (
@@ -3944,9 +3971,9 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                       </div>
                                     ) : (
                                       <>
-                                         {msgContent && msgContent.trim() !== '[📷 صورة مرفقة]' && (
+                                         {msgContent && !msgContent.includes('[📷 صورة مرفقة]') && (
                                            <p style={{ fontSize: '0.85rem', color: darkMode ? '#F8FAFC' : '#0F172A', margin: 0, whiteSpace: 'pre-wrap' }}>
-                                             {msgContent.startsWith('[📷 صورة مرفقة]: ') ? msgContent.replace('[📷 صورة مرفقة]: ', '') : msgContent}
+                                             {msgContent}
                                            </p>
                                          )}
                                         

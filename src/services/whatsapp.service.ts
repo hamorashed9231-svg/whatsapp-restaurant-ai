@@ -550,9 +550,9 @@ class WhatsAppService {
    * جلب وتحويل رابط/بيانات الوسائط الواردة من واتساب Meta Media API
    */
   public async getMediaUrl(mediaId: string, customToken?: string): Promise<string | null> {
-    const token = customToken || this.token;
+    const token = customToken || this.token || process.env.WHATSAPP_TOKEN;
     if (!token || token.includes('ضع_توكين') || token === 'mock-token') {
-      return 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80';
+      return null;
     }
 
     try {
@@ -563,7 +563,7 @@ class WhatsAppService {
         }
       });
       const mediaDirectUrl = metaRes.data?.url;
-      if (!mediaDirectUrl) return 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80';
+      if (!mediaDirectUrl) return null;
 
       const binaryRes = await axios.get(mediaDirectUrl, {
         headers: {
@@ -577,7 +577,7 @@ class WhatsAppService {
       return `data:${mimeType};base64,${base64Data}`;
     } catch (err: any) {
       console.error('[WhatsApp Media Fetch Error]:', err.response?.data || err.message);
-      return 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80';
+      return null;
     }
   }
 }
