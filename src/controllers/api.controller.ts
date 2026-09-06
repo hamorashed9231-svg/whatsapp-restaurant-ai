@@ -1163,8 +1163,10 @@ export const handleAdminConfigChat = async (req: Request, res: Response): Promis
 export const getAiInstructions = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params; // restaurant_id
   try {
+    const rest = await getOrCreateDefaultRestaurant(id);
+    const targetRestId = rest ? rest.id : (id !== 'default' ? id : 'restaurant-am-eissa');
     const restaurant = await prisma.restaurant.findUnique({
-      where: { id },
+      where: { id: targetRestId },
       select: { ai_instructions: true }
     });
     res.status(200).json({ instructions: restaurant?.ai_instructions || '' });
@@ -1180,8 +1182,10 @@ export const updateAiInstructions = async (req: Request, res: Response): Promise
   const { id } = req.params; // restaurant_id
   const { instructions } = req.body;
   try {
+    const rest = await getOrCreateDefaultRestaurant(id);
+    const targetRestId = rest ? rest.id : (id !== 'default' ? id : 'restaurant-am-eissa');
     await prisma.restaurant.update({
-      where: { id },
+      where: { id: targetRestId },
       data: { ai_instructions: instructions }
     });
     res.status(200).json({ status: 'success', message: 'تم تحديث توجيهات المساعد الذكي بنجاح!' });
