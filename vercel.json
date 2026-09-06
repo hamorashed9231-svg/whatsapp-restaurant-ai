@@ -24,7 +24,13 @@
       "src": "src/index.ts",
       "use": "@vercel/node",
       "config": {
-        "includeFiles": ["frontend/dist/**", "frontend/public/**"]
+        "includeFiles": [
+          "frontend/dist/**",
+          "frontend/public/**",
+          "prisma/schema.prisma",
+          "node_modules/.prisma/client/**",
+          "node_modules/@prisma/client/**"
+        ]
       }
     }
   ],

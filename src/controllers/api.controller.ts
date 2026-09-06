@@ -101,27 +101,32 @@ const EISSA_TOKEN = 'EAAfbQuX71okBSb0OnQB8oEzZBEdjEyvHkf4Ljxj7JwtIFlK0lnLgLAXrOQ
 
 const getOrCreateDefaultRestaurant = async (id?: string) => {
   try {
+    let existing = null;
     if (id && id !== 'default') {
-      const existing = await prisma.restaurant.findUnique({ where: { id } });
-      if (existing) {
-        if (!existing.whatsapp_access_token) {
-          return await prisma.restaurant.update({
-            where: { id: existing.id },
-            data: { whatsapp_access_token: EISSA_TOKEN }
-          });
+      existing = await prisma.restaurant.findFirst({
+        where: {
+          OR: [
+            { id },
+            { name: 'مطعم عم عيسى' }
+          ]
         }
-        return existing;
-      }
+      }).catch(() => null);
     }
-    const first = await prisma.restaurant.findFirst();
-    if (first) {
-      if (!first.whatsapp_access_token) {
-        return await prisma.restaurant.update({
-          where: { id: first.id },
+
+    if (!existing) {
+      existing = await prisma.restaurant.findFirst({
+        where: { subscription_status: 'ACTIVE' }
+      }) || await prisma.restaurant.findFirst();
+    }
+
+    if (existing) {
+      if (!existing.whatsapp_access_token) {
+        existing = await prisma.restaurant.update({
+          where: { id: existing.id },
           data: { whatsapp_access_token: EISSA_TOKEN }
         });
       }
-      return first;
+      return existing;
     }
 
     const oneYearFromNow = new Date();
@@ -129,7 +134,6 @@ const getOrCreateDefaultRestaurant = async (id?: string) => {
 
     return await prisma.restaurant.create({
       data: {
-        id: (id && id !== 'default') ? id : 'restaurant-am-eissa',
         name: 'مطعم عم عيسى',
         phone_number: '+201012345678',
         whatsapp_number_id: '100020003000',
