@@ -11,10 +11,14 @@ export const verifyWebhook = async (req: Request, res: Response): Promise<void> 
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN || 'my_secure_verify_token_123';
+  const validTokens = [
+    process.env.WEBHOOK_VERIFY_TOKEN,
+    'rivix_verify_token_123',
+    'my_secure_verify_token_123'
+  ].filter(Boolean);
 
   if (mode && token) {
-    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+    if (mode === 'subscribe' && validTokens.includes(token as string)) {
       console.log('[Webhook] تم التحقق بنجاح من Webhook Verification Token.');
       res.status(200).send(challenge);
       return;
