@@ -826,23 +826,23 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
           logo_url: restData.logo_url || localStorage.getItem('restaurant_logo') || '',
         });
 
-        // جلب بقية البيانات من قاعدة البيانات المركزية
+        // جلب بقية البيانات من قاعدة البيانات المركزية وحمايتها من أخطاء الاتصال
         const actualRestId = resRest.data.id;
         const [resMenu, resOrders, resReserv, resConvers, resAiInst, resCats, resQuick] = await Promise.all([
-          api.get(`/restaurants/${actualRestId}/menu`),
-          api.get(`/restaurants/${actualRestId}/orders`),
-          api.get(`/restaurants/${actualRestId}/reservations`),
-          api.get(`/restaurants/${actualRestId}/conversations`),
-          api.get(`/restaurants/${actualRestId}/ai-instructions`),
-          api.get(`/restaurants/${actualRestId}/categories`),
-          api.get(`/restaurants/${actualRestId}/quick-replies`)
+          api.get(`/restaurants/${actualRestId}/menu`).catch(() => ({ data: [] })),
+          api.get(`/restaurants/${actualRestId}/orders`).catch(() => ({ data: [] })),
+          api.get(`/restaurants/${actualRestId}/reservations`).catch(() => ({ data: [] })),
+          api.get(`/restaurants/${actualRestId}/conversations`).catch(() => ({ data: [] })),
+          api.get(`/restaurants/${actualRestId}/ai-instructions`).catch(() => ({ data: { instructions: '' } })),
+          api.get(`/restaurants/${actualRestId}/categories`).catch(() => ({ data: [] })),
+          api.get(`/restaurants/${actualRestId}/quick-replies`).catch(() => ({ data: [] }))
         ]);
 
         setMenuItems(resMenu.data || []);
         setOrders(resOrders.data || []);
         setReservations(resReserv.data || []);
         setConversations(resConvers.data || []);
-        setAiInstructions(resAiInst.data.instructions || '');
+        setAiInstructions(resAiInst.data?.instructions || '');
 
         if (Array.isArray(resCats.data) && resCats.data.length > 0) {
           setCustomCategories(resCats.data);
