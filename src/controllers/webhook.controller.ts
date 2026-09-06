@@ -231,12 +231,12 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
       }
 
       if (!queuedInRedis) {
-        processDirectly(whatsappNumberId, customerPhone, messageText, mediaId).catch((err) => {
+        processDirectly(whatsappNumberId, customerPhone, messageText, mediaId, message).catch((err) => {
           console.error('[Webhook DirectProcess Async Error]:', err.message || err);
         });
       }
     } else {
-      processDirectly(whatsappNumberId, customerPhone, messageText, mediaId).catch((err) => {
+      processDirectly(whatsappNumberId, customerPhone, messageText, mediaId, message).catch((err) => {
         console.error('[Webhook DirectProcess Async Error]:', err.message || err);
       });
     }
@@ -250,7 +250,7 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
 /**
  * معالجة الرسالة مباشرة لبيئات Serverless (مثل Vercel) مع منع تداخل الشاتات تماماً
  */
-async function processDirectly(whatsappNumberId: string, rawCustomerPhone: string, messageText: string, mediaId?: string) {
+async function processDirectly(whatsappNumberId: string, rawCustomerPhone: string, messageText: string, mediaId?: string, rawMessage?: any) {
   try {
     const { prisma } = await import('../services/prisma.service');
     const { geminiService } = await import('../services/gemini.service');
@@ -365,15 +365,20 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
         : (conversation.messages_json as any[]) || [];
     } catch (e) {}
 
-    const isAudioType = (message.type === 'audio' || message.type === 'voice');
+    const msgType = rawMessage?.type || '';
+    const isAudioType = (msgType === 'audio' || msgType === 'voice');
+    const isStickerType = (msgType === 'sticker');
+    const isImageType = (msgType === 'image' || (!isAudioType && !isStickerType && mediaUrl && mediaUrl.startsWith('data:image')));
+
     currentMsgs.push({
       role: 'user',
       content: messageText,
-      wamid: message.id || undefined,
-      id: message.id || undefined,
-      reply_to_id: message.context?.id || undefined,
-      image_url: (!isAudioType && mediaUrl) ? mediaUrl : undefined,
+      wamid: rawMessage?.id || undefined,
+      id: rawMessage?.id || undefined,
+      reply_to_id: rawMessage?.context?.id || undefined,
+      image_url: (isImageType && mediaUrl) ? mediaUrl : (mediaUrl && !isAudioType && !isStickerType ? mediaUrl : undefined),
       audio_url: (isAudioType && mediaUrl) ? mediaUrl : undefined,
+      sticker_url: (isStickerType && mediaUrl) ? mediaUrl : undefined,
       timestamp: new Date().toISOString()
     });
     const isWasClosed = (conversation.status === 'CLOSED');

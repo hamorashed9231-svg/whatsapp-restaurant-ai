@@ -3808,26 +3808,30 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                       );
                                     })()}
 
-                                     {msg.image_url && (
-                                       <div style={{ marginBottom: '6px', position: 'relative', overflow: 'hidden', borderRadius: '10px' }}>
-                                         <img
-                                           src={msg.image_url}
-                                           alt="صورة مرفقة"
-                                           onClick={() => setPreviewImageUrl(msg.image_url!)}
-                                           style={{
-                                             maxWidth: '260px',
-                                             maxHeight: '200px',
-                                             borderRadius: '10px',
-                                             objectFit: 'cover',
-                                             display: 'block',
-                                             cursor: 'pointer',
-                                             boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-                                             transition: 'transform 0.2s ease-in-out',
-                                           }}
-                                           title="انقر لتكبير الصورة وتحميلها على جهازك 🔍"
-                                         />
-                                       </div>
-                                     )}
+                                      {(() => {
+                                        const displayImgUrl = msg.image_url || (msg as any).imageUrl || (msgContent && (msgContent.startsWith('data:image') || msgContent.startsWith('http://') || msgContent.startsWith('https://')) ? msgContent : undefined);
+                                        if (!displayImgUrl) return null;
+                                        return (
+                                          <div style={{ marginBottom: '6px', position: 'relative', overflow: 'hidden', borderRadius: '10px' }}>
+                                            <img
+                                              src={displayImgUrl}
+                                              alt="صورة مرفقة"
+                                              onClick={() => setPreviewImageUrl(displayImgUrl)}
+                                              style={{
+                                                maxWidth: '260px',
+                                                maxHeight: '200px',
+                                                borderRadius: '10px',
+                                                objectFit: 'cover',
+                                                display: 'block',
+                                                cursor: 'pointer',
+                                                boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                                                transition: 'transform 0.2s ease-in-out',
+                                              }}
+                                              title="انقر لتكبير الصورة وتحميلها على جهازك 🔍"
+                                            />
+                                          </div>
+                                        );
+                                      })()}
 
                                      {msg.audio_url && (
                                        <div style={{ marginBottom: '6px', marginTop: '4px' }}>
