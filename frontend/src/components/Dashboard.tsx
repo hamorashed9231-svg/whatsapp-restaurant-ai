@@ -182,17 +182,80 @@ const syncMenuItemsWithStorage = (serverItems?: any, restId?: string): MenuItem[
     return validStored;
   }
 
-  return [];
+class ChatErrorBoundary extends React.Component<
+  { children: React.ReactNode; onReset?: () => void },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: any) {
+    console.error('Chat Error Boundary Caught Error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '30px', textAlign: 'center', backgroundColor: 'rgba(239, 68, 68, 0.05)', borderRadius: '12px', border: '1px solid rgba(239, 68, 68, 0.2)', margin: '16px' }}>
+          <AlertTriangle size={44} color="#EF4444" style={{ marginBottom: '12px' }} />
+          <h3 style={{ fontSize: '1.05rem', fontWeight: 'bold', color: '#EF4444', marginBottom: '6px' }}>تعذّر عرض تفاصيل هذه المحادثة</h3>
+          <p style={{ fontSize: '0.85rem', color: '#64748B', maxWidth: '420px', marginBottom: '16px', lineHeight: '1.5' }}>
+            تحتوي هذه المحادثة على بيانات غير مكتملة أو قديمة في قاعدة البيانات. تم تفعيل نمط الأمان لمنع انهيار الشاشة.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              this.setState({ hasError: false, error: null });
+              if (this.props.onReset) this.props.onReset();
+            }}
+            style={{
+              backgroundColor: '#0066FF',
+              color: '#FFFFFF',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '8px 18px',
+              fontSize: '0.85rem',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              boxShadow: '0 2px 6px rgba(0,102,255,0.3)'
+            }}
+          >
+            🔄 إعادة تحميل المحادثة
+          </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+const getSafePhone = (c?: any): string => {
+  if (!c) return 'رقم غير متاح';
+  return String(c.customer_phone || c.customerPhone || 'رقم غير متاح');
 };
 
-interface ChatMessage {
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  image_url?: string;
-  sender_name?: string;
-  timestamp?: string;
-  is_template?: boolean;
-}
+const isGroupConvCheck = (c?: any): boolean => {
+  if (!c) return false;
+  const phone = getSafePhone(c);
+  return c.category === 'GROUP' || Boolean(c.is_group) || (typeof phone === 'string' && (phone.includes('g.us') || phone.includes('جروب')));
+};
+
+const safeFormatTime = (ts?: any): string => {
+  if (!ts) return '';
+  try {
+    const d = new Date(ts);
+    return isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch (e) {
+    return '';
+  }
+};
 
 const Dashboard: React.FC<DashboardProps> = ({
   token,
@@ -2218,16 +2281,17 @@ const Dashboard: React.FC<DashboardProps> = ({
                   </div>
 
                   {conversations
+                    .filter(c => Boolean(c))
                     .filter(c => viewArchived ? Boolean(c.is_archived) : !c.is_archived)
                     .filter(c => {
                       if (selectedCategoryFilter === 'ALL') return true;
                       if (selectedCategoryFilter === 'GROUP') {
-                        return c.category === 'GROUP' || Boolean(c.is_group) || c.customer_phone.includes('g.us') || c.customer_phone.includes('جروب');
+                        return isGroupConvCheck(c);
                       }
                       return c.category === selectedCategoryFilter;
                     })
                     .filter(c => {
-                      const s = (c.status || 'UNANSWERED').toUpperCase();
+                      const s = (c?.status || 'UNANSWERED').toUpperCase();
                       if (selectedStatusFilter === 'UNANSWERED') return s === 'UNANSWERED';
                       if (selectedStatusFilter === 'IN_PROGRESS') return s === 'IN_PROGRESS' || s === 'ACTIVE';
                       if (selectedStatusFilter === 'CLOSED') return s === 'CLOSED' || s === 'ARCHIVED';
@@ -2239,31 +2303,35 @@ const Dashboard: React.FC<DashboardProps> = ({
                   ) : (
                     <div style={{ overflowY: 'auto', flex: 1, padding: '6px', minHeight: 0 }}>
                       {conversations
+                        .filter(c => Boolean(c))
                         .filter(c => viewArchived ? Boolean(c.is_archived) : !c.is_archived)
                         .filter(c => {
                           if (selectedCategoryFilter === 'ALL') return true;
                           if (selectedCategoryFilter === 'GROUP') {
-                            return c.category === 'GROUP' || Boolean(c.is_group) || c.customer_phone.includes('g.us') || c.customer_phone.includes('جروب');
+                            return isGroupConvCheck(c);
                           }
                           return c.category === selectedCategoryFilter;
                         })
                         .filter(c => {
-                          const s = (c.status || 'UNANSWERED').toUpperCase();
+                          const s = (c?.status || 'UNANSWERED').toUpperCase();
                           if (selectedStatusFilter === 'UNANSWERED') return s === 'UNANSWERED';
                           if (selectedStatusFilter === 'IN_PROGRESS') return s === 'IN_PROGRESS' || s === 'ACTIVE';
                           if (selectedStatusFilter === 'CLOSED') return s === 'CLOSED' || s === 'ARCHIVED';
                           return true;
                         })
                         .map(conv => {
-                          const isGroupConv = conv.category === 'GROUP' || Boolean(conv.is_group) || conv.customer_phone.includes('g.us') || conv.customer_phone.includes('جروب');
+                          if (!conv) return null;
+                          const phoneStr = getSafePhone(conv);
+                          const isGroupConv = isGroupConvCheck(conv);
                           const catColor = conv.category === 'ORDER' ? '#10B981' : conv.category === 'COMPLAINT' ? '#EF4444' : isGroupConv ? '#8B5CF6' : '#3B82F6';
                           const catLabel = conv.category === 'ORDER' ? 'طلب' : conv.category === 'COMPLAINT' ? 'شكوى' : isGroupConv ? '👥 مجموعة' : 'استفسار';
                           const statusInfo = getStatusInfo(conv);
                           const isSelected = selectedConversation?.id === conv.id;
+                          const timeFormatted = safeFormatTime(conv.updated_at || conv.created_at);
 
                           return (
                             <div
-                              key={conv.id}
+                              key={conv.id || Math.random()}
                               onClick={() => handleSelectConversation(conv)}
                               style={{
                                 padding: '10px 12px',
@@ -2284,14 +2352,16 @@ const Dashboard: React.FC<DashboardProps> = ({
                                     <MessageSquare size={14} color={catColor} />
                                   </div>
                                   <div>
-                                    <div style={{ fontWeight: 'bold', fontSize: '0.82rem' }}>{conv.customer_phone}</div>
+                                    <div style={{ fontWeight: 'bold', fontSize: '0.82rem' }}>{phoneStr}</div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
                                       <span style={{ fontSize: '0.65rem', color: catColor, fontWeight: 'bold', backgroundColor: `${catColor}10`, padding: '2px 6px', borderRadius: '4px' }}>
                                         {catLabel}
                                       </span>
-                                      <span style={{ fontSize: '0.65rem', color: '#8E9FB8' }}>
-                                        {new Date(conv.updated_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                                      </span>
+                                      {timeFormatted && (
+                                        <span style={{ fontSize: '0.65rem', color: '#8E9FB8' }}>
+                                          {timeFormatted}
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
@@ -2317,385 +2387,406 @@ const Dashboard: React.FC<DashboardProps> = ({
                   )}
                 </div>
 
-                {/* واجهة الرسائل (يمين) */}
-                <div style={styles.chatPane}>
-                  {selectedConversation ? (
-                    <>
-                      {/* هيدر الدردشة مع التحكم بالحالة واسم الموظف وزر الأرشفة */}
-                      <div style={{ ...styles.chatPaneHeader, padding: '12px 16px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', flexWrap: 'wrap', gap: '10px' }}>
-                          <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                              <span style={{ fontWeight: 'bold', fontSize: '0.95rem', color: darkMode ? '#FFFFFF' : '#0F1E36' }}>
-                                {selectedConversation.category === 'GROUP' || Boolean(selectedConversation.is_group) || selectedConversation.customer_phone.includes('g.us')
-                                  ? `👥 مجموعة: ${selectedConversation.customer_phone}`
-                                  : `📱 رقم العميل: ${selectedConversation.customer_phone}`}
-                              </span>
+                {/* واجهة الرسائل (يمين) مع حماية ErrorBoundary */}
+                <ChatErrorBoundary onReset={() => setSelectedConversation(null)}>
+                  <div style={styles.chatPane}>
+                    {selectedConversation ? (
+                      <>
+                        {/* هيدر الدردشة مع التحكم بالحالة واسم الموظف وزر الأرشفة */}
+                        <div style={{ ...styles.chatPaneHeader, padding: '12px 16px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', flexWrap: 'wrap', gap: '10px' }}>
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                {(() => {
+                                  const phoneStr = getSafePhone(selectedConversation);
+                                  const isGroup = isGroupConvCheck(selectedConversation);
+                                  return (
+                                    <>
+                                      <span style={{ fontWeight: 'bold', fontSize: '0.95rem', color: darkMode ? '#FFFFFF' : '#0F1E36' }}>
+                                        {isGroup ? `👥 مجموعة: ${phoneStr}` : `📱 رقم العميل: ${phoneStr}`}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (phoneStr && phoneStr !== 'رقم غير متاح') {
+                                            navigator.clipboard.writeText(phoneStr);
+                                            setCopySuccess(true);
+                                            setTimeout(() => setCopySuccess(false), 2000);
+                                          }
+                                        }}
+                                        style={{
+                                          border: '1px solid #CBD5E1',
+                                          backgroundColor: copySuccess ? '#10B981' : '#FFFFFF',
+                                          color: copySuccess ? '#FFFFFF' : '#0F1E36',
+                                          borderRadius: '6px',
+                                          padding: '3px 8px',
+                                          fontSize: '0.72rem',
+                                          fontWeight: 'bold',
+                                          cursor: 'pointer',
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                          transition: 'all 0.2s'
+                                        }}
+                                        title="نسخ رقم الهاتف للحافظة"
+                                      >
+                                        {copySuccess ? (
+                                          <>
+                                            <CheckCircle size={13} color="#FFFFFF" />
+                                            <span>تم النسخ!</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Copy size={13} color="#0066FF" />
+                                            <span>نسخ الرقم</span>
+                                          </>
+                                        )}
+                                      </button>
+                                    </>
+                                  );
+                                })()}
+                              </div>
+                              
+                              {/* عرض هوية الموظف المتابع أو مغلق الشات */}
+                              <div style={{ fontSize: '0.75rem', marginTop: '3px' }}>
+                                {(() => {
+                                  const stInfo = getStatusInfo(selectedConversation);
+                                  return (
+                                    <span style={{ fontWeight: 'bold', color: stInfo.color }}>
+                                      الحالة الحالية: {stInfo.label}
+                                    </span>
+                                  );
+                                })()}
+                              </div>
+                            </div>
+                            
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                              {/* زر الأرشفة / إلغاء الأرشفة */}
+                              {!selectedConversation.is_archived ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleArchive(selectedConversation.id, true)}
+                                  style={{
+                                    border: 'none',
+                                    backgroundColor: '#475569',
+                                    color: '#FFFFFF',
+                                    padding: '6px 12px',
+                                    borderRadius: '6px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 'bold',
+                                    cursor: 'pointer',
+                                    boxShadow: '0 2px 6px rgba(71, 85, 105, 0.3)'
+                                  }}
+                                  title="أرشفة المحادثة ونقلها لأرشيف النظام"
+                                >
+                                  📦 أرشفة الشات
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleArchive(selectedConversation.id, false)}
+                                  style={{
+                                    border: 'none',
+                                    backgroundColor: '#0066FF',
+                                    color: '#FFFFFF',
+                                    padding: '6px 12px',
+                                    borderRadius: '6px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 'bold',
+                                    cursor: 'pointer',
+                                    boxShadow: '0 2px 6px rgba(0, 102, 255, 0.3)'
+                                  }}
+                                  title="إعادة الشات للقائمة النشطة"
+                                >
+                                  📤 إلغاء الأرشفة
+                                </button>
+                              )}
+
+                              {/* أزرار التحكم الفوري بالحالة لتحديد اسم الموظف */}
+                              {(selectedConversation.status || '').toUpperCase() !== 'IN_PROGRESS' && (selectedConversation.status || '').toUpperCase() !== 'ACTIVE' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateStatus(selectedConversation.id, 'IN_PROGRESS')}
+                                  style={{
+                                    border: 'none',
+                                    backgroundColor: '#3B82F6',
+                                    color: '#FFFFFF',
+                                    padding: '6px 12px',
+                                    borderRadius: '6px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 'bold',
+                                    cursor: 'pointer',
+                                    boxShadow: '0 2px 6px rgba(59, 130, 246, 0.3)'
+                                  }}
+                                  title="استلام متابعة الدردشة باسمك الحالي"
+                                >
+                                  🔵 استلام الدردشة ({currentUsername})
+                                </button>
+                              )}
+
+                              {(selectedConversation.status || '').toUpperCase() !== 'CLOSED' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateStatus(selectedConversation.id, 'CLOSED')}
+                                  style={{
+                                    border: 'none',
+                                    backgroundColor: '#EF4444',
+                                    color: '#FFFFFF',
+                                    padding: '6px 12px',
+                                    borderRadius: '6px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 'bold',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  🔄 إعادة فتح الدردشة
+                                </button>
+                              )}
+
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', borderRight: '1px solid #E2E8F0', paddingRight: '10px' }}>
+                                <span style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 'bold' }}>التصنيف:</span>
+                                <select
+                                  value={selectedConversation.category || (isGroupConvCheck(selectedConversation) ? 'GROUP' : 'INQUIRY')}
+                                  onChange={(e) => handleUpdateCategory(selectedConversation.id, e.target.value as any)}
+                                  style={{
+                                    padding: '4px 8px',
+                                    borderRadius: '6px',
+                                    fontSize: '0.75rem',
+                                    border: '1px solid #CBD5E1',
+                                    backgroundColor: '#FFFFFF',
+                                    fontWeight: 'bold',
+                                    cursor: 'pointer',
+                                    color: selectedConversation.category === 'ORDER' ? '#10B981' : selectedConversation.category === 'COMPLAINT' ? '#EF4444' : selectedConversation.category === 'GROUP' ? '#8B5CF6' : '#3B82F6'
+                                  }}
+                                >
+                                  <option value="INQUIRY">❓ استفسارات</option>
+                                  <option value="ORDER">📦 طلبات</option>
+                                  <option value="COMPLAINT">⚠️ شكاوى</option>
+                                  <option value="GROUP">👥 مجموعات الواتساب (API Group)</option>
+                                </select>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={styles.chatPaneBody}>
+                          {!Array.isArray(chatMessages) || chatMessages.length === 0 ? (
+                            <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: '#5E6E85' }}>
+                              لا توجد رسائل مسجلة في المحادثة بعد.
+                            </div>
+                          ) : (
+                            chatMessages.map((msg, i) => {
+                              if (!msg) return null;
+                              const msgRole = msg.role || ((msg as any).isStaff || (msg as any).sender === 'staff' ? 'assistant' : 'user');
+                              const isUser = msgRole === 'user';
+                              const msgContent = msg.content || (msg as any).text || '';
+                              const senderName = msg.sender_name || (msg as any).senderName || (msg as any).sender || '';
+                              const timeStr = safeFormatTime(msg.timestamp || (msg as any).created_at);
+
+                              return (
+                                <div
+                                  key={i}
+                                  style={{
+                                    ...styles.chatPaneMessageRow,
+                                    justifyContent: isUser ? 'flex-start' : 'flex-end',
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      ...styles.chatPaneBubble,
+                                      backgroundColor: isUser ? '#EBF3FF' : '#FFFFFF',
+                                      border: isUser ? '1px solid #BFDBFE' : '1px solid #E2E8F0',
+                                      borderRadius: isUser ? '12px 12px 12px 0px' : '12px 12px 0px 12px',
+                                      boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                                    }}
+                                  >
+                                    {senderName && !isUser && (
+                                      <div style={{ fontSize: '0.65rem', color: '#0066FF', fontWeight: '800', marginBottom: '4px' }}>
+                                        الرد بواسطة الموظف: {senderName}
+                                      </div>
+                                    )}
+                                    {msg.image_url && (
+                                      <div style={{ marginBottom: '6px' }}>
+                                        <img
+                                          src={msg.image_url}
+                                          alt="صورة مرفقة"
+                                          style={{ maxWidth: '240px', maxHeight: '180px', borderRadius: '8px', objectFit: 'cover', display: 'block' }}
+                                        />
+                                      </div>
+                                    )}
+                                    {msgContent && <p style={{ fontSize: '0.85rem', color: '#0F172A', margin: 0, whiteSpace: 'pre-wrap' }}>{msgContent}</p>}
+                                    {timeStr && (
+                                      <div style={{ fontSize: '0.6rem', color: '#94A3B8', marginTop: '4px', textAlign: 'left' }}>
+                                        {timeStr}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                          <div ref={chatEndRef} />
+                        </div>
+
+                        <form onSubmit={handleSendManualMessage} style={{ ...styles.chatPaneInputArea, flexDirection: 'column', gap: '8px' }}>
+                          {/* شريط التحذير الأصفر عند انتهاء نافذة الـ 24 ساعة للعميل */}
+                          {!selectedConvWindowOpen && (
+                            <div style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              backgroundColor: darkMode ? 'rgba(217, 119, 6, 0.15)' : '#FEF3C7',
+                              border: '1px solid #F59E0B',
+                              borderRadius: '8px',
+                              padding: '10px 14px',
+                              width: '100%',
+                              gap: '12px'
+                            }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: darkMode ? '#FBBF24' : '#92400E', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                                <AlertTriangle size={18} color="#F59E0B" />
+                                <span>انتهت نافذة الـ 24 ساعة للعميل. تم إغلاق الرسائل النصية العادية وفقاً لسياسات Meta الرسمية.</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setShowTemplateModal(true)}
+                                style={{
+                                  backgroundColor: '#F59E0B',
+                                  color: '#FFFFFF',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  padding: '6px 12px',
+                                  fontSize: '0.8rem',
+                                  fontWeight: 'bold',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  whiteSpace: 'nowrap'
+                                }}
+                              >
+                                <FileText size={14} />
+                                <span>📋 إرسال قالب رسمي (Template)</span>
+                              </button>
+                            </div>
+                          )}
+
+                          {/* معاينة الصورة المرفقة من الجهاز قبل الإرسال */}
+                          {chatImageUrl && (
+                            <div style={{ 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              gap: '12px', 
+                              backgroundColor: '#EFF6FF', 
+                              padding: '8px 12px', 
+                              borderRadius: '10px', 
+                              border: '1px solid #BFDBFE',
+                              width: '100%' 
+                            }}>
+                              <img 
+                                src={chatImageUrl} 
+                                alt="معاينة الصورة" 
+                                style={{ width: '44px', height: '44px', borderRadius: '8px', objectFit: 'cover', border: '1px solid #93C5FD' }} 
+                              />
+                              <div style={{ flex: 1, fontSize: '0.8rem', color: '#1E40AF', fontWeight: 'bold' }}>
+                                🖼️ تم اختيار صورة من الجهاز للرفع والإرسال
+                              </div>
                               <button
                                 type="button"
                                 onClick={() => {
-                                  navigator.clipboard.writeText(selectedConversation.customer_phone);
-                                  setCopySuccess(true);
-                                  setTimeout(() => setCopySuccess(false), 2000);
+                                  setChatImageUrl('');
+                                  if (chatFileInputRef.current) chatFileInputRef.current.value = '';
                                 }}
-                                style={{
-                                  border: '1px solid #CBD5E1',
-                                  backgroundColor: copySuccess ? '#10B981' : '#FFFFFF',
-                                  color: copySuccess ? '#FFFFFF' : '#0F1E36',
-                                  borderRadius: '6px',
-                                  padding: '3px 8px',
-                                  fontSize: '0.72rem',
-                                  fontWeight: 'bold',
-                                  cursor: 'pointer',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px',
-                                  transition: 'all 0.2s'
-                                }}
-                                title="نسخ رقم الهاتف للحافظة"
-                              >
-                                {copySuccess ? (
-                                  <>
-                                    <CheckCircle size={13} color="#FFFFFF" />
-                                    <span>تم النسخ!</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Copy size={13} color="#0066FF" />
-                                    <span>نسخ الرقم</span>
-                                  </>
-                                )}
-                              </button>
-                            </div>
-                            
-                            {/* عرض هوية الموظف المتابع أو مغلق الشات */}
-                            <div style={{ fontSize: '0.75rem', marginTop: '3px' }}>
-                              {(() => {
-                                const stInfo = getStatusInfo(selectedConversation);
-                                return (
-                                  <span style={{ fontWeight: 'bold', color: stInfo.color }}>
-                                    الحالة الحالية: {stInfo.label}
-                                  </span>
-                                );
-                              })()}
-                            </div>
-                          </div>
-                          
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                            {/* زر الأرشفة / إلغاء الأرشفة */}
-                            {!selectedConversation.is_archived ? (
-                              <button
-                                type="button"
-                                onClick={() => handleToggleArchive(selectedConversation.id, true)}
-                                style={{
-                                  border: 'none',
-                                  backgroundColor: '#475569',
-                                  color: '#FFFFFF',
-                                  padding: '6px 12px',
-                                  borderRadius: '6px',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 'bold',
-                                  cursor: 'pointer',
-                                  boxShadow: '0 2px 6px rgba(71, 85, 105, 0.3)'
-                                }}
-                                title="أرشفة المحادثة ونقلها لأرشيف النظام"
-                              >
-                                📦 أرشفة الشات
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleToggleArchive(selectedConversation.id, false)}
-                                style={{
-                                  border: 'none',
-                                  backgroundColor: '#0066FF',
-                                  color: '#FFFFFF',
-                                  padding: '6px 12px',
-                                  borderRadius: '6px',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 'bold',
-                                  cursor: 'pointer',
-                                  boxShadow: '0 2px 6px rgba(0, 102, 255, 0.3)'
-                                }}
-                                title="إعادة الشات للقائمة النشطة"
-                              >
-                                📤 إلغاء الأرشفة
-                              </button>
-                            )}
-
-                            {/* أزرار التحكم الفوري بالحالة لتحديد اسم الموظف */}
-                            {(selectedConversation.status || '').toUpperCase() !== 'IN_PROGRESS' && (selectedConversation.status || '').toUpperCase() !== 'ACTIVE' && (
-                              <button
-                                type="button"
-                                onClick={() => handleUpdateStatus(selectedConversation.id, 'IN_PROGRESS')}
-                                style={{
-                                  border: 'none',
-                                  backgroundColor: '#3B82F6',
-                                  color: '#FFFFFF',
-                                  padding: '6px 12px',
-                                  borderRadius: '6px',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 'bold',
-                                  cursor: 'pointer',
-                                  boxShadow: '0 2px 6px rgba(59, 130, 246, 0.3)'
-                                }}
-                                title="استلام متابعة الدردشة باسمك الحالي"
-                              >
-                                🔵 استلام الدردشة ({currentUsername})
-                              </button>
-                            )}
-
-                            {(selectedConversation.status || '').toUpperCase() !== 'CLOSED' && (
-                              <button
-                                type="button"
-                                onClick={() => handleUpdateStatus(selectedConversation.id, 'CLOSED')}
                                 style={{
                                   border: 'none',
                                   backgroundColor: '#EF4444',
                                   color: '#FFFFFF',
-                                  padding: '6px 12px',
-                                  borderRadius: '6px',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 'bold',
+                                  borderRadius: '50%',
+                                  width: '26px',
+                                  height: '26px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
                                   cursor: 'pointer'
                                 }}
+                                title="إلغاء الصورة المرفقة"
                               >
-                                🔄 إعادة فتح الدردشة
+                                <X size={14} />
                               </button>
-                            )}
-
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', borderRight: '1px solid #E2E8F0', paddingRight: '10px' }}>
-                              <span style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 'bold' }}>التصنيف:</span>
-                              <select
-                                value={selectedConversation.category || (selectedConversation.customer_phone.includes('g.us') ? 'GROUP' : 'INQUIRY')}
-                                onChange={(e) => handleUpdateCategory(selectedConversation.id, e.target.value as any)}
-                                style={{
-                                  padding: '4px 8px',
-                                  borderRadius: '6px',
-                                  fontSize: '0.75rem',
-                                  border: '1px solid #CBD5E1',
-                                  backgroundColor: '#FFFFFF',
-                                  fontWeight: 'bold',
-                                  cursor: 'pointer',
-                                  color: selectedConversation.category === 'ORDER' ? '#10B981' : selectedConversation.category === 'COMPLAINT' ? '#EF4444' : selectedConversation.category === 'GROUP' ? '#8B5CF6' : '#3B82F6'
-                                }}
-                              >
-                                <option value="INQUIRY">❓ استفسارات</option>
-                                <option value="ORDER">📦 طلبات</option>
-                                <option value="COMPLAINT">⚠️ شكاوى</option>
-                                <option value="GROUP">👥 مجموعات الواتساب (API Group)</option>
-                              </select>
                             </div>
-                          </div>
-                        </div>
-                      </div>
+                          )}
 
-                      <div style={styles.chatPaneBody}>
-                        {chatMessages.length === 0 ? (
-                          <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: '#5E6E85' }}>
-                            لا توجد رسائل مسجلة في المحادثة بعد.
-                          </div>
-                        ) : (
-                          chatMessages.map((msg, i) => (
-                            <div
-                              key={i}
-                              style={{
-                                ...styles.chatPaneMessageRow,
-                                justifyContent: msg.role === 'user' ? 'flex-start' : 'flex-end', // المستخدم لليسار والردود لليمين
-                              }}
-                            >
-                              <div
-                                style={{
-                                  ...styles.chatPaneBubble,
-                                  backgroundColor: msg.role === 'user' ? '#EBF3FF' : '#FFFFFF',
-                                  border: msg.role === 'user' ? '1px solid #BFDBFE' : '1px solid #E2E8F0',
-                                  borderRadius: msg.role === 'user' ? '12px 12px 12px 0px' : '12px 12px 0px 12px',
-                                  boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-                                }}
-                              >
-                                {msg.sender_name && msg.role !== 'user' && (
-                                  <div style={{ fontSize: '0.65rem', color: '#0066FF', fontWeight: '800', marginBottom: '4px' }}>
-                                    الرد بواسطة الموظف: {msg.sender_name}
-                                  </div>
-                                )}
-                                {msg.image_url && (
-                                  <div style={{ marginBottom: '6px' }}>
-                                    <img
-                                      src={msg.image_url}
-                                      alt="صورة مرفقة"
-                                      style={{ maxWidth: '240px', maxHeight: '180px', borderRadius: '8px', objectFit: 'cover', display: 'block' }}
-                                    />
-                                  </div>
-                                )}
-                                {msg.content && <p style={{ fontSize: '0.85rem', color: '#0F172A', margin: 0, whiteSpace: 'pre-wrap' }}>{msg.content}</p>}
-                                <div style={{ fontSize: '0.6rem', color: '#94A3B8', marginTop: '4px', textAlign: 'left' }}>
-                                  {new Date(msg.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                </div>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                        <div ref={chatEndRef} />
-                      </div>
+                          <div style={{ display: 'flex', gap: '8px', width: '100%', alignItems: 'center' }}>
+                            {/* مدخل مجهّز لاختيار الصور المباشرة من جهاز الكمبيوتر/الموبايل */}
+                            <input
+                              type="file"
+                              ref={chatFileInputRef}
+                              accept="image/*"
+                              style={{ display: 'none' }}
+                              onChange={handleChatImageFileChange}
+                              disabled={!selectedConvWindowOpen}
+                            />
 
-                      <form onSubmit={handleSendManualMessage} style={{ ...styles.chatPaneInputArea, flexDirection: 'column', gap: '8px' }}>
-                        {/* شريط التحذير الأصفر عند انتهاء نافذة الـ 24 ساعة للعميل */}
-                        {!selectedConvWindowOpen && (
-                          <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            backgroundColor: darkMode ? 'rgba(217, 119, 6, 0.15)' : '#FEF3C7',
-                            border: '1px solid #F59E0B',
-                            borderRadius: '8px',
-                            padding: '10px 14px',
-                            width: '100%',
-                            gap: '12px'
-                          }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: darkMode ? '#FBBF24' : '#92400E', fontSize: '0.85rem', fontWeight: 'bold' }}>
-                              <AlertTriangle size={18} color="#F59E0B" />
-                              <span>انتهت نافذة الـ 24 ساعة للعميل. تم إغلاق الرسائل النصية العادية وفقاً لسياسات Meta الرسمية.</span>
-                            </div>
                             <button
                               type="button"
-                              onClick={() => setShowTemplateModal(true)}
+                              onClick={() => chatFileInputRef.current?.click()}
+                              disabled={!selectedConvWindowOpen}
                               style={{
-                                backgroundColor: '#F59E0B',
-                                color: '#FFFFFF',
-                                border: 'none',
-                                borderRadius: '6px',
-                                padding: '6px 12px',
-                                fontSize: '0.8rem',
+                                border: '1px solid #CBD5E1',
+                                backgroundColor: chatImageUrl ? '#EFF6FF' : '#FFFFFF',
+                                color: !selectedConvWindowOpen ? '#94A3B8' : '#3B82F6',
+                                borderRadius: '8px',
+                                padding: '8px 14px',
+                                fontSize: '0.85rem',
                                 fontWeight: 'bold',
-                                cursor: 'pointer',
+                                cursor: !selectedConvWindowOpen ? 'not-allowed' : 'pointer',
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: '6px',
-                                whiteSpace: 'nowrap'
+                                transition: 'all 0.2s',
+                                whiteSpace: 'nowrap',
+                                opacity: !selectedConvWindowOpen ? 0.6 : 1
                               }}
+                              title="اختيار صورة مباشرة من الجهاز"
                             >
-                              <FileText size={14} />
-                              <span>📋 إرسال قالب رسمي (Template)</span>
+                              <Upload size={18} />
+                              <span>رفع صورة من الجهاز</span>
                             </button>
-                          </div>
-                        )}
 
-                        {/* معاينة الصورة المرفقة من الجهاز قبل الإرسال */}
-                        {chatImageUrl && (
-                          <div style={{ 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            gap: '12px', 
-                            backgroundColor: '#EFF6FF', 
-                            padding: '8px 12px', 
-                            borderRadius: '10px', 
-                            border: '1px solid #BFDBFE',
-                            width: '100%' 
-                          }}>
-                            <img 
-                              src={chatImageUrl} 
-                              alt="معاينة الصورة" 
-                              style={{ width: '44px', height: '44px', borderRadius: '8px', objectFit: 'cover', border: '1px solid #93C5FD' }} 
-                            />
-                            <div style={{ flex: 1, fontSize: '0.8rem', color: '#1E40AF', fontWeight: 'bold' }}>
-                              🖼️ تم اختيار صورة من الجهاز للرفع والإرسال
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setChatImageUrl('');
-                                if (chatFileInputRef.current) chatFileInputRef.current.value = '';
-                              }}
+                            <input
+                              type="text"
+                              value={chatInput}
+                              onChange={e => setChatInput(e.target.value)}
+                              placeholder={selectedConvWindowOpen ? `اكتب رسالة للرد كـ (${currentUsername})...` : 'إرسال الرسائل العادية معطل - يرجى اختيار قالب رسمي من الزر بالأعلى'}
+                              disabled={!selectedConvWindowOpen}
                               style={{
-                                border: 'none',
-                                backgroundColor: '#EF4444',
-                                color: '#FFFFFF',
-                                borderRadius: '50%',
-                                width: '26px',
-                                height: '26px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                cursor: 'pointer'
+                                ...styles.chatPaneInput,
+                                backgroundColor: !selectedConvWindowOpen ? (darkMode ? '#1E293B' : '#F1F5F9') : styles.chatPaneInput.backgroundColor,
+                                cursor: !selectedConvWindowOpen ? 'not-allowed' : 'text'
                               }}
-                              title="إلغاء الصورة المرفقة"
+                            />
+
+                            <button
+                              type="submit"
+                              style={{
+                                ...styles.chatPaneSendBtn,
+                                backgroundColor: !selectedConvWindowOpen ? '#94A3B8' : '#0066FF',
+                                cursor: (!selectedConvWindowOpen || (!chatInput.trim() && !chatImageUrl.trim())) ? 'not-allowed' : 'pointer'
+                              }}
+                              disabled={!selectedConvWindowOpen || (!chatInput.trim() && !chatImageUrl.trim())}
                             >
-                              <X size={14} />
+                              <Send size={18} color="#FFFFFF" style={{ transform: 'rotate(180deg)' }} />
                             </button>
                           </div>
-                        )}
-
-                        <div style={{ display: 'flex', gap: '8px', width: '100%', alignItems: 'center' }}>
-                          {/* مدخل مجهّز لاختيار الصور المباشرة من جهاز الكمبيوتر/الموبايل */}
-                          <input
-                            type="file"
-                            ref={chatFileInputRef}
-                            accept="image/*"
-                            style={{ display: 'none' }}
-                            onChange={handleChatImageFileChange}
-                            disabled={!selectedConvWindowOpen}
-                          />
-
-                          <button
-                            type="button"
-                            onClick={() => chatFileInputRef.current?.click()}
-                            disabled={!selectedConvWindowOpen}
-                            style={{
-                              border: '1px solid #CBD5E1',
-                              backgroundColor: chatImageUrl ? '#EFF6FF' : '#FFFFFF',
-                              color: !selectedConvWindowOpen ? '#94A3B8' : '#3B82F6',
-                              borderRadius: '8px',
-                              padding: '8px 14px',
-                              fontSize: '0.85rem',
-                              fontWeight: 'bold',
-                              cursor: !selectedConvWindowOpen ? 'not-allowed' : 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              transition: 'all 0.2s',
-                              whiteSpace: 'nowrap',
-                              opacity: !selectedConvWindowOpen ? 0.6 : 1
-                            }}
-                            title="اختيار صورة مباشرة من الجهاز"
-                          >
-                            <Upload size={18} />
-                            <span>رفع صورة من الجهاز</span>
-                          </button>
-
-                          <input
-                            type="text"
-                            value={chatInput}
-                            onChange={e => setChatInput(e.target.value)}
-                            placeholder={selectedConvWindowOpen ? `اكتب رسالة للرد كـ (${currentUsername})...` : 'إرسال الرسائل العادية معطل - يرجى اختيار قالب رسمي من الزر بالأعلى'}
-                            disabled={!selectedConvWindowOpen}
-                            style={{
-                              ...styles.chatPaneInput,
-                              backgroundColor: !selectedConvWindowOpen ? (darkMode ? '#1E293B' : '#F1F5F9') : styles.chatPaneInput.backgroundColor,
-                              cursor: !selectedConvWindowOpen ? 'not-allowed' : 'text'
-                            }}
-                          />
-
-                          <button
-                            type="submit"
-                            style={{
-                              ...styles.chatPaneSendBtn,
-                              backgroundColor: !selectedConvWindowOpen ? '#94A3B8' : '#0066FF',
-                              cursor: (!selectedConvWindowOpen || (!chatInput.trim() && !chatImageUrl.trim())) ? 'not-allowed' : 'pointer'
-                            }}
-                            disabled={!selectedConvWindowOpen || (!chatInput.trim() && !chatImageUrl.trim())}
-                          >
-                            <Send size={18} color="#FFFFFF" style={{ transform: 'rotate(180deg)' }} />
-                          </button>
-                        </div>
-                      </form>
-                    </>
-                  ) : (
-                    <div style={styles.selectConversationPlaceholder}>
-                      <MessageSquare size={48} color="#8E9FB8" style={{ marginBottom: '12px' }} />
-                      <p>يرجى اختيار رقم محادثة من القائمة اليسرى لعرض الرسائل المتبادلة وتتبع الموظفين.</p>
-                    </div>
-                  )}
-                </div>
+                        </form>
+                      </>
+                    ) : (
+                      <div style={styles.selectConversationPlaceholder}>
+                        <MessageSquare size={48} color="#8E9FB8" style={{ marginBottom: '12px' }} />
+                        <p>يرجى اختيار رقم محادثة من القائمة اليسرى لعرض الرسائل المتبادلة وتتبع الموظفين.</p>
+                      </div>
+                    )}
+                  </div>
+                </ChatErrorBoundary>
               </div>
 
               {/* مودال إرسال قوالب واتساب الرسمية عند انتهاء نافذة 24 ساعة */}
