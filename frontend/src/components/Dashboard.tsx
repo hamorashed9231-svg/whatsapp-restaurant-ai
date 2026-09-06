@@ -2866,8 +2866,15 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
               <div style={styles.conversationsLayout}>
                 {/* قائمة المحادثات (يسار) */}
                 <div style={styles.conversationsListPane}>
-                  <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(0,0,0,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h4 style={{ fontWeight: 'bold', margin: 0, fontSize: '0.95rem' }}>
+                  <div style={{
+                    padding: '12px 16px',
+                    borderBottom: darkMode ? '1px solid #222D34' : '1px solid #E2E8F0',
+                    backgroundColor: darkMode ? '#202C33' : '#F0F2F5',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}>
+                    <h4 style={{ fontWeight: 'bold', margin: 0, fontSize: '0.95rem', color: darkMode ? '#E9EDEF' : '#111B21' }}>
                       دردشات خدمة العملاء 💬
                     </h4>
                     <button
@@ -2880,8 +2887,8 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                         borderRadius: '6px',
                         border: 'none',
                         cursor: 'pointer',
-                        backgroundColor: soundEnabled ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                        color: soundEnabled ? '#10B981' : '#EF4444',
+                        backgroundColor: soundEnabled ? (darkMode ? 'rgba(0, 168, 132, 0.2)' : 'rgba(16, 185, 129, 0.15)') : 'rgba(239, 68, 68, 0.15)',
+                        color: soundEnabled ? (darkMode ? '#00A884' : '#10B981') : '#EF4444',
                         display: 'flex',
                         alignItems: 'center',
                         gap: '4px'
@@ -2892,155 +2899,86 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                     </button>
                   </div>
                   
-                  {/* مفتاح التنقل بين الدردشات النشطة والأرشيف */}
-                  <div style={{ display: 'flex', borderBottom: '1px solid rgba(0,0,0,0.08)', backgroundColor: '#F1F5F9', padding: '4px', gap: '4px' }}>
-                    <button
-                      type="button"
-                      onClick={() => setViewArchived(false)}
-                      style={{
-                        flex: 1,
-                        padding: '8px 4px',
-                        fontSize: '0.75rem',
-                        fontWeight: 'bold',
-                        border: 'none',
-                        borderRadius: '6px',
-                        backgroundColor: !viewArchived ? '#0066FF' : 'transparent',
-                        color: !viewArchived ? '#FFFFFF' : '#64748B',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s'
-                      }}
-                    >
-                      💬 النشطة ({conversations.filter(c => !c.is_archived).length})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setViewArchived(true)}
-                      style={{
-                        flex: 1,
-                        padding: '8px 4px',
-                        fontSize: '0.75rem',
-                        fontWeight: 'bold',
-                        border: 'none',
-                        borderRadius: '6px',
-                        backgroundColor: viewArchived ? '#475569' : 'transparent',
-                        color: viewArchived ? '#FFFFFF' : '#64748B',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s'
-                      }}
-                    >
-                      📦 الأرشيف ({conversations.filter(c => Boolean(c.is_archived)).length})
-                    </button>
+                  {/* مفتاح التنقل بين الدردشات النشطة والأرشيف بأسلوب كبسولة متناسق */}
+                  <div style={{
+                    backgroundColor: darkMode ? '#111B21' : '#FFFFFF',
+                    padding: '8px 12px 4px 12px',
+                    borderBottom: darkMode ? '1px solid #222D34' : '1px solid #F1F5F9'
+                  }}>
+                    <div style={{
+                      display: 'flex',
+                      backgroundColor: darkMode ? '#202C33' : '#F0F2F5',
+                      padding: '3px',
+                      borderRadius: '10px',
+                      gap: '2px'
+                    }}>
+                      <button
+                        type="button"
+                        onClick={() => setViewArchived(false)}
+                        style={{
+                          flex: 1,
+                          padding: '7px 4px',
+                          fontSize: '0.78rem',
+                          fontWeight: 'bold',
+                          border: 'none',
+                          borderRadius: '8px',
+                          backgroundColor: !viewArchived ? (darkMode ? '#00A884' : '#0066FF') : 'transparent',
+                          color: !viewArchived ? '#FFFFFF' : (darkMode ? '#8696A0' : '#64748B'),
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease-in-out',
+                          boxShadow: !viewArchived ? '0 1px 4px rgba(0,0,0,0.12)' : 'none'
+                        }}
+                      >
+                        💬 النشطة ({conversations.filter(c => !c.is_archived).length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setViewArchived(true)}
+                        style={{
+                          flex: 1,
+                          padding: '7px 4px',
+                          fontSize: '0.78rem',
+                          fontWeight: 'bold',
+                          border: 'none',
+                          borderRadius: '8px',
+                          backgroundColor: viewArchived ? (darkMode ? '#374151' : '#475569') : 'transparent',
+                          color: viewArchived ? '#FFFFFF' : (darkMode ? '#8696A0' : '#64748B'),
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease-in-out',
+                          boxShadow: viewArchived ? '0 1px 4px rgba(0,0,0,0.12)' : 'none'
+                        }}
+                      >
+                        📦 الأرشيف ({conversations.filter(c => Boolean(c.is_archived)).length})
+                      </button>
+                    </div>
                   </div>
                   
-                  {/* شريط فلترة التصنيفات (Categories) */}
-                  <div style={{ display: 'flex', borderBottom: '1px solid rgba(0,0,0,0.05)', backgroundColor: '#F8FAFC', padding: '6px', gap: '4px' }}>
+                  {/* شريط الأزرار التفاعلية الأنيق لفلترة الفئات والحالات في سطر واحد انسيابي */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 12px',
+                    backgroundColor: darkMode ? '#111B21' : '#FFFFFF',
+                    borderBottom: darkMode ? '1px solid #222D34' : '1px solid #F1F5F9',
+                    overflowX: 'auto',
+                    whiteSpace: 'nowrap',
+                    scrollbarWidth: 'none'
+                  }}>
+                    {/* فلاتر الحالات */}
                     <button
                       type="button"
-                      onClick={() => setSelectedCategoryFilter('ALL')}
+                      onClick={() => { setSelectedStatusFilter('ALL'); setSelectedCategoryFilter('ALL'); }}
                       style={{
-                        flex: 1,
-                        padding: '5px 2px',
-                        fontSize: '0.65rem',
+                        padding: '4px 10px',
+                        fontSize: '0.72rem',
                         fontWeight: 'bold',
                         border: 'none',
-                        borderRadius: '6px',
-                        backgroundColor: selectedCategoryFilter === 'ALL' ? '#0066FF' : 'transparent',
-                        color: selectedCategoryFilter === 'ALL' ? '#FFFFFF' : '#64748B',
+                        borderRadius: '14px',
+                        backgroundColor: (selectedStatusFilter === 'ALL' && selectedCategoryFilter === 'ALL') ? (darkMode ? '#00A884' : '#0066FF') : (darkMode ? '#202C33' : '#F1F5F9'),
+                        color: (selectedStatusFilter === 'ALL' && selectedCategoryFilter === 'ALL') ? '#FFFFFF' : (darkMode ? '#8696A0' : '#64748B'),
                         cursor: 'pointer',
-                        transition: 'all 0.2s'
-                      }}
-                    >
-                      💬 الكل
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedCategoryFilter('ORDER')}
-                      style={{
-                        flex: 1,
-                        padding: '5px 2px',
-                        fontSize: '0.65rem',
-                        fontWeight: 'bold',
-                        border: 'none',
-                        borderRadius: '6px',
-                        backgroundColor: selectedCategoryFilter === 'ORDER' ? '#10B981' : 'transparent',
-                        color: selectedCategoryFilter === 'ORDER' ? '#FFFFFF' : '#64748B',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s'
-                      }}
-                    >
-                      📦 طلبات
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedCategoryFilter('COMPLAINT')}
-                      style={{
-                        flex: 1,
-                        padding: '5px 2px',
-                        fontSize: '0.65rem',
-                        fontWeight: 'bold',
-                        border: 'none',
-                        borderRadius: '6px',
-                        backgroundColor: selectedCategoryFilter === 'COMPLAINT' ? '#EF4444' : 'transparent',
-                        color: selectedCategoryFilter === 'COMPLAINT' ? '#FFFFFF' : '#64748B',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s'
-                      }}
-                    >
-                      ⚠️ شكاوى ({conversations.filter(c => (viewArchived ? Boolean(c.is_archived) : !c.is_archived) && c.category === 'COMPLAINT').length})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedCategoryFilter('INQUIRY')}
-                      style={{
-                        flex: 1,
-                        padding: '5px 2px',
-                        fontSize: '0.65rem',
-                        fontWeight: 'bold',
-                        border: 'none',
-                        borderRadius: '6px',
-                        backgroundColor: selectedCategoryFilter === 'INQUIRY' ? '#3B82F6' : 'transparent',
-                        color: selectedCategoryFilter === 'INQUIRY' ? '#FFFFFF' : '#64748B',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s'
-                      }}
-                    >
-                      ❓ استفسار
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedCategoryFilter('GROUP')}
-                      style={{
-                        flex: 1,
-                        padding: '5px 2px',
-                        fontSize: '0.65rem',
-                        fontWeight: 'bold',
-                        border: 'none',
-                        borderRadius: '6px',
-                        backgroundColor: selectedCategoryFilter === 'GROUP' ? '#8B5CF6' : 'transparent',
-                        color: selectedCategoryFilter === 'GROUP' ? '#FFFFFF' : '#64748B',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s'
-                      }}
-                    >
-                      👥 الجروبات ({conversations.filter(c => (viewArchived ? Boolean(c.is_archived) : !c.is_archived) && (c.category === 'GROUP' || c.is_group || c.customer_phone.includes('g.us') || c.customer_phone.includes('جروب'))).length})
-                    </button>
-                  </div>
-
-                  {/* شريط فلترة الحالات الـ 3 (لم يتم الرد / جاري المتابعة / مغلقة) */}
-                  <div style={{ display: 'flex', borderBottom: '1px solid rgba(0,0,0,0.05)', backgroundColor: '#F1F5F9', padding: '6px', gap: '4px' }}>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedStatusFilter('ALL')}
-                      style={{
-                        flex: 1,
-                        padding: '4px 2px',
-                        fontSize: '0.65rem',
-                        fontWeight: 'bold',
-                        border: 'none',
-                        borderRadius: '4px',
-                        backgroundColor: selectedStatusFilter === 'ALL' ? '#334155' : 'transparent',
-                        color: selectedStatusFilter === 'ALL' ? '#FFFFFF' : '#64748B',
-                        cursor: 'pointer'
+                        transition: 'all 0.15s'
                       }}
                     >
                       الكل ({conversations.filter(c => viewArchived ? Boolean(c.is_archived) : !c.is_archived).length})
@@ -3049,15 +2987,15 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                       type="button"
                       onClick={() => setSelectedStatusFilter('UNANSWERED')}
                       style={{
-                        flex: 1,
-                        padding: '4px 2px',
-                        fontSize: '0.65rem',
+                        padding: '4px 10px',
+                        fontSize: '0.72rem',
                         fontWeight: 'bold',
                         border: 'none',
-                        borderRadius: '4px',
-                        backgroundColor: selectedStatusFilter === 'UNANSWERED' ? '#F59E0B' : 'transparent',
+                        borderRadius: '14px',
+                        backgroundColor: selectedStatusFilter === 'UNANSWERED' ? '#F59E0B' : (darkMode ? '#202C33' : '#FEF3C7'),
                         color: selectedStatusFilter === 'UNANSWERED' ? '#FFFFFF' : '#B45309',
-                        cursor: 'pointer'
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
                       }}
                     >
                       🟠 معلّق
@@ -3066,15 +3004,15 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                       type="button"
                       onClick={() => setSelectedStatusFilter('IN_PROGRESS')}
                       style={{
-                        flex: 1,
-                        padding: '4px 2px',
-                        fontSize: '0.65rem',
+                        padding: '4px 10px',
+                        fontSize: '0.72rem',
                         fontWeight: 'bold',
                         border: 'none',
-                        borderRadius: '4px',
-                        backgroundColor: selectedStatusFilter === 'IN_PROGRESS' ? '#3B82F6' : 'transparent',
-                        color: selectedStatusFilter === 'IN_PROGRESS' ? '#FFFFFF' : '#1E40AF',
-                        cursor: 'pointer'
+                        borderRadius: '14px',
+                        backgroundColor: selectedStatusFilter === 'IN_PROGRESS' ? '#3B82F6' : (darkMode ? '#202C33' : '#DBEAFE'),
+                        color: selectedStatusFilter === 'IN_PROGRESS' ? '#FFFFFF' : '#1D4ED8',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
                       }}
                     >
                       🔵 قيد الرد
@@ -3083,18 +3021,91 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                       type="button"
                       onClick={() => setSelectedStatusFilter('CLOSED')}
                       style={{
-                        flex: 1,
-                        padding: '4px 2px',
-                        fontSize: '0.65rem',
+                        padding: '4px 10px',
+                        fontSize: '0.72rem',
                         fontWeight: 'bold',
                         border: 'none',
-                        borderRadius: '4px',
-                        backgroundColor: selectedStatusFilter === 'CLOSED' ? '#64748B' : 'transparent',
+                        borderRadius: '14px',
+                        backgroundColor: selectedStatusFilter === 'CLOSED' ? '#64748B' : (darkMode ? '#202C33' : '#F1F5F9'),
                         color: selectedStatusFilter === 'CLOSED' ? '#FFFFFF' : '#475569',
-                        cursor: 'pointer'
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
                       }}
                     >
                       ✅ مغلقة
+                    </button>
+
+                    {/* فاصل رأسي شفاف */}
+                    <div style={{ width: '1px', height: '16px', backgroundColor: darkMode ? '#2A3942' : '#CBD5E1', flexShrink: 0, margin: '0 2px' }} />
+
+                    {/* فلاتر الفئات */}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCategoryFilter('ORDER')}
+                      style={{
+                        padding: '4px 10px',
+                        fontSize: '0.72rem',
+                        fontWeight: 'bold',
+                        border: 'none',
+                        borderRadius: '14px',
+                        backgroundColor: selectedCategoryFilter === 'ORDER' ? '#10B981' : (darkMode ? '#202C33' : '#D1FAE5'),
+                        color: selectedCategoryFilter === 'ORDER' ? '#FFFFFF' : '#047857',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      📦 طلبات
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCategoryFilter('COMPLAINT')}
+                      style={{
+                        padding: '4px 10px',
+                        fontSize: '0.72rem',
+                        fontWeight: 'bold',
+                        border: 'none',
+                        borderRadius: '14px',
+                        backgroundColor: selectedCategoryFilter === 'COMPLAINT' ? '#EF4444' : (darkMode ? '#202C33' : '#FEE2E2'),
+                        color: selectedCategoryFilter === 'COMPLAINT' ? '#FFFFFF' : '#B91C1C',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      ⚠️ شكاوى ({conversations.filter(c => (viewArchived ? Boolean(c.is_archived) : !c.is_archived) && c.category === 'COMPLAINT').length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCategoryFilter('INQUIRY')}
+                      style={{
+                        padding: '4px 10px',
+                        fontSize: '0.72rem',
+                        fontWeight: 'bold',
+                        border: 'none',
+                        borderRadius: '14px',
+                        backgroundColor: selectedCategoryFilter === 'INQUIRY' ? '#3B82F6' : (darkMode ? '#202C33' : '#EFF6FF'),
+                        color: selectedCategoryFilter === 'INQUIRY' ? '#FFFFFF' : '#1D4ED8',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      ❓ استفسار
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCategoryFilter('GROUP')}
+                      style={{
+                        padding: '4px 10px',
+                        fontSize: '0.72rem',
+                        fontWeight: 'bold',
+                        border: 'none',
+                        borderRadius: '14px',
+                        backgroundColor: selectedCategoryFilter === 'GROUP' ? '#8B5CF6' : (darkMode ? '#202C33' : '#F3E8FF'),
+                        color: selectedCategoryFilter === 'GROUP' ? '#FFFFFF' : '#6D28D9',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      👥 الجروبات ({conversations.filter(c => (viewArchived ? Boolean(c.is_archived) : !c.is_archived) && (c.category === 'GROUP' || c.is_group || c.customer_phone.includes('g.us') || c.customer_phone.includes('جروب'))).length})
                     </button>
                   </div>
 
@@ -3528,8 +3539,8 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                     }}
                                   >
                                     {senderName && !isUser && (
-                                      <div style={{ fontSize: '0.65rem', color: '#0066FF', fontWeight: '800', marginBottom: '4px' }}>
-                                        الرد بواسطة الموظف: {senderName}
+                                      <div style={{ fontSize: '0.72rem', color: darkMode ? '#34D399' : '#059669', fontWeight: '700', marginBottom: '4px' }}>
+                                        {senderName}
                                       </div>
                                     )}
                                      {msg.image_url && (
