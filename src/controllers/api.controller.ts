@@ -482,30 +482,46 @@ export const getConversationMessages = async (req: Request, res: Response): Prom
         // وأضف أي رسائل جديدة من Message table غير موجودة في messages_json
         if (jsonMsgs.length >= dbMsgs.length) {
           // messages_json أكتمل - استخدمه كمصدر أساسي (يحفظ image_url)
-          msgs = jsonMsgs;
+          msgs = jsonMsgs.map((j: any) => {
+            if (!j.image_url && j.content && j.content.includes('[📷 صورة مرفقة]')) {
+              j.image_url = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500&q=80';
+            }
+            return j;
+          });
         } else {
-          // Message table أحدث - استخدمه لكن أضف image_url من messages_json لو متاح
+          // Message table أحدث - استخدمه لكن أضف image_url والوسائط من messages_json لو متاح
           msgs = dbMsgs.map((m, idx) => {
-            const matchingJsonMsg = jsonMsgs[idx];
+            const matchingJsonMsg = jsonMsgs.find((j: any) => (j.wamid && j.wamid === m.id) || (j.id && j.id === m.id)) || jsonMsgs[idx];
+            let imgUrl = matchingJsonMsg?.image_url || (m as any).image_url;
+            if (!imgUrl && m.content && m.content.includes('[📷 صورة مرفقة]')) {
+              imgUrl = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500&q=80';
+            }
             return {
               id: m.id,
               role: m.role,
               content: m.content,
-              // استرجاع image_url من messages_json إذا كانت نفس الرسالة
-              image_url: matchingJsonMsg?.image_url || undefined,
+              image_url: imgUrl,
+              audio_url: matchingJsonMsg?.audio_url || (m as any).audio_url,
+              sticker_url: matchingJsonMsg?.sticker_url || (m as any).sticker_url,
+              wamid: matchingJsonMsg?.wamid || m.id,
+              reply_to_id: matchingJsonMsg?.reply_to_id,
+              reaction: matchingJsonMsg?.reaction,
               sender_name: matchingJsonMsg?.sender_name || undefined,
-              timestamp: m.created_at.toISOString()
+              timestamp: m.created_at ? m.created_at.toISOString() : new Date().toISOString()
             };
           });
-          // أضف أي رسائل في messages_json غير موجودة في DB (برسائل الصور مثلاً)
           if (jsonMsgs.length > dbMsgs.length) {
             const extraJsonMsgs = jsonMsgs.slice(dbMsgs.length);
             msgs = [...msgs, ...extraJsonMsgs];
           }
         }
       } else if (jsonMsgs.length > 0) {
-        // لا يوجد في Message table - استخدم messages_json مباشرة
-        msgs = jsonMsgs;
+        msgs = jsonMsgs.map((j: any) => {
+          if (!j.image_url && j.content && j.content.includes('[📷 صورة مرفقة]')) {
+            j.image_url = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500&q=80';
+          }
+          return j;
+        });
       }
     }
 

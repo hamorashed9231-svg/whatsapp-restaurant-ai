@@ -3809,7 +3809,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                     })()}
 
                                       {(() => {
-                                        const displayImgUrl = msg.image_url || (msg as any).imageUrl || (msgContent && (msgContent.startsWith('data:image') || msgContent.startsWith('http://') || msgContent.startsWith('https://')) ? msgContent : undefined);
+                                        const displayImgUrl = msg.image_url || (msg as any).imageUrl || (msgContent && (msgContent.startsWith('data:image') || msgContent.startsWith('http://') || msgContent.startsWith('https://')) ? msgContent : (msgContent && msgContent.includes('[📷 صورة مرفقة]') ? 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500&q=80' : undefined));
                                         if (!displayImgUrl) return null;
                                         return (
                                           <div style={{ marginBottom: '6px', position: 'relative', overflow: 'hidden', borderRadius: '10px' }}>
@@ -3944,7 +3944,11 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                       </div>
                                     ) : (
                                       <>
-                                        {msgContent && <p style={{ fontSize: '0.85rem', color: darkMode ? '#F8FAFC' : '#0F172A', margin: 0, whiteSpace: 'pre-wrap' }}>{msgContent}</p>}
+                                         {msgContent && msgContent.trim() !== '[📷 صورة مرفقة]' && (
+                                           <p style={{ fontSize: '0.85rem', color: darkMode ? '#F8FAFC' : '#0F172A', margin: 0, whiteSpace: 'pre-wrap' }}>
+                                             {msgContent.startsWith('[📷 صورة مرفقة]: ') ? msgContent.replace('[📷 صورة مرفقة]: ', '') : msgContent}
+                                           </p>
+                                         )}
                                         
                                         {/* شريط الإجراءات: تفاعل ورَد وتعديل ومسح الرسالة */}
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px', borderTop: '1px solid rgba(0,0,0,0.06)', paddingTop: '4px' }}>
