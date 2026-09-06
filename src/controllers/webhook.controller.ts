@@ -69,7 +69,18 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // 0. كتم التكرار ومنع المعالجة المزدوجة برقم معرف الرسالة (Meta Message ID Deduplication)
+    // 0. فحص الطابع الزمني وكتم الرسائل القديمة التي مر عليها أكثر من 10 دقائق من سيرفرات Meta
+    const msgTimestamp = Number(message.timestamp);
+    if (msgTimestamp && !isNaN(msgTimestamp)) {
+      const ageInSeconds = Math.floor(Date.now() / 1000) - msgTimestamp;
+      if (ageInSeconds > 600) {
+        console.log(`[Webhook Deduplication] 🛑 تم كتم وتجاهل رسالة قديمة مكررة من سيرفرات Meta (ID: ${message.id}, عمر الرسالة: ${Math.floor(ageInSeconds / 60)} دقيقة)`);
+        res.status(200).json({ status: 'ignored_old_message' });
+        return;
+      }
+    }
+
+    // كتم التكرار ومنع المعالجة المزدوجة برقم معرف الرسالة (Meta Message ID Deduplication - 7 Days Memory)
     const messageId = message.id;
     if (messageId) {
       if (isMessageAlreadyProcessed(messageId)) {
@@ -79,7 +90,7 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
       }
       try {
         const redisDedupKey = `msg_dedup:${messageId}`;
-        const setRes = await redisClient.set(redisDedupKey, '1', 'EX', 600, 'NX');
+        const setRes = await redisClient.set(redisDedupKey, '1', 'EX', 604800, 'NX');
         if (setRes === null) {
           console.log(`[Webhook Deduplication Redis] تم كتم رسالة مكررة عبر Redis (ID: ${messageId})`);
           res.status(200).json({ status: 'ignored_duplicate' });
