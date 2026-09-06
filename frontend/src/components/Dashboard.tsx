@@ -227,40 +227,13 @@ const saveDeletedIdsToStorage = (ids: string[], restId?: string) => {
 };
 
 const syncMenuItemsWithStorage = (serverItems?: any, restId?: string): MenuItem[] => {
-  const deletedIds = getStoredDeletedIds(restId);
-  const storedItems = getStoredUserItems(restId);
-
-  const validStored = storedItems.filter(item => item && item.id && !deletedIds.includes(item.id));
-
   if (serverItems && Array.isArray(serverItems)) {
-    const validServer = serverItems.filter((item: any) => item && item.id && !deletedIds.includes(item.id));
-
-    if (validServer.length > 0) {
-      const mergedMap = new Map<string, MenuItem>();
-      validStored.forEach(item => mergedMap.set(item.id, item));
-      validServer.forEach(item => mergedMap.set(item.id, item));
-
-      const finalResult = Array.from(mergedMap.values()).filter(item => !deletedIds.includes(item.id));
-      saveMenuItemsToStorage(finalResult, restId);
-      return finalResult;
-    }
-
-    if (validStored.length > 0) {
-      saveMenuItemsToStorage(validStored, restId);
-      return validStored;
-    }
-
-    saveMenuItemsToStorage([], restId);
-    return [];
+    saveMenuItemsToStorage(serverItems, restId);
+    return serverItems;
   }
 
-  if (validStored.length > 0) {
-    saveMenuItemsToStorage(validStored, restId);
-    return validStored;
-  }
-
-  saveMenuItemsToStorage([], restId);
-  return [];
+  const storedItems = getStoredUserItems(restId);
+  return storedItems;
 };
 
 class ChatErrorBoundary extends React.Component<
