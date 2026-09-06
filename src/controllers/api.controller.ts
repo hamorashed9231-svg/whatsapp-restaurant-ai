@@ -550,6 +550,22 @@ export const getConversationMessages = async (req: Request, res: Response): Prom
         try {
           msgs = typeof conversation.messages_json === 'string' ? JSON.parse(conversation.messages_json) : (conversation.messages_json as any[]) || [];
         } catch (e) {}
+
+        if (msgs.length === 0) {
+          const dbMsgs = await prisma.message.findMany({
+            where: { conversation_id: id },
+            orderBy: { created_at: 'asc' }
+          });
+          if (dbMsgs && dbMsgs.length > 0) {
+            msgs = dbMsgs.map(m => ({
+              id: m.id,
+              role: m.role,
+              content: m.content,
+              timestamp: m.created_at.toISOString()
+            }));
+          }
+        }
+
         lastActivityDate = conversation.updated_at || conversation.created_at;
       }
     } catch (e) {}
@@ -1079,6 +1095,14 @@ export const sendManualMessage = async (req: AuthenticatedRequest, res: Response
     // 3. تحديث السجل في الداتابيز
     if (conv && conv.id && conv.restaurant_id) {
       msgs.push(newMsg);
+      await prisma.message.create({
+        data: {
+          conversation_id: conv.id,
+          role: 'assistant',
+          content: content || (image_url ? '[صورة مرفقة]' : '')
+        }
+      }).catch(() => {});
+
       const updated = await prisma.conversation.update({
         where: { id: conv.id },
         data: {
