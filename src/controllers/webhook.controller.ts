@@ -31,6 +31,20 @@ export const verifyWebhook = async (req: Request, res: Response): Promise<void> 
   res.sendStatus(400);
 };
 
+// ذاكرة مؤقتة لمنع تكرار معالجة نفس الرسالة من Meta Webhooks
+const processedMessageIds = new Set<string>();
+
+function isMessageAlreadyProcessed(msgId: string): boolean {
+  if (!msgId) return false;
+  if (processedMessageIds.has(msgId)) return true;
+  processedMessageIds.add(msgId);
+  if (processedMessageIds.size > 2000) {
+    const firstItem = processedMessageIds.values().next().value;
+    if (firstItem) processedMessageIds.delete(firstItem);
+  }
+  return false;
+}
+
 /**
  * استقبال أحداث ورسائل واتساب وإضافتها لمؤقت التجميع (Debouncing) عبر Redis و BullMQ ومعالجتها مباشرة في بيئات Serverless
  */
@@ -52,6 +66,25 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
     if (!message) {
       res.status(200).json({ status: 'ignored_no_message' });
       return;
+    }
+
+    // 0. كتم التكرار ومنع المعالجة المزدوجة برقم معرف الرسالة (Meta Message ID Deduplication)
+    const messageId = message.id;
+    if (messageId) {
+      if (isMessageAlreadyProcessed(messageId)) {
+        console.log(`[Webhook Deduplication] تم كتم رسالة مكررة من سيرفرات Meta (ID: ${messageId})`);
+        res.status(200).json({ status: 'ignored_duplicate' });
+        return;
+      }
+      try {
+        const redisDedupKey = `msg_dedup:${messageId}`;
+        const setRes = await redisClient.set(redisDedupKey, '1', 'EX', 600, 'NX');
+        if (setRes === null) {
+          console.log(`[Webhook Deduplication Redis] تم كتم رسالة مكررة عبر Redis (ID: ${messageId})`);
+          res.status(200).json({ status: 'ignored_duplicate' });
+          return;
+        }
+      } catch (e) {}
     }
 
     // 1. استخراج معرف رقم الهاتف المستلم للرسالة (WhatsApp Phone Number ID)
@@ -99,6 +132,7 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
     console.log(`[Webhook] تم استلام رسالة جديدة من [${customerPhone}] (${message.type}): "${messageText}".`);
 
     // 3. دفع المهمة إلى Redis / BullMQ للمضي قدماً
+    let queuedInRedis = false;
     try {
       const pendingKey = `pending_messages:${customerPhone}`;
       const payload = JSON.stringify({
@@ -133,12 +167,15 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
           delay: 0,
         }
       );
+      queuedInRedis = true;
     } catch (redisErr: any) {
       console.warn('[Webhook] تحذير: تعذر دفع المهام لـ Redis/BullMQ (سيتم الاعتماد على المعالجة المباشرة):', redisErr.message);
     }
 
-    // 4. في بيئة Vercel Serverless: تنفذ المعالجة المباشرة فوراً لضمان عدم تجميد العملية
-    await processDirectly(whatsappNumberId, customerPhone, messageText, mediaId);
+    // 4. إذا لم يتم التجميع والتحويل لـ Redis (مثلاً في بيئة Vercel بدون Redis)، قم بالمعالجة المباشرة حصرياً
+    if (!queuedInRedis) {
+      await processDirectly(whatsappNumberId, customerPhone, messageText, mediaId);
+    }
 
     res.status(200).json({ status: 'processed' });
   } catch (error: any) {
