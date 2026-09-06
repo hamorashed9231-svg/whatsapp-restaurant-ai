@@ -1015,30 +1015,36 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
-  const handleDeleteMenuItem = async (itemId: string) => {
+  const handleDeleteMenuItem = (itemId: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+
     if (!window.confirm('هل أنت متأكد من رغبتك في حذف هذا الصنف من قائمة الطعام نهائياً؟')) return;
 
     const restId = restaurant?.id || restaurantId;
 
-    // 1. تسجيل الـ ID في المحذوفات الدائمة المرتبطة بـ restaurantId لمنع عودته عند أي ريفريش
-    const currentDeleted = getStoredDeletedIds(restId);
-    if (!currentDeleted.includes(itemId)) {
-      saveDeletedIdsToStorage([...currentDeleted, itemId], restId);
-    }
+    // 1. تحديث تفاعلي فوري للشاشة (0ms INP Blocking)
+    setMenuItems(prev => prev.filter(m => m && m.id !== itemId));
 
-    // 2. حذف فوري للعنصر المستهدف فقط عبر تصفية المصفوفة دون مسح الـ localStorage بالكامل أو تعيين []
-    setMenuItems(prev => {
-      const nextList = prev.filter(m => m && m.id !== itemId);
-      saveMenuItemsToStorage(nextList, restId);
-      return nextList;
-    });
+    // 2. ترحيل عمليات التخزين والـ Serialization والاتصال بالباك إند إلى الخلفية دون تجميد الواجهة
+    setTimeout(async () => {
+      try {
+        const currentDeleted = getStoredDeletedIds(restId);
+        if (!currentDeleted.includes(itemId)) {
+          saveDeletedIdsToStorage([...currentDeleted, itemId], restId);
+        }
 
-    // 3. إبلاغ الباك إند بالحذف (السيرفر يحذف السجل المطلوب فقط)
-    try {
-      await api.delete(`/menu/${itemId}`);
-    } catch (err) {
-      console.warn('تم الحذف النهائي وتثبيته في الذاكرة الدائمة للنظام');
-    }
+        const currentItems = getStoredUserItems(restId);
+        const nextList = currentItems.filter(m => m && m.id !== itemId);
+        saveMenuItemsToStorage(nextList, restId);
+
+        await api.delete(`/menu/${itemId}`);
+      } catch (err) {
+        console.warn('تم الحذف النهائي وتثبيته في الذاكرة الدائمة للنظام');
+      }
+    }, 0);
   };
 
   const handleSaveSettings = async (e: React.FormEvent) => {
@@ -1676,7 +1682,11 @@ const Dashboard: React.FC<DashboardProps> = ({
                               <span>تعديل</span>
                             </button>
                             <button 
-                              onClick={() => handleDeleteMenuItem(item.id)} 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                handleDeleteMenuItem(item.id, e);
+                              }} 
                               style={{
                                 border: 'none',
                                 backgroundColor: 'rgba(239, 68, 68, 0.15)',
@@ -1691,8 +1701,8 @@ const Dashboard: React.FC<DashboardProps> = ({
                                 fontWeight: '700'
                               }}
                             >
-                              <Trash size={14} />
-                              <span>حذف</span>
+                              <Trash size={14} style={{ pointerEvents: 'none' }} />
+                              <span style={{ pointerEvents: 'none' }} onClick={(e) => e.stopPropagation()}>حذف</span>
                             </button>
                           </div>
                         </div>
@@ -1746,8 +1756,15 @@ const Dashboard: React.FC<DashboardProps> = ({
                               <button onClick={() => handleOpenEditModal(item)} style={styles.actionIconButton}>
                                 <Edit size={16} color="#0066FF" />
                               </button>
-                              <button onClick={() => handleDeleteMenuItem(item.id)} style={styles.actionIconButton}>
-                                <Trash size={16} color="#EF4444" />
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  handleDeleteMenuItem(item.id, e);
+                                }} 
+                                style={styles.actionIconButton}
+                              >
+                                <Trash size={16} color="#EF4444" style={{ pointerEvents: 'none' }} />
                               </button>
                             </div>
                           </td>
