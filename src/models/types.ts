@@ -2,8 +2,13 @@
 
 // هيكلية الرسالة المخزنة في سجل المحادثة
 export interface ChatMessage {
+  id?: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
+  sender_name?: string;
+  image_url?: string;
+  is_edited?: boolean;
+  edited_at?: string;
   timestamp: string; // صيغة ISO 8601
 }
 

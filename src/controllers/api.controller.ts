@@ -1393,4 +1393,94 @@ export const sendCatalogMessageEndpoint = async (req: AuthenticatedRequest, res:
   }
 };
 
+/**
+ * 22. تعديل محتوى رسالة معينة في المحادثة
+ */
+export const editConversationMessage = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const { id, msgIndex } = req.params;
+  const { content } = req.body;
+  const index = parseInt(msgIndex, 10);
+
+  if (content === undefined || content === null) {
+    res.status(400).json({ status: 'error', message: 'محتوى الرسالة مطلوب للتعديل.' });
+    return;
+  }
+
+  try {
+    const conv = await prisma.conversation.findUnique({ where: { id } });
+    if (!conv) {
+      res.status(404).json({ status: 'error', message: 'المحادثة غير موجودة.' });
+      return;
+    }
+
+    let msgs: any[] = [];
+    try {
+      msgs = typeof conv.messages_json === 'string' ? JSON.parse(conv.messages_json) : (conv.messages_json as any[]) || [];
+    } catch (e) {}
+
+    if (isNaN(index) || index < 0 || index >= msgs.length) {
+      res.status(400).json({ status: 'error', message: 'موقع الرسالة غير صالح.' });
+      return;
+    }
+
+    msgs[index].content = content;
+    msgs[index].is_edited = true;
+    msgs[index].edited_at = new Date().toISOString();
+
+    await prisma.conversation.update({
+      where: { id },
+      data: {
+        messages_json: msgs as any,
+        updated_at: new Date()
+      }
+    });
+
+    res.status(200).json({ status: 'success', message: 'تم تعديل الرسالة بنجاح!', messages: msgs });
+  } catch (err: any) {
+    console.error('Error editing message:', err);
+    res.status(500).json({ status: 'error', message: err.message || 'فشل تعديل الرسالة.' });
+  }
+};
+
+/**
+ * 23. مسح رسالة معينة من سجل المحادثة
+ */
+export const deleteConversationMessage = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const { id, msgIndex } = req.params;
+  const index = parseInt(msgIndex, 10);
+
+  try {
+    const conv = await prisma.conversation.findUnique({ where: { id } });
+    if (!conv) {
+      res.status(404).json({ status: 'error', message: 'المحادثة غير موجودة.' });
+      return;
+    }
+
+    let msgs: any[] = [];
+    try {
+      msgs = typeof conv.messages_json === 'string' ? JSON.parse(conv.messages_json) : (conv.messages_json as any[]) || [];
+    } catch (e) {}
+
+    if (isNaN(index) || index < 0 || index >= msgs.length) {
+      res.status(400).json({ status: 'error', message: 'موقع الرسالة غير صالح.' });
+      return;
+    }
+
+    msgs.splice(index, 1);
+
+    await prisma.conversation.update({
+      where: { id },
+      data: {
+        messages_json: msgs as any,
+        updated_at: new Date()
+      }
+    });
+
+    res.status(200).json({ status: 'success', message: 'تم مسح الرسالة بنجاح!', messages: msgs });
+  } catch (err: any) {
+    console.error('Error deleting message:', err);
+    res.status(500).json({ status: 'error', message: err.message || 'فشل مسح الرسالة.' });
+  }
+};
+
 

@@ -30,7 +30,9 @@ import {
   updateAiInstructions,
   updateRestaurantSettings,
   syncCatalogEndpoint,
-  sendCatalogMessageEndpoint
+  sendCatalogMessageEndpoint,
+  editConversationMessage,
+  deleteConversationMessage
 } from '../controllers/api.controller';
 import { upload } from '../middlewares/upload.middleware';
 
@@ -76,6 +78,8 @@ router.put('/conversations/:id/status', authMiddleware, updateConversationStatus
 router.put('/conversations/:id/archive', authMiddleware, archiveConversation);
 router.delete('/conversations/:id', authMiddleware, deleteConversation);
 router.post('/conversations/:id/messages', authMiddleware, sendManualMessage);
+router.put('/conversations/:id/messages/:msgIndex', authMiddleware, editConversationMessage);
+router.delete('/conversations/:id/messages/:msgIndex', authMiddleware, deleteConversationMessage);
 router.post('/conversations/:id/send-manual', authMiddleware, sendManualMessage);
 router.post('/conversations/:id/send-template', authMiddleware, sendTemplateMessageEndpoint);
 router.post('/conversations/:id/send-catalog', authMiddleware, sendCatalogMessageEndpoint);

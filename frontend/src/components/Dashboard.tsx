@@ -113,6 +113,8 @@ interface ChatMessage {
   is_template?: boolean;
   template_name?: string;
   isStaff?: boolean;
+  is_edited?: boolean;
+  edited_at?: string;
 }
 
 interface QuickReplyItem {
@@ -522,8 +524,37 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [catalogSyncMessage, setCatalogSyncMessage] = useState<string | null>(null);
   const [showToken, setShowToken] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
+  const [editingMessageText, setEditingMessageText] = useState<string>('');
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleEditMessageSubmit = async (index: number) => {
+    if (!selectedConversation || !editingMessageText.trim()) return;
+    try {
+      const res = await api.put(`/conversations/${selectedConversation.id}/messages/${index}`, {
+        content: editingMessageText.trim()
+      });
+      const updated = res.data.messages || chatMessages.map((m, i) => i === index ? { ...m, content: editingMessageText.trim(), is_edited: true } : m);
+      setChatMessages(updated);
+      setEditingMessageIndex(null);
+      setEditingMessageText('');
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'فشل تعديل الرسالة.');
+    }
+  };
+
+  const handleDeleteSingleMessage = async (index: number) => {
+    if (!selectedConversation) return;
+    if (!window.confirm('هل أنت متأكد من مسح هذه الرسالة نهائياً من المحادثة؟')) return;
+    try {
+      const res = await api.delete(`/conversations/${selectedConversation.id}/messages/${index}`);
+      const updated = res.data.messages || chatMessages.filter((_, i) => i !== index);
+      setChatMessages(updated);
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'فشل مسح الرسالة.');
+    }
+  };
 
   const handleSyncCatalog = async () => {
     if (!restaurant) return;
@@ -3301,10 +3332,12 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
                                   <div
                                     style={{
                                       ...styles.chatPaneBubble,
-                                      backgroundColor: isUser ? '#EBF3FF' : '#FFFFFF',
+                                      backgroundColor: isUser ? (darkMode ? '#1E293B' : '#EBF3FF') : (darkMode ? '#0F172A' : '#FFFFFF'),
                                       border: isUser ? '1px solid #BFDBFE' : '1px solid #E2E8F0',
                                       borderRadius: isUser ? '12px 12px 12px 0px' : '12px 12px 0px 12px',
-                                      boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                                      boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                                      position: 'relative',
+                                      minWidth: '180px'
                                     }}
                                   >
                                     {senderName && !isUser && (
@@ -3321,11 +3354,81 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
                                         />
                                       </div>
                                     )}
-                                    {msgContent && <p style={{ fontSize: '0.85rem', color: '#0F172A', margin: 0, whiteSpace: 'pre-wrap' }}>{msgContent}</p>}
-                                    {timeStr && (
-                                      <div style={{ fontSize: '0.6rem', color: '#94A3B8', marginTop: '4px', textAlign: 'left' }}>
-                                        {timeStr}
+
+                                    {editingMessageIndex === i ? (
+                                      <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                        <textarea
+                                          value={editingMessageText}
+                                          onChange={e => setEditingMessageText(e.target.value)}
+                                          style={{
+                                            width: '100%',
+                                            minHeight: '60px',
+                                            padding: '8px',
+                                            borderRadius: '6px',
+                                            border: '1px solid #0066FF',
+                                            fontSize: '0.85rem',
+                                            outline: 'none',
+                                            backgroundColor: darkMode ? '#1E293B' : '#FFFFFF',
+                                            color: darkMode ? '#F8FAFC' : '#0F172A',
+                                            resize: 'vertical'
+                                          }}
+                                          autoFocus
+                                        />
+                                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleEditMessageSubmit(i)}
+                                            style={{ padding: '4px 10px', fontSize: '0.75rem', borderRadius: '4px', border: 'none', backgroundColor: '#0066FF', color: '#FFF', fontWeight: 'bold', cursor: 'pointer' }}
+                                          >
+                                            حفظ التعديل
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setEditingMessageIndex(null)}
+                                            style={{ padding: '4px 8px', fontSize: '0.75rem', borderRadius: '4px', border: '1px solid #CBD5E1', backgroundColor: 'transparent', color: darkMode ? '#94A3B8' : '#475569', cursor: 'pointer' }}
+                                          >
+                                            إلغاء
+                                          </button>
+                                        </div>
                                       </div>
+                                    ) : (
+                                      <>
+                                        {msgContent && <p style={{ fontSize: '0.85rem', color: darkMode ? '#F8FAFC' : '#0F172A', margin: 0, whiteSpace: 'pre-wrap' }}>{msgContent}</p>}
+                                        
+                                        {/* شريط الإجراءات: تعديل ومسح الرسالة */}
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px', borderTop: '1px solid rgba(0,0,0,0.06)', paddingTop: '4px' }}>
+                                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setEditingMessageIndex(i);
+                                                setEditingMessageText(msgContent);
+                                              }}
+                                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: '#0066FF', opacity: 0.8 }}
+                                              title="تعديل هذه الرسالة"
+                                            >
+                                              <Edit size={13} />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleDeleteSingleMessage(i)}
+                                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: '#EF4444', opacity: 0.8 }}
+                                              title="مسح هذه الرسالة نهائياً"
+                                            >
+                                              <Trash size={13} />
+                                            </button>
+                                          </div>
+                                          
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            {(msg.is_edited || (msg as any).is_edited) && (
+                                              <span style={{ fontSize: '0.6rem', color: '#94A3B8', fontStyle: 'italic' }}>(مُعدّلة)</span>
+                                            )}
+                                            {timeStr && (
+                                              <span style={{ fontSize: '0.6rem', color: '#94A3B8' }}>{timeStr}</span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </>
                                     )}
                                   </div>
                                 </div>
