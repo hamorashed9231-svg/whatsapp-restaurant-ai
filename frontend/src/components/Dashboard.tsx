@@ -510,6 +510,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [editingMessageText, setEditingMessageText] = useState<string>('');
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatFileInputRef = useRef<HTMLInputElement>(null);
+  const selectedConversationIdRef = useRef<string | null>(null);
 
   const handleEditMessageSubmit = async (index: number) => {
     if (!selectedConversation || !editingMessageText.trim()) return;
@@ -841,6 +842,10 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
     fetchBaseData();
   }, [restaurantId, token]);
 
+  useEffect(() => {
+    selectedConversationIdRef.current = selectedConversation?.id || null;
+  }, [selectedConversation?.id]);
+
   // تحديث الشات الدوري واستماع الرسائل الجديدة لتشغيل صوت الإشعار وتحديث قائمة المحادثات تلقائياً
   useEffect(() => {
     if (!restaurant) return;
@@ -876,12 +881,15 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
             return freshConvs;
           });
 
-          if (selectedConversation) {
-            const freshActive = freshConvs.find(c => c.id === selectedConversation.id);
+          const currentActiveId = selectedConversationIdRef.current;
+          if (currentActiveId) {
+            const freshActive = freshConvs.find(c => c.id === currentActiveId);
             if (freshActive) {
-              api.get(`/conversations/${selectedConversation.id}/messages`).then(msgRes => {
-                const msgList = Array.isArray(msgRes.data) ? msgRes.data : (msgRes.data?.messages || []);
-                setChatMessages(msgList);
+              api.get(`/conversations/${currentActiveId}/messages`).then(msgRes => {
+                if (selectedConversationIdRef.current === currentActiveId) {
+                  const msgList = Array.isArray(msgRes.data) ? msgRes.data : (msgRes.data?.messages || []);
+                  setChatMessages(msgList);
+                }
               }).catch(() => {});
             }
           }
@@ -890,7 +898,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
     }, 4000);
 
     return () => clearInterval(interval);
-  }, [restaurant, selectedConversation, unreadConvIds, soundEnabled]);
+  }, [restaurant, unreadConvIds, soundEnabled]);
 
   // استماع حدث اللصق السريع (Ctrl + V) للصور على مستوى الشاشة بالكامل أثناء فتح شات
   useEffect(() => {
@@ -1204,7 +1212,9 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
 
   // جلب رسائل محادثة معينة
   const handleSelectConversation = async (conversation: Conversation) => {
+    selectedConversationIdRef.current = conversation.id;
     setSelectedConversation(conversation);
+    setChatMessages([]); // تفريغ رسائل المحادثة السابقة فوراً لتجنب ظهور شات قديم
     setUnreadConvIds(prev => {
       const next = new Set(prev);
       next.delete(conversation.id);
@@ -1212,17 +1222,19 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
     });
     try {
       const res = await api.get(`/conversations/${conversation.id}/messages`);
-      const msgList = Array.isArray(res.data) ? res.data : (res.data?.messages || []);
-      setChatMessages(msgList);
-      if (res.data && res.data.isWindowOpen !== undefined) {
-        setSelectedConvWindowOpen(res.data.isWindowOpen);
-        setSelectedConvExpiresAt(res.data.windowExpiresAt || null);
-      } else {
-        setSelectedConvWindowOpen(conversation.isWindowOpen ?? true);
-        setSelectedConvExpiresAt(conversation.windowExpiresAt ?? null);
+      if (selectedConversationIdRef.current === conversation.id) {
+        const msgList = Array.isArray(res.data) ? res.data : (res.data?.messages || []);
+        setChatMessages(msgList);
+        if (res.data && res.data.isWindowOpen !== undefined) {
+          setSelectedConvWindowOpen(res.data.isWindowOpen);
+          setSelectedConvExpiresAt(res.data.windowExpiresAt || null);
+        } else {
+          setSelectedConvWindowOpen(conversation.isWindowOpen ?? true);
+          setSelectedConvExpiresAt(conversation.windowExpiresAt ?? null);
+        }
+        // تمرير الشات لأسفل
+        setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
       }
-      // تمرير الشات لأسفل
-      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     } catch (err) {
       console.error('فشل جلب رسائل المحادثة:', err);
     }
@@ -3142,7 +3154,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 1200, quality = 0.7): 
                 </div>
 
                 {/* واجهة الرسائل (يمين) مع حماية ErrorBoundary */}
-                <ChatErrorBoundary onReset={() => setSelectedConversation(null)}>
+                <ChatErrorBoundary onReset={() => { selectedConversationIdRef.current = null; setSelectedConversation(null); setChatMessages([]); }}>
                   <div style={styles.chatPane}>
                     {selectedConversation ? (
                       <>
