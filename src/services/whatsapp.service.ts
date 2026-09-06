@@ -77,7 +77,46 @@ class WhatsAppService {
 
   /**
    * 2. إرسال صورة مع شرح نصي (Image with Caption)
+   * تدعم الصور الخارجية عبر روابط HTTPS أو رفع الصور المحلية المباشرة (Base64) عبر Meta Media API
    */
+  public async uploadMedia(
+    dataUrl: string,
+    customPhoneNumberId?: string,
+    customToken?: string
+  ): Promise<string> {
+    const phoneNumberId = customPhoneNumberId || this.defaultPhoneNumberId;
+    const token = customToken || this.token;
+
+    const matches = dataUrl.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
+    if (!matches) {
+      throw new Error('صيغة الصورة Data URL غير صالحة.');
+    }
+
+    const mimeType = matches[1];
+    const base64Data = matches[2];
+    const buffer = Buffer.from(base64Data, 'base64');
+    const extension = mimeType.split('/')[1] || 'jpg';
+    const filename = `image_${Date.now()}.${extension}`;
+
+    const blob = new Blob([buffer], { type: mimeType });
+    const formData = new FormData();
+    formData.append('messaging_product', 'whatsapp');
+    formData.append('file', blob, filename);
+    formData.append('type', mimeType);
+
+    const response = await axios.post(
+      `https://graph.facebook.com/v20.0/${phoneNumberId}/media`,
+      formData,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    return response.data.id;
+  }
+
   public async sendImageMessage(
     to: string,
     imageUrl: string,
@@ -86,12 +125,27 @@ class WhatsAppService {
     customToken?: string
   ): Promise<any> {
     const token = customToken || this.token;
-    if (!token) {
-      console.log(`[WhatsApp Mock Image] إلى ${to}: صورة [${imageUrl}] - الشرح: ${caption}`);
+    if (!token || token.includes('ضع_توكين') || token === 'mock-token' || token.startsWith('EAAG...')) {
+      console.log(`[WhatsApp Mock Image] إلى ${to}: صورة [${imageUrl.slice(0, 40)}...] - الشرح: ${caption}`);
       return { mock: true, success: true };
     }
 
     try {
+      let imagePayload: any = {};
+
+      if (imageUrl.startsWith('data:image/')) {
+        try {
+          const mediaId = await this.uploadMedia(imageUrl, customPhoneNumberId, customToken);
+          imagePayload = { id: mediaId, caption: caption || '' };
+          console.log(`[WhatsApp Media] تم رفع الصورة المباشرة لـ Meta Media API بنجاح (Media ID: ${mediaId})`);
+        } catch (uploadErr: any) {
+          console.warn('[WhatsApp Media Upload Warn] تعذر الرفع لـ Meta Media API، يتم الاعتماد على رابط الصورة:', uploadErr.message);
+          imagePayload = { link: imageUrl, caption: caption || '' };
+        }
+      } else {
+        imagePayload = { link: imageUrl, caption: caption || '' };
+      }
+
       const response = await axios.post(
         this.getUrl(customPhoneNumberId),
         {
@@ -99,15 +153,12 @@ class WhatsAppService {
           recipient_type: 'individual',
           to: to,
           type: 'image',
-          image: {
-            link: imageUrl,
-            caption: caption || '',
-          },
+          image: imagePayload,
         },
         { headers: this.getHeaders(customToken) }
       );
 
-      console.log(`[WhatsApp] تم إرسال صورة للرقم ${to}`);
+      console.log(`[WhatsApp] تم إرسال الصورة للرقم ${to}`);
       return response.data;
     } catch (error: any) {
       console.error('[WhatsApp Error] فشل إرسال الصورة:', error.response?.data || error.message);
