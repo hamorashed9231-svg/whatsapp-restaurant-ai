@@ -1108,7 +1108,8 @@ const Dashboard: React.FC<DashboardProps> = ({
         setChatMessages(prev => prev.filter(m => !newMsgs.includes(m)));
       } else {
         setChatMessages(prev => prev.filter(m => !newMsgs.includes(m)));
-        alert(err.response?.data?.message || 'فشل إرسال الصورة/الرسالة عبر الواتساب.');
+        const errorText = err.response?.data?.message || err.response?.data?.error || err.message || 'فشل إرسال الصورة/الرسالة عبر الواتساب.';
+        alert(errorText);
       }
     }
   };

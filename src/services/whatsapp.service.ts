@@ -1,4 +1,5 @@
 import axios from 'axios';
+import FormData from 'form-data';
 
 export interface ListSectionRow {
   id: string;
@@ -110,10 +111,9 @@ class WhatsAppService {
     if (extension === 'jpeg') extension = 'jpg';
     const filename = `image_${Date.now()}.${extension}`;
 
-    const blob = new Blob([buffer], { type: mimeType });
     const formData = new FormData();
     formData.append('messaging_product', 'whatsapp');
-    formData.append('file', blob, filename);
+    formData.append('file', buffer, { filename, contentType: mimeType });
     formData.append('type', mimeType);
 
     try {
@@ -122,6 +122,7 @@ class WhatsAppService {
         formData,
         {
           headers: {
+            ...formData.getHeaders(),
             Authorization: `Bearer ${token}`,
           },
         }
