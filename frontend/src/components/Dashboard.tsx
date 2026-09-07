@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
+import Pusher from 'pusher-js';
 import {
   LayoutDashboard,
   Utensils,
@@ -103,6 +104,8 @@ interface Conversation {
 interface ChatMessage {
   id?: string;
   wamid?: string;
+  conversation_id?: string;
+  conversationId?: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   sender_name?: string;
@@ -491,7 +494,13 @@ const Dashboard: React.FC<DashboardProps> = ({
       const media = m.image_url || m.audio_url || m.sticker_url || '';
       const mTime = m.timestamp ? new Date(m.timestamp).getTime() : (m.created_at ? new Date(m.created_at).getTime() : 0);
 
+      const mConvId = m.conversation_id || m.conversationId || undefined;
+
       const dupIndex = result.findIndex(existing => {
+        const exConvId = existing.conversation_id || existing.conversationId || undefined;
+        // 🛡️ تصفية حتمية: إذا كانت الرسالتان تنتميان لمحادثتين مختلفين صراحة، فهما ليستا نفس الرسالة مطلقاً
+        if (mConvId && exConvId && mConvId !== exConvId) return false;
+
         if (m.wamid && existing.wamid) return m.wamid === existing.wamid;
         if (m.id && existing.id && !m.id.startsWith('temp_') && !existing.id.startsWith('temp_')) return m.id === existing.id;
         if (m.id && existing.id && m.id === existing.id) return true;
@@ -547,8 +556,46 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [templateError, setTemplateError] = useState<string | null>(null);
   const [templateSuccess, setTemplateSuccess] = useState<string | null>(null);
 
-  // حالة تفاعلات الإيموجي على الرسائل (Message Reactions)
+  // حالة تفاعلات الإيموجي والـ Hover / Touch على الرسائل (Message Reactions & Long-press)
   const [activeReactionPickerIndex, setActiveReactionPickerIndex] = useState<number | null>(null);
+  const [reactionPickerPlacement, setReactionPickerPlacement] = useState<'top' | 'bottom'>('top');
+  const [hoveredMessageIndex, setHoveredMessageIndex] = useState<number | null>(null);
+  const touchTimerRef = useRef<any>(null);
+
+  const handleToggleReactionPicker = (index: number, e: React.MouseEvent<HTMLButtonElement>) => {
+    if (activeReactionPickerIndex === index) {
+      setActiveReactionPickerIndex(null);
+      return;
+    }
+
+    const btn = e.currentTarget;
+    const bubble = btn.closest('[data-msg-bubble]') || btn.closest('div[style*="position: relative"]') || btn.parentElement?.parentElement;
+    const rect = bubble ? bubble.getBoundingClientRect() : btn.getBoundingClientRect();
+    const spaceAbove = rect.top;
+    const emojiBarHeight = 110; // ارتفاع الشريط (44px) + مسافة الهيدر العلوي والأمان
+
+    if (spaceAbove < emojiBarHeight) {
+      setReactionPickerPlacement('bottom');
+    } else {
+      setReactionPickerPlacement('top');
+    }
+
+    setActiveReactionPickerIndex(index);
+  };
+
+  const handleTouchStartMessage = (index: number) => {
+    if (touchTimerRef.current) clearTimeout(touchTimerRef.current);
+    touchTimerRef.current = setTimeout(() => {
+      setHoveredMessageIndex(index);
+    }, 500);
+  };
+
+  const handleTouchEndMessage = () => {
+    if (touchTimerRef.current) {
+      clearTimeout(touchTimerRef.current);
+      touchTimerRef.current = null;
+    }
+  };
 
   const handleReactToMessage = async (index: number, emoji: string) => {
     if (!selectedConversation) return;
@@ -645,7 +692,11 @@ const Dashboard: React.FC<DashboardProps> = ({
       reader.onloadend = async () => {
         const audioDataUrl = reader.result as string;
         if (audioDataUrl) {
+          const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
           const newAudioMsg: ChatMessage = {
+            id: tempId,
+            conversation_id: selectedConversation.id,
+            conversationId: selectedConversation.id,
             role: 'assistant',
             content: '[🎙️ تسجيل صوتي]',
             audio_url: audioDataUrl,
@@ -656,12 +707,17 @@ const Dashboard: React.FC<DashboardProps> = ({
           setChatMessages(prev => [...prev, newAudioMsg]);
 
           try {
-            await api.post(`/conversations/${selectedConversation.id}/messages`, {
+            const res = await api.post(`/conversations/${selectedConversation.id}/messages`, {
               audio_url: audioDataUrl,
               reply_to_id: replyToMessage?.id || undefined
             });
+            if (res.data?.messageObj) {
+              const confirmed = res.data.messageObj;
+              setChatMessages(prev => deduplicateMessages(prev.map(m => m.id === tempId ? { ...m, ...confirmed } : m)));
+            }
             setReplyToMessage(null);
           } catch (err: any) {
+            setChatMessages(prev => prev.filter(m => m.id !== tempId));
             alert(err.response?.data?.message || 'فشل إرسال الفويس نوت.');
           }
         }
@@ -950,17 +1006,27 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const handleSendCatalogToCustomer = async () => {
     if (!selectedConversation) return;
+    const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const newCatMsg: ChatMessage = {
+      id: tempId,
+      conversation_id: selectedConversation.id,
+      conversationId: selectedConversation.id,
+      role: 'assistant',
+      content: '[🛍️ تم إرسال كتالوج الواتساب الرسمي المباشر للعميل]',
+      sender_name: currentUsername,
+      timestamp: new Date().toISOString()
+    };
+    setChatMessages(prev => [...prev, newCatMsg]);
+
     try {
       const res = await api.post(`/conversations/${selectedConversation.id}/send-catalog`);
-      const newCatMsg: ChatMessage = {
-        role: 'assistant',
-        content: '[🛍️ تم إرسال كتالوج الواتساب الرسمي المباشر للعميل]',
-        sender_name: currentUsername,
-        timestamp: new Date().toISOString()
-      };
-      setChatMessages(prev => [...prev, newCatMsg]);
+      if (res.data?.messageObj) {
+        const confirmed = res.data.messageObj;
+        setChatMessages(prev => deduplicateMessages(prev.map(m => m.id === tempId ? { ...m, ...confirmed } : m)));
+      }
       alert(res.data.message || 'تم إرسال الكتالوج المباشر للعميل!');
     } catch (err: any) {
+      setChatMessages(prev => prev.filter(m => m.id !== tempId));
       alert(err.response?.data?.message || 'فشل إرسال الكتالوج للعميل.');
     }
   };
@@ -1194,7 +1260,93 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
     selectedConversationIdRef.current = selectedConversation?.id || null;
   }, [selectedConversation?.id]);
 
-  // تحديث الشات تلقائياً كل 3 ثواني وبشكل خفيف (بدون سحب المنيو والتصنيفات الثقيلة)
+  // ✅ المزامنة اللحظية الفورية المشفرة والمحمية عبر Pusher Private Channels
+  useEffect(() => {
+    if (!restaurant?.id) return;
+
+    const pusherKey = (import.meta as any).env?.VITE_PUSHER_KEY || 'your_pusher_key';
+    const pusherCluster = (import.meta as any).env?.VITE_PUSHER_CLUSTER || 'eu';
+
+    if (!pusherKey || pusherKey === 'your_pusher_key') {
+      console.warn('[Pusher Frontend] VITE_PUSHER_KEY غير مفعّل في متغيرات البيئة. سيتم التحديث بالاعتماد على الـ Heartbeat Polling فقط.');
+      return;
+    }
+
+    try {
+      const authUrl = `${axios.defaults.baseURL || ''}/api/pusher/auth`;
+      const pusher = new Pusher(pusherKey, {
+        cluster: pusherCluster,
+        channelAuthorization: {
+          endpoint: authUrl,
+          transport: 'ajax',
+          headers: {
+            Authorization: token ? `Bearer ${token}` : ''
+          }
+        },
+        authEndpoint: authUrl,
+        auth: {
+          headers: {
+            Authorization: token ? `Bearer ${token}` : ''
+          }
+        }
+      });
+
+      const channelName = `private-restaurant-${restaurant.id}`;
+      const channel = pusher.subscribe(channelName);
+
+      channel.bind('new-message', (data: { conversationId: string; messageObj: ChatMessage; conversation?: Conversation }) => {
+        console.log('[Pusher Private Event 🔔] تم استلام حدث رسالة جديدة:', data);
+
+        if (data.conversation) {
+          setConversations(prev => {
+            const idx = prev.findIndex(c => c.id === data.conversationId);
+            if (idx !== -1) {
+              const updated = [...prev];
+              updated[idx] = { ...updated[idx], ...data.conversation };
+              return updated;
+            }
+            return [data.conversation!, ...prev];
+          });
+        }
+
+        // إذا كانت المحادثة المعنية هي المفتوحة حالياً لدى الموظف، أضف الرسالة فوراً
+        const currentActiveId = selectedConversationIdRef.current;
+        if (currentActiveId && currentActiveId === data.conversationId && data.messageObj) {
+          const msgWithConvId: ChatMessage = {
+            ...data.messageObj,
+            conversation_id: data.conversationId,
+            conversationId: data.conversationId
+          };
+
+          setChatMessages(prev => {
+            const prevFiltered = prev.filter(m => {
+              const mConvId = m.conversation_id || m.conversationId;
+              return !mConvId || mConvId === currentActiveId;
+            });
+            return deduplicateMessages([...prevFiltered, msgWithConvId]);
+          });
+
+          if (data.messageObj.role === 'user' && soundEnabled) {
+            playNotificationSound();
+          }
+          setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+        } else if (data.messageObj?.role === 'user' && soundEnabled) {
+          playNotificationSound();
+          setUnreadConvIds(prev => new Set(prev).add(data.conversationId));
+        }
+      });
+
+      return () => {
+        channel.unbind_all();
+        channel.unsubscribe();
+        pusher.disconnect();
+      };
+    } catch (err) {
+      console.error('[Pusher Private Client Connection Error]:', err);
+    }
+  }, [restaurant?.id, token, soundEnabled]);
+
+  // تحديث الشات تلقائياً كـ Heartbeat احتياطي كل 30 ثانية
   useEffect(() => {
     if (!restaurant) return;
     const interval = setInterval(async () => {
@@ -1243,11 +1395,40 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
           if (currentActiveId) {
             api.get(`/conversations/${currentActiveId}/messages`).then(msgRes => {
               if (selectedConversationIdRef.current === currentActiveId) {
-                const msgList = Array.isArray(msgRes.data) ? msgRes.data : (msgRes.data?.messages || []);
+                const rawMsgList = Array.isArray(msgRes.data) ? msgRes.data : (msgRes.data?.messages || []);
+                const msgList: ChatMessage[] = rawMsgList.map((m: any) => ({
+                  ...m,
+                  conversation_id: currentActiveId,
+                  conversationId: currentActiveId
+                }));
+
                 setChatMessages(prev => {
-                  const pendingTemps = prev.filter(m => m.id?.startsWith('temp_') && !msgList.some((c: any) => 
-                    ((c.content || '').trim() === (m.content || '').trim()) && c.role === m.role
-                  ));
+                  const pendingTemps = prev.filter(m => {
+                    if (!m) return false;
+                    // 🛡️ تصفية حتمية: استبعاد صريح لأي رسالة لا تنتمي صراحة لهذه المحادثة الحالية
+                    const mConvId = m.conversation_id || m.conversationId;
+                    if (mConvId && mConvId !== currentActiveId) return false;
+
+                    const isTemp = Boolean(m.id?.startsWith('temp_'));
+                    const existsInServer = msgList.some((c: any) => {
+                      if (c.wamid && m.wamid && c.wamid === m.wamid) return true;
+                      if (c.id && m.id && c.id === m.id) return true;
+                      const sameRole = (c.role || 'user') === (m.role || 'user');
+                      const sameContent = (c.content || '').trim() === (m.content || '').trim();
+                      const cTime = c.timestamp ? new Date(c.timestamp).getTime() : 0;
+                      const mTime = m.timestamp ? new Date(m.timestamp).getTime() : 0;
+                      const closeInTime = (cTime && mTime) ? Math.abs(cTime - mTime) < 20000 : true;
+                      return sameRole && sameContent && closeInTime;
+                    });
+
+                    if (existsInServer) return false;
+                    if (isTemp) return true;
+
+                    // الاحتفاظ بالرسالة إن كانت أُضيفت محلياً بنفس المحادثة خلال آخر 20 ثانية ولم ترجع من السيرفر بعد
+                    const mTime = m.timestamp ? new Date(m.timestamp).getTime() : 0;
+                    return mTime > 0 && (Date.now() - mTime < 20000);
+                  });
+
                   const merged = deduplicateMessages([...msgList, ...pendingTemps]);
 
                   if (prev.length !== merged.length) {
@@ -1265,7 +1446,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
           }
         }
       } catch (e) {}
-    }, 3000);
+    }, 30000);
 
     return () => clearInterval(interval);
   }, [restaurant, unreadConvIds, soundEnabled]);
@@ -1607,12 +1788,16 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
       }).catch(() => {});
     }
 
-    // ✅ عرض الرسائل الموجودة فوراً من الـ conversation object (بدون انتظار) بعد تصفية التكرارات
+    // ✅ عرض الرسائل الموجودة فوراً من الـ conversation object (بدون انتظار) بعد تصفية التكرارات ووسمها بالـ conversation_id
     const rawMsgs: ChatMessage[] = Array.isArray((conversation as any).messages_json)
       ? (conversation as any).messages_json
       : [];
-    const existingMsgs = deduplicateMessages(rawMsgs);
-    setChatMessages(existingMsgs);
+    const existingMsgs: ChatMessage[] = rawMsgs.map((m: any) => ({
+      ...m,
+      conversation_id: conversation.id,
+      conversationId: conversation.id
+    }));
+    setChatMessages(deduplicateMessages(existingMsgs));
 
     setUnreadConvIds(prev => {
       const next = new Set(prev);
@@ -1628,9 +1813,38 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
     try {
       const res = await api.get(`/conversations/${conversation.id}/messages`);
       if (selectedConversationIdRef.current === conversation.id) {
-        const msgList = Array.isArray(res.data) ? res.data : (res.data?.messages || []);
-        const cleanList = deduplicateMessages(msgList);
-        setChatMessages(cleanList);
+        const rawMsgList = Array.isArray(res.data) ? res.data : (res.data?.messages || []);
+        const msgList: ChatMessage[] = rawMsgList.map((m: any) => ({
+          ...m,
+          conversation_id: conversation.id,
+          conversationId: conversation.id
+        }));
+
+        setChatMessages(prev => {
+          const pendingTemps = prev.filter(m => {
+            if (!m) return false;
+            // 🛡️ تصفية حتمية: عدم الاحتفاظ بأي رسالة تتبع محادثة سابقة!
+            const mConvId = m.conversation_id || m.conversationId;
+            if (mConvId && mConvId !== conversation.id) return false;
+
+            const isTemp = Boolean(m.id?.startsWith('temp_'));
+            const existsInServer = msgList.some((c: any) => {
+              if (c.wamid && m.wamid && c.wamid === m.wamid) return true;
+              if (c.id && m.id && c.id === m.id) return true;
+              const sameRole = (c.role || 'user') === (m.role || 'user');
+              const sameContent = (c.content || '').trim() === (m.content || '').trim();
+              const cTime = c.timestamp ? new Date(c.timestamp).getTime() : 0;
+              const mTime = m.timestamp ? new Date(m.timestamp).getTime() : 0;
+              const closeInTime = (cTime && mTime) ? Math.abs(cTime - mTime) < 20000 : true;
+              return sameRole && sameContent && closeInTime;
+            });
+            if (existsInServer) return false;
+            if (isTemp) return true;
+            const mTime = m.timestamp ? new Date(m.timestamp).getTime() : 0;
+            return mTime > 0 && (Date.now() - mTime < 20000);
+          });
+          return deduplicateMessages([...msgList, ...pendingTemps]);
+        });
         if (res.data && res.data.isWindowOpen !== undefined) {
           setSelectedConvWindowOpen(res.data.isWindowOpen);
           setSelectedConvExpiresAt(res.data.windowExpiresAt || null);
@@ -1669,6 +1883,8 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
         const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
         newMsgs.push({
           id: tempId,
+          conversation_id: selectedConversation.id,
+          conversationId: selectedConversation.id,
           role: 'assistant',
           content: idx === 0 ? textToSend : '',
           image_url: img,
@@ -1681,6 +1897,8 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
       const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       newMsgs.push({
         id: tempId,
+        conversation_id: selectedConversation.id,
+        conversationId: selectedConversation.id,
         role: 'assistant',
         content: textToSend,
         reply_to_id: replyTargetId,
@@ -1763,28 +1981,38 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
     setTemplateLoading(true);
     setTemplateError(null);
     setTemplateSuccess(null);
+    const selTempObj = AVAILABLE_TEMPLATES.find(t => t.name === selectedTemplateName);
+    const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const newTemplateMsg: ChatMessage = {
+      id: tempId,
+      conversation_id: selectedConversation.id,
+      conversationId: selectedConversation.id,
+      role: 'assistant',
+      content: `[قالب موثّق من Meta: ${selTempObj?.name || selectedTemplateName}]\n${selTempObj?.preview || ''}`,
+      sender_name: currentUsername,
+      timestamp: new Date().toISOString(),
+      is_template: true
+    };
+    setChatMessages(prev => [...prev, newTemplateMsg]);
+
     try {
       const res = await api.post(`/conversations/${selectedConversation.id}/send-template`, {
         templateName: selectedTemplateName,
         language: templateLanguage
       });
+      if (res.data?.messageObj) {
+        const confirmed = res.data.messageObj;
+        setChatMessages(prev => deduplicateMessages(prev.map(m => m.id === tempId ? { ...m, ...confirmed } : m)));
+      }
       setTemplateSuccess('تم إرسال القالب وتجديد نافذة الـ 24 ساعة بنجاح!');
       setSelectedConvWindowOpen(true);
-      const selTempObj = AVAILABLE_TEMPLATES.find(t => t.name === selectedTemplateName);
-      const newTemplateMsg: ChatMessage = {
-        role: 'assistant',
-        content: `[قالب موثّق من Meta: ${selTempObj?.name || selectedTemplateName}]\n${selTempObj?.preview || ''}`,
-        sender_name: currentUsername,
-        timestamp: new Date().toISOString(),
-        is_template: true
-      };
-      setChatMessages(prev => [...prev, newTemplateMsg]);
       setTimeout(() => {
         setShowTemplateModal(false);
         setTemplateSuccess(null);
       }, 1500);
     } catch (err: any) {
       console.error('Error sending template message:', err);
+      setChatMessages(prev => prev.filter(m => m.id !== tempId));
       setTemplateError(err.response?.data?.message || 'فشل إرسال القالب الرسمي عبر Meta Graph API.');
     } finally {
       setTemplateLoading(false);
@@ -2201,84 +2429,41 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
         </div>
       </aside>
 
-      {/* زر القائمة العائم (Floating Menu Toggle Button) */}
-      {!isSidebarOpen && (
-        <button
-          onClick={() => setIsSidebarOpen(true)}
-          style={{
-            position: 'fixed',
-            bottom: '24px',
-            right: '24px',
-            zIndex: 990,
-            backgroundColor: '#0066FF',
-            color: '#FFFFFF',
-            border: 'none',
-            borderRadius: '50px',
-            padding: '12px 20px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            boxShadow: '0 8px 25px rgba(0, 102, 255, 0.45)',
-            cursor: 'pointer',
-            fontWeight: 'bold',
-            fontSize: '0.9rem',
-            transition: 'all 0.2s ease',
-          }}
-          title="فتح قائمة الاختيارات والتبويبات"
-        >
-          <Menu size={22} />
-          <span>القائمة</span>
-          {conversations.filter(c => c.category === 'COMPLAINT').length > 0 && (
-            <span style={{
-              backgroundColor: '#EF4444',
-              color: '#FFFFFF',
-              fontSize: '0.7rem',
-              fontWeight: 'bold',
-              padding: '2px 6px',
-              borderRadius: '10px',
-            }}>
-              {conversations.filter(c => c.category === 'COMPLAINT').length}
-            </span>
-          )}
-        </button>
-      )}
-
       {/* محتوى لوحة التحكم الأساسي (Main Content) */}
       <main style={{ ...styles.mainContent, width: '100%' }}>
-        {/* الهيدر العلوي المبسط والنظيف - يحتوي فقط على زر القائمة واسم صاحب الحساب */}
+        {/* الهيدر العلوي المبسط والنظيف */}
         <header style={{ ...styles.topBar, padding: '10px 20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <button
               onClick={() => setIsSidebarOpen(prev => !prev)}
-              className="btn btn-primary"
               style={{
+                position: 'relative',
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: '8px',
-                padding: '8px 16px',
+                justifyContent: 'center',
+                width: '38px',
+                height: '38px',
                 borderRadius: '10px',
-                fontSize: '0.9rem',
-                fontWeight: '700',
                 cursor: 'pointer',
-                border: 'none',
-                boxShadow: '0 3px 12px rgba(0, 102, 255, 0.35)',
+                border: darkMode ? '1px solid rgba(255, 255, 255, 0.15)' : '1px solid rgba(0, 0, 0, 0.1)',
+                backgroundColor: darkMode ? '#1E293B' : '#FFFFFF',
+                color: darkMode ? '#FFFFFF' : '#0F1E36',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                transition: 'all 0.2s ease',
               }}
-              title="فتح قائمة الاختيارات والتبويبات"
+              title="فتح / إغلاق قائمة القنوات والتبويبات"
             >
               <Menu size={20} />
-              <span>زر القائمة</span>
-              {conversations.filter(c => c.category === 'COMPLAINT').length > 0 && (
+              {(conversations.some(c => c.status === 'UNANSWERED' || c.category === 'COMPLAINT')) && (
                 <span style={{
+                  position: 'absolute',
+                  top: '6px',
+                  right: '6px',
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
                   backgroundColor: '#EF4444',
-                  color: '#FFFFFF',
-                  fontSize: '0.75rem',
-                  fontWeight: '800',
-                  padding: '2px 7px',
-                  borderRadius: '10px',
-                  marginRight: '4px'
-                }}>
-                  {conversations.filter(c => c.category === 'COMPLAINT').length}
-                </span>
+                }} />
               )}
             </button>
 
@@ -2287,31 +2472,6 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                 {t[lang]?.welcome || 'مرحباً،'} {currentUsername}
               </h2>
             </div>
-
-            <button
-              type="button"
-              onClick={toggleLang}
-              style={{
-                backgroundColor: darkMode ? '#1E293B' : '#EFF6FF',
-                color: darkMode ? '#60A5FA' : '#1D4ED8',
-                border: '1px solid #93C5FD',
-                borderRadius: '20px',
-                padding: '6px 14px',
-                fontSize: '0.82rem',
-                fontWeight: 'bold',
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                transition: 'all 0.2s',
-                marginRight: 'auto',
-                marginLeft: '12px'
-              }}
-              title="تغيير لغة لوحة التحكم (Arabic / English)"
-            >
-              <span>🌐</span>
-              <span>{lang === 'ar' ? 'English' : 'عربي'}</span>
-            </button>
           </div>
         </header>
 
@@ -4003,6 +4163,12 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                   }}
                                 >
                                   <div
+                                    data-msg-bubble="true"
+                                    onMouseEnter={() => setHoveredMessageIndex(i)}
+                                    onMouseLeave={() => setHoveredMessageIndex(null)}
+                                    onTouchStart={() => handleTouchStartMessage(i)}
+                                    onTouchEnd={handleTouchEndMessage}
+                                    onTouchMove={handleTouchEndMessage}
                                     style={{
                                       ...styles.chatPaneBubble,
                                       backgroundColor: isUser ? (darkMode ? '#202C33' : '#FFFFFF') : (darkMode ? '#005C4B' : '#D9FDD3'),
@@ -4197,11 +4363,11 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                        </div>
                                      )}
 
-                                     {/* قائمة التفاعلات السريعة فوق الرسالة عند النقر على زر التفاعل */}
+                                     {/* قائمة التفاعلات السريعة فوق أو تحت الرسالة (حسب الموضع في Viewport لمنع القطع) */}
                                      {activeReactionPickerIndex === i && (
                                        <div style={{
                                          position: 'absolute',
-                                         top: '-36px',
+                                         ...(reactionPickerPlacement === 'bottom' ? { bottom: '-38px' } : { top: '-38px' }),
                                          right: isUser ? '0' : 'auto',
                                          left: !isUser ? '0' : 'auto',
                                          backgroundColor: darkMode ? '#1E293B' : '#FFFFFF',
@@ -4234,192 +4400,139 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                        </div>
                                      )}
 
-                                    {editingMessageIndex === i ? (
-                                      <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                        <textarea
-                                          value={editingMessageText}
-                                          onChange={e => setEditingMessageText(e.target.value)}
-                                          style={{
-                                            width: '100%',
-                                            minHeight: '60px',
-                                            padding: '8px',
-                                            borderRadius: '6px',
-                                            border: '1px solid #0066FF',
-                                            fontSize: '0.85rem',
-                                            outline: 'none',
-                                            backgroundColor: darkMode ? '#1E293B' : '#FFFFFF',
-                                            color: darkMode ? '#F8FAFC' : '#0F172A',
-                                            resize: 'vertical'
-                                          }}
-                                          autoFocus
-                                        />
-                                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                                          <button
-                                            type="button"
-                                            onClick={() => handleEditMessageSubmit(i)}
-                                            style={{ padding: '4px 10px', fontSize: '0.75rem', borderRadius: '4px', border: 'none', backgroundColor: '#0066FF', color: '#FFF', fontWeight: 'bold', cursor: 'pointer' }}
-                                          >
-                                            حفظ التعديل
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => setEditingMessageIndex(null)}
-                                            style={{ padding: '4px 8px', fontSize: '0.75rem', borderRadius: '4px', border: '1px solid #CBD5E1', backgroundColor: 'transparent', color: darkMode ? '#94A3B8' : '#475569', cursor: 'pointer' }}
-                                          >
-                                            إلغاء
-                                          </button>
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <>
-                                         {msgContent && !msgContent.includes('[📷 صورة مرفقة]') && (
-                                           <p style={{ fontSize: '0.85rem', color: darkMode ? '#F8FAFC' : '#0F172A', margin: 0, whiteSpace: 'pre-wrap' }}>
-                                             {msgContent}
-                                           </p>
-                                         )}
-                                        
-                                        {/* شريط الإجراءات: تفاعل ورَد وتعديل ومسح الرسالة */}
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px', borderTop: '1px solid rgba(0,0,0,0.06)', paddingTop: '4px' }}>
-                                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                                            <button
-                                              type="button"
-                                              onClick={() => setActiveReactionPickerIndex(activeReactionPickerIndex === i ? null : i)}
-                                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', fontSize: '0.8rem', opacity: 0.85 }}
-                                              title="إضافة تفاعل إيموجي"
-                                            >
-                                              😊
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() => setReplyToMessage(msg)}
-                                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: '#0066FF', opacity: 0.85, display: 'inline-flex', alignItems: 'center' }}
-                                              title="رد على هذه الرسالة (Reply)"
-                                            >
-                                              <CornerUpLeft size={13} />
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() => handleCopyMessageText(msgContent, i)}
-                                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: copiedMsgIndex === i ? '#10B981' : (darkMode ? '#94A3B8' : '#64748B'), opacity: 0.85 }}
-                                              title="نسخ النص (Ctrl+C)"
-                                            >
-                                              {copiedMsgIndex === i ? <CheckCircle size={13} color="#10B981" /> : <Copy size={13} />}
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                setEditingMessageIndex(i);
-                                                setEditingMessageText(msgContent);
-                                              }}
-                                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: '#0066FF', opacity: 0.8 }}
-                                              title="تعديل هذه الرسالة"
-                                            >
-                                              <Edit size={13} />
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() => handleDeleteSingleMessage(i)}
-                                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: '#EF4444', opacity: 0.8 }}
-                                              title="مسح هذه الرسالة نهائياً"
-                                            >
-                                              <Trash size={13} />
-                                            </button>
-                                          </div>
-                                          
-                                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                            {(msg.is_edited || (msg as any).is_edited) && (
-                                              <span style={{ fontSize: '0.6rem', color: '#94A3B8', fontStyle: 'italic' }}>(مُعدّلة)</span>
-                                            )}
-                                            {timeStr && (
-                                              <span style={{ fontSize: '0.6rem', color: '#94A3B8' }}>{timeStr}</span>
-                                            )}
-                                          </div>
-                                        </div>
-                                      </>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })
-                          )}
-                          <div ref={chatEndRef} />
-                        </div>
+                                     {msgContent && !msgContent.includes('[📷 صورة مرفقة]') && (
+                                       <p style={{ fontSize: '0.85rem', color: darkMode ? '#F8FAFC' : '#0F172A', margin: 0, whiteSpace: 'pre-wrap' }}>
+                                         {msgContent}
+                                       </p>
+                                     )}
 
-                        <form onSubmit={handleSendManualMessage} style={{ ...styles.chatPaneInputArea, flexDirection: 'column', gap: '8px' }}>
-                          {/* شريط الردود السريعة المحفوظة */}
-                          {selectedConvWindowOpen && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflowX: 'auto', width: '100%', paddingBottom: '4px', scrollbarWidth: 'thin' }}>
-                              <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: darkMode ? '#94A3B8' : '#64748B', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <Sparkles size={14} color="#0066FF" />
-                                <span>ردود محفوظة:</span>
-                              </span>
-                              {savedReplies.map((reply) => (
-                                <div
-                                  key={reply.id}
-                                  style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '4px',
-                                    border: '1px solid #BFDBFE',
-                                    backgroundColor: darkMode ? '#1E293B' : '#EFF6FF',
-                                    color: darkMode ? '#93C5FD' : '#1E40AF',
-                                    borderRadius: '16px',
-                                    padding: '3px 10px',
-                                    fontSize: '0.72rem',
-                                    fontWeight: 'bold',
-                                    whiteSpace: 'nowrap',
-                                    boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
-                                  }}
-                                >
-                                  <span
-                                    onClick={() => setChatInput(reply.text)}
-                                    style={{ cursor: 'pointer' }}
-                                    title={`إدراج الرد: "${reply.text}"`}
-                                  >
-                                    {reply.label}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => handleDeleteQuickReply(reply.id, e)}
-                                    style={{
-                                      border: 'none',
-                                      background: 'none',
-                                      color: darkMode ? '#94A3B8' : '#64748B',
-                                      cursor: 'pointer',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      padding: 0,
-                                      marginLeft: '2px'
-                                    }}
-                                    title="حذف هذا الرد المحفوظ"
-                                  >
-                                    <X size={12} />
-                                  </button>
-                                </div>
-                              ))}
-                              {/* زر إضافة رد محفوظ جديد للأدمن */}
-                              <button
-                                type="button"
-                                onClick={() => setShowAddReplyModal(true)}
-                                style={{
-                                  border: '1px dashed #0066FF',
-                                  backgroundColor: darkMode ? 'rgba(0, 102, 255, 0.15)' : '#EBF3FF',
-                                  color: '#0066FF',
-                                  borderRadius: '16px',
-                                  padding: '3px 10px',
-                                  fontSize: '0.72rem',
-                                  fontWeight: 'bold',
-                                  cursor: 'pointer',
-                                  whiteSpace: 'nowrap',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '4px'
-                                }}
-                                title="إضافة رد جديد مخصص لقائمة الردود المحفوظة"
-                              >
-                                <Plus size={13} />
-                                <span>إضافة رد</span>
-                              </button>
+                                     {/* شريط الإجراءات الممرّرة: تظهر الأزرار (إيموجي، رد، نسخ) فقط عند الـ Hover أو الضغط المطول */}
+                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px', paddingTop: '4px', minHeight: '22px' }}>
+                                       {(hoveredMessageIndex === i || activeReactionPickerIndex === i) ? (
+                                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                           <button
+                                             type="button"
+                                             onClick={(e) => handleToggleReactionPicker(i, e)}
+                                             style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', fontSize: '0.85rem', opacity: 0.9 }}
+                                             title="إضافة تفاعل إيموجي"
+                                           >
+                                             😊
+                                           </button>
+                                           <button
+                                             type="button"
+                                             onClick={() => setReplyToMessage(msg)}
+                                             style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: '#0066FF', opacity: 0.9, display: 'inline-flex', alignItems: 'center' }}
+                                             title="رد على هذه الرسالة (Reply)"
+                                           >
+                                             <CornerUpLeft size={13} />
+                                           </button>
+                                           <button
+                                             type="button"
+                                             onClick={() => handleCopyMessageText(msgContent, i)}
+                                             style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: copiedMsgIndex === i ? '#10B981' : (darkMode ? '#94A3B8' : '#64748B'), opacity: 0.9 }}
+                                             title="نسخ النص (Ctrl+C)"
+                                           >
+                                             {copiedMsgIndex === i ? <CheckCircle size={13} color="#10B981" /> : <Copy size={13} />}
+                                           </button>
+                                         </div>
+                                       ) : (
+                                         <div />
+                                       )}
+                                       
+                                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: 'auto' }}>
+                                         {(msg.is_edited || (msg as any).is_edited) && (
+                                           <span style={{ fontSize: '0.65rem', color: '#94A3B8', fontStyle: 'italic' }}>(مُعدّلة)</span>
+                                         )}
+                                         {timeStr && (
+                                           <span style={{ fontSize: '0.65rem', color: '#94A3B8', fontWeight: '600' }}>{timeStr}</span>
+                                         )}
+                                       </div>
+                                     </div>
+                                   </div>
+                                 </div>
+                               );
+                             })
+                           )}
+                           <div ref={chatEndRef} />
+                         </div>
+
+                         <form onSubmit={handleSendManualMessage} style={{ ...styles.chatPaneInputArea, flexDirection: 'column', gap: '8px' }}>
+                           {/* شريط الردود السريعة المحفوظة - متناسق ومتجاوب أفصياً */}
+                           {selectedConvWindowOpen && (
+                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflowX: 'auto', width: '100%', padding: '4px 0 6px 0', scrollbarWidth: 'thin', whiteSpace: 'nowrap' }}>
+                               <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: darkMode ? '#94A3B8' : '#64748B', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                                 <Sparkles size={14} color="#0066FF" />
+                                 <span>ردود محفوظة:</span>
+                               </span>
+                               {savedReplies.map((reply) => (
+                                 <div
+                                   key={reply.id}
+                                   style={{
+                                     display: 'inline-flex',
+                                     alignItems: 'center',
+                                     gap: '6px',
+                                     border: darkMode ? '1px solid rgba(0, 102, 255, 0.3)' : '1px solid #BFDBFE',
+                                     backgroundColor: darkMode ? '#1E293B' : '#EFF6FF',
+                                     color: darkMode ? '#93C5FD' : '#1E40AF',
+                                     borderRadius: '16px',
+                                     padding: '4px 12px',
+                                     fontSize: '0.75rem',
+                                     fontWeight: 'bold',
+                                     whiteSpace: 'nowrap',
+                                     flexShrink: 0,
+                                     boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
+                                   }}
+                                 >
+                                   <span
+                                     onClick={() => setChatInput(reply.text)}
+                                     style={{ cursor: 'pointer' }}
+                                     title={`إدراج الرد: "${reply.text}"`}
+                                   >
+                                     {reply.label}
+                                   </span>
+                                   <button
+                                     type="button"
+                                     onClick={(e) => handleDeleteQuickReply(reply.id, e)}
+                                     style={{
+                                       border: 'none',
+                                       background: 'none',
+                                       color: darkMode ? '#94A3B8' : '#64748B',
+                                       cursor: 'pointer',
+                                       display: 'flex',
+                                       alignItems: 'center',
+                                       padding: 0,
+                                       marginLeft: '2px'
+                                     }}
+                                     title="حذف هذا الرد المحفوظ"
+                                   >
+                                     <X size={12} />
+                                   </button>
+                                 </div>
+                               ))}
+                               {/* زر إضافة رد محفوظ جديد للأدمن */}
+                               <button
+                                 type="button"
+                                 onClick={() => setShowAddReplyModal(true)}
+                                 style={{
+                                   border: '1px dashed #0066FF',
+                                   backgroundColor: darkMode ? 'rgba(0, 102, 255, 0.15)' : '#EBF3FF',
+                                   color: '#0066FF',
+                                   borderRadius: '16px',
+                                   padding: '4px 12px',
+                                   fontSize: '0.75rem',
+                                   fontWeight: 'bold',
+                                   cursor: 'pointer',
+                                   whiteSpace: 'nowrap',
+                                   flexShrink: 0,
+                                   display: 'inline-flex',
+                                   alignItems: 'center',
+                                   gap: '4px'
+                                 }}
+                                 title="إضافة رد جديد مخصص لقائمة الردود المحفوظة"
+                               >
+                                 <Plus size={13} />
+                                 <span>إضافة رد</span>
+                               </button>
                             </div>
                           )}
 

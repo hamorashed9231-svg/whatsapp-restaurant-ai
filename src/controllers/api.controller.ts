@@ -11,6 +11,7 @@ import { normalizePhone } from '../utils/phone';
 import { syncMenuItemToMetaCatalog, deleteMenuItemFromMetaCatalog, syncFullMenuToMetaCatalog } from '../services/catalog.service';
 import { redisClient } from '../services/redis.service';
 import { put } from '@vercel/blob';
+import { triggerNewMessage, authorizePusherChannel } from '../services/pusher.service';
 
 /**
  * 1. تسجيل الدخول لمسؤول لوحة تحكم المطعم
@@ -1243,6 +1244,9 @@ export const sendManualMessage = async (req: AuthenticatedRequest, res: Response
     // 4. إرجاع النتيجة
     if (conv && conv.id) {
       const updatedConv = await prisma.conversation.findUnique({ where: { id: conv.id } }).catch(() => conv);
+      if (restaurantId) {
+        triggerNewMessage(restaurantId, conv.id, newMsg, updatedConv || conv).catch(() => {});
+      }
       res.status(200).json({
         status: 'success',
         message: whatsappWarning
@@ -1350,6 +1354,9 @@ export const sendTemplateMessageEndpoint = async (req: AuthenticatedRequest, res
           updated_at: new Date()
         }
       });
+      if (restaurantId) {
+        triggerNewMessage(restaurantId, conv.id, templateMsgObj, updated).catch(() => {});
+      }
       res.status(200).json({
         status: 'success',
         message: `تم إرسال القالب الرسمي (${templateName}) بنجاح وإعادة تفعيل التواصل مع العميل!`,
@@ -1527,6 +1534,11 @@ export const sendCatalogMessageEndpoint = async (req: AuthenticatedRequest, res:
         data: { messages_json: msgs, status: 'IN_PROGRESS', updated_at: new Date() }
       });
     } catch (e) {}
+
+    const restId = conv.restaurant_id || conv.restaurant?.id;
+    if (restId) {
+      triggerNewMessage(restId, conv.id, catalogMsgObj).catch(() => {});
+    }
 
     res.status(200).json({ status: 'success', message: 'تم إرسال الكتالوج المباشر للعميل بنجاح!', messageObj: catalogMsgObj });
   } catch (err: any) {
@@ -1865,6 +1877,53 @@ export const getMediaProxy = async (req: Request, res: Response): Promise<void> 
   } catch (err: any) {
     console.error('[GetMediaProxy Error]:', err.message);
     res.status(500).send('خطأ في استرجاع الوسائط.');
+  }
+};
+
+/**
+ * 23. المصادقة والتحقق من صلاحية اشتراك الموظف في القنوات الخاصة (Pusher Private Channels)
+ */
+export const handlePusherAuth = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const socketId = req.body.socket_id;
+  const channelName = req.body.channel_name;
+
+  if (!socketId || !channelName) {
+    res.status(400).json({ status: 'error', message: 'socket_id و channel_name مطلوبان للمصادقة.' });
+    return;
+  }
+
+  // التأكد من أن اسم القناة يتبع نمط القنوات الخاصة الحصري للمطاعم (private-restaurant-id)
+  if (!channelName.startsWith('private-restaurant-')) {
+    res.status(403).json({ status: 'error', message: 'الوصول غير مصرح به لهذه القناة.' });
+    return;
+  }
+
+  const requestedRestaurantId = channelName.replace('private-restaurant-', '').trim();
+
+  // التحقق من وجود مستخدم مصدق (عبر JWT Token من authMiddleware)
+  if (!req.user) {
+    res.status(403).json({ status: 'error', message: 'يرجى تسجيل الدخول أولاً للوصول للقناة.' });
+    return;
+  }
+
+  // التحقق من أن المطعم المطلوب موجود في النظام
+  try {
+    if (requestedRestaurantId && requestedRestaurantId !== 'rest_eissa_default') {
+      const restaurant = await prisma.restaurant.findUnique({ where: { id: requestedRestaurantId } }).catch(() => null);
+      if (!restaurant) {
+        const fallbackRest = await prisma.restaurant.findFirst().catch(() => null);
+        if (!fallbackRest || fallbackRest.id !== requestedRestaurantId) {
+          res.status(403).json({ status: 'error', message: 'غير مصرح لموظف هذا الحساب بالدخول لقناة مطعم آخر.' });
+          return;
+        }
+      }
+    }
+
+    const authResponse = authorizePusherChannel(socketId, channelName);
+    res.status(200).send(authResponse);
+  } catch (err: any) {
+    console.error('[Pusher Auth Controller Error]:', err.message || err);
+    res.status(500).json({ status: 'error', message: 'فشلت عملية المصادقة على قناة Pusher.' });
   }
 };
 

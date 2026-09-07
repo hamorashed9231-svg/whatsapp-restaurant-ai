@@ -3,6 +3,7 @@ import { whatsappQueue } from '../queues/whatsapp.queue';
 import { redisClient } from '../services/redis.service';
 import { prisma } from '../services/prisma.service';
 import { normalizePhone } from '../utils/phone';
+import { triggerNewMessage } from '../services/pusher.service';
 
 /**
  * التحقق من خادم الويب هوك (Webhook Verification) من فيسبوك
@@ -404,6 +405,15 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
       conversation.closed_by = null;
     }
 
+    const latestUserMsg = currentMsgs[currentMsgs.length - 1];
+    if (latestUserMsg && restaurant?.id) {
+      triggerNewMessage(restaurant.id, conversation.id, latestUserMsg, {
+        ...conversation,
+        status: newStatus,
+        updated_at: new Date().toISOString()
+      }).catch(() => {});
+    }
+
     // تحديث الذاكرة الحية دائمًا كخيار احتياطي أسرع
     const memIdx = memoryConversations.findIndex((c: any) => c.customer_phone === customerPhone || c.id === conversation.id);
     if (memIdx !== -1) {
@@ -527,9 +537,10 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
           },
         }).catch(() => {});
 
+        const aiMsgObj = { role: 'assistant', content: responseText, timestamp: new Date().toISOString() };
         const finalMessagesJson = [
           ...currentMsgs,
-          { role: 'assistant', content: responseText, timestamp: new Date().toISOString() }
+          aiMsgObj
         ];
 
         await prisma.conversation.update({
@@ -539,6 +550,13 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
             updated_at: new Date(),
           },
         }).catch(() => {});
+
+        if (restaurant?.id) {
+          triggerNewMessage(restaurant.id, conversation.id, aiMsgObj, {
+            ...conversation,
+            updated_at: new Date().toISOString()
+          }).catch(() => {});
+        }
 
         const finalMemIdx = memoryConversations.findIndex((c: any) => c.id === conversation.id);
         if (finalMemIdx !== -1) {

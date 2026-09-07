@@ -38,7 +38,8 @@ import {
   updateCategories,
   getQuickReplies,
   updateQuickReplies,
-  getMediaProxy
+  getMediaProxy,
+  handlePusherAuth
 } from '../controllers/api.controller';
 import { upload } from '../middlewares/upload.middleware';
 
@@ -58,6 +59,9 @@ router.get('/conversations/media/:mediaId', getMediaProxy);
 
 
 // ================= مسارات محمية بـ JWT (Protected Routes) =================
+
+// مصادقة قنوات Pusher الخاصة (Private Channels)
+router.post('/pusher/auth', authMiddleware, handlePusherAuth);
 
 // بيانات وإعدادات المطعم ومعرّف الكتالوج
 router.get('/restaurants/:id', authMiddleware, getRestaurant);
