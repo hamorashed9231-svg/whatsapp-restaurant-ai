@@ -1025,6 +1025,25 @@ export const sendManualMessage = async (req: AuthenticatedRequest, res: Response
       timestamp: new Date().toISOString()
     };
 
+    if (image_url && image_url.startsWith('data:image/')) {
+      try {
+        const base64Data = image_url.split(',')[1];
+        const mimeMatch = image_url.match(/^data:(image\/[a-zA-Z+]+);base64,/);
+        const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
+        const ext = getExtensionFromMime(mimeType);
+        const buffer = Buffer.from(base64Data, 'base64');
+        const blob = await put(`whatsapp-media/outgoing_${Date.now()}.${ext}`, buffer, {
+          access: 'public',
+          addRandomSuffix: false,
+        });
+        if (blob && blob.url) {
+          (newMsg as any).image_url = blob.url;
+        }
+      } catch (blobErr: any) {
+        console.error('[SendManualMessage Blob Upload Error]:', blobErr.message);
+      }
+    }
+
     // 2. حفظ الرسالة في DB أولاً (دائماً، بغض النظر عن نتيجة الإرسال عبر واتساب)
     let whatsappWarning: string | null = null;
     if (conv && conv.id && conv.restaurant_id) {
@@ -1033,7 +1052,9 @@ export const sendManualMessage = async (req: AuthenticatedRequest, res: Response
         data: {
           conversation_id: conv.id,
           role: 'assistant',
-          content: content || (audio_url ? '[🎙️ تسجيل صوتي]' : image_url ? '[📷 صورة مرفقة]' : sticker_url ? '[ملصق 🎨]' : '')
+          content: content || (audio_url ? '[🎙️ تسجيل صوتي]' : image_url ? '[📷 صورة مرفقة]' : sticker_url ? '[ملصق 🎨]' : ''),
+          image_url: newMsg.image_url || image_url || undefined,
+          audio_url: audio_url || undefined
         }
       }).catch(() => {});
 
@@ -1097,7 +1118,16 @@ export const sendManualMessage = async (req: AuthenticatedRequest, res: Response
             }
             if (sentMediaId) {
               (newMsg as any).media_id = sentMediaId;
-              (newMsg as any).image_url = `/api/media/${sentMediaId}`;
+              if (!newMsg.image_url || newMsg.image_url.startsWith('data:image')) {
+                (newMsg as any).image_url = `/api/media/${sentMediaId}`;
+              }
+              if (newMsg.image_url && newMsg.image_url.startsWith('http')) {
+                await prisma.mediaAsset.upsert({
+                  where: { media_id: sentMediaId },
+                  update: { permanent_url: newMsg.image_url },
+                  create: { media_id: sentMediaId, permanent_url: newMsg.image_url, mime_type: 'image/png' }
+                }).catch(() => {});
+              }
             }
             await prisma.conversation.update({
               where: { id: conv.id },

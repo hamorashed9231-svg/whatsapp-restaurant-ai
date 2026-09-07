@@ -79,6 +79,10 @@ model Message {
   conversation_id String
   role            String       // "user" | "assistant" | "system"
   content         String       @db.Text
+  media_id        String?
+  image_url       String?
+  audio_url       String?
+  document_url    String?
   created_at      DateTime     @default(now())
 
   // العلاقات

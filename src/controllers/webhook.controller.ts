@@ -331,15 +331,6 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
     }
 
     // 3. حفظ رسالة العميل في DB وفي الذاكرة الاحتياطية
-    try {
-      await prisma.message.create({
-        data: {
-          conversation_id: conversation.id,
-          role: 'user',
-          content: messageText,
-        },
-      }).catch(() => {});
-    } catch (e) {}
 
     let currentMsgs: any[] = [];
     try {
@@ -379,6 +370,20 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
         document_url: finalDocumentUrl,
         timestamp: new Date().toISOString()
       });
+
+      try {
+        await prisma.message.create({
+          data: {
+            conversation_id: conversation.id,
+            role: 'user',
+            content: messageText,
+            media_id: mediaId || undefined,
+            image_url: finalImageUrl,
+            audio_url: finalAudioUrl,
+            document_url: finalDocumentUrl
+          },
+        }).catch(() => {});
+      } catch (e) {}
     }
     const isWasClosed = (conversation.status === 'CLOSED');
     const newStatus = isWasClosed ? 'UNANSWERED' : (conversation.status || 'UNANSWERED');

@@ -3887,7 +3887,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                              }}>
                                                <span style={{ fontSize: '1.4rem' }}>📷</span>
                                                <div>
-                                                 <div style={{ fontWeight: 'bold' }}>صورة مرفقة من العميل</div>
+                                                 <div style={{ fontWeight: 'bold' }}>{isUser ? 'صورة مرفقة من العميل' : 'صورة مرفقة من الموظف'}</div>
                                                  {captionText ? (
                                                    <div style={{ fontSize: '0.8rem', opacity: 0.9, marginTop: '2px' }}>{captionText}</div>
                                                  ) : (
