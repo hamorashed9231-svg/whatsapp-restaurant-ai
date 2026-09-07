@@ -137,11 +137,13 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
             const msgType = pMsg.messageType || '';
             const isAudioType = (msgType === 'audio' || msgType === 'voice' || pText.includes('[🎙️ تسجيل صوتي]'));
             const isStickerType = (msgType === 'sticker' || pText.includes('[ملصق 🎨]'));
-            const isImageType = (msgType === 'image' || pText.includes('[📷 صورة مرفقة]') || (!isAudioType && !isStickerType && Boolean(pMsg.mediaId)));
+            const isDocumentType = (msgType === 'document' || pText.includes('[📄 مستند مرفق]'));
+            const isImageType = (msgType === 'image' || pText.includes('[📷 صورة مرفقة]') || (!isAudioType && !isStickerType && !isDocumentType && Boolean(pMsg.mediaId)));
 
             const finalImageUrl = isImageType && pMsg.mediaId ? `/api/media/${pMsg.mediaId}` : undefined;
             const finalAudioUrl = isAudioType && pMsg.mediaId ? `/api/media/${pMsg.mediaId}` : undefined;
             const finalStickerUrl = isStickerType && pMsg.mediaId ? `/api/media/${pMsg.mediaId}` : undefined;
+            const finalDocumentUrl = isDocumentType && pMsg.mediaId ? `/api/media/${pMsg.mediaId}` : undefined;
 
             userMessageEntries.push({
               role: 'user',
@@ -150,6 +152,7 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
               image_url: finalImageUrl,
               audio_url: finalAudioUrl,
               sticker_url: finalStickerUrl,
+              document_url: finalDocumentUrl,
               timestamp: pMsg.timestamp || new Date().toISOString()
             });
           }
@@ -159,11 +162,13 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
         const msgType = job.data.messageType || '';
         const isAudioType = (msgType === 'audio' || msgType === 'voice' || combinedMessageText.includes('[🎙️ تسجيل صوتي]'));
         const isStickerType = (msgType === 'sticker' || combinedMessageText.includes('[ملصق 🎨]'));
-        const isImageType = (msgType === 'image' || combinedMessageText.includes('[📷 صورة مرفقة]') || (!isAudioType && !isStickerType && Boolean(jobMediaId)));
+        const isDocumentType = (msgType === 'document' || combinedMessageText.includes('[📄 مستند مرفق]'));
+        const isImageType = (msgType === 'image' || combinedMessageText.includes('[📷 صورة مرفقة]') || (!isAudioType && !isStickerType && !isDocumentType && Boolean(jobMediaId)));
 
         const finalImageUrl = isImageType && jobMediaId ? `/api/media/${jobMediaId}` : undefined;
         const finalAudioUrl = isAudioType && jobMediaId ? `/api/media/${jobMediaId}` : undefined;
         const finalStickerUrl = isStickerType && jobMediaId ? `/api/media/${jobMediaId}` : undefined;
+        const finalDocumentUrl = isDocumentType && jobMediaId ? `/api/media/${jobMediaId}` : undefined;
 
         userMessageEntries.push({
           role: 'user',
@@ -172,6 +177,7 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
           image_url: finalImageUrl,
           audio_url: finalAudioUrl,
           sticker_url: finalStickerUrl,
+          document_url: finalDocumentUrl,
           timestamp: job.data.timestamp || new Date().toISOString()
         });
       }

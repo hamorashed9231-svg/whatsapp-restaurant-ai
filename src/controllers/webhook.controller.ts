@@ -33,19 +33,7 @@ export const verifyWebhook = async (req: Request, res: Response): Promise<void> 
   res.sendStatus(400);
 };
 
-// ذاكرة مؤقتة لمنع تكرار معالجة نفس الرسالة من Meta Webhooks
-const processedMessageIds = new Set<string>();
 
-function isMessageAlreadyProcessed(msgId: string): boolean {
-  if (!msgId) return false;
-  if (processedMessageIds.has(msgId)) return true;
-  processedMessageIds.add(msgId);
-  if (processedMessageIds.size > 2000) {
-    const firstItem = processedMessageIds.values().next().value;
-    if (firstItem) processedMessageIds.delete(firstItem);
-  }
-  return false;
-}
 
 /**
  * استقبال أحداث ورسائل واتساب وإضافتها لمؤقت التجميع (Debouncing) عبر Redis و BullMQ ومعالجتها مباشرة في بيئات Serverless
@@ -60,189 +48,188 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
   }
 
   try {
-    const entry = body.entry?.[0];
-    const change = entry?.changes?.[0];
-    const value = change?.value;
-    const message = value?.messages?.[0];
+    const entries = body.entry || [];
+    let processedAny = false;
+    let hasRedisFailure = false;
 
-    if (!message) {
-      res.status(200).json({ status: 'ignored_no_message' });
-      return;
-    }
+    for (const entry of entries) {
+      const changes = entry.changes || [];
+      for (const change of changes) {
+        const value = change.value;
+        const messages = value?.messages || [];
+        if (!messages || messages.length === 0) continue;
 
-    // 0. فحص الطابع الزمني وكتم الرسائل القديمة التي مر عليها أكثر من 10 دقائق من سيرفرات Meta
-    const msgTimestamp = Number(message.timestamp);
-    if (msgTimestamp && !isNaN(msgTimestamp)) {
-      const ageInSeconds = Math.floor(Date.now() / 1000) - msgTimestamp;
-      if (ageInSeconds > 600) {
-        console.log(`[Webhook Deduplication] 🛑 تم كتم وتجاهل رسالة قديمة مكررة من سيرفرات Meta (ID: ${message.id}, عمر الرسالة: ${Math.floor(ageInSeconds / 60)} دقيقة)`);
-        res.status(200).json({ status: 'ignored_old_message' });
-        return;
-      }
-    }
-
-    // كتم التكرار ومنع المعالجة المزدوجة برقم معرف الرسالة (Meta Message ID Deduplication - 7 Days Memory)
-    const messageId = message.id;
-    if (messageId) {
-      if (isMessageAlreadyProcessed(messageId)) {
-        console.log(`[Webhook Deduplication] تم كتم رسالة مكررة من سيرفرات Meta (ID: ${messageId})`);
-        res.status(200).json({ status: 'ignored_duplicate' });
-        return;
-      }
-      try {
-        const redisDedupKey = `msg_dedup:${messageId}`;
-        const setRes = await redisClient.set(redisDedupKey, '1', 'EX', 604800, 'NX');
-        if (setRes === null) {
-          console.log(`[Webhook Deduplication Redis] تم كتم رسالة مكررة عبر Redis (ID: ${messageId})`);
-          res.status(200).json({ status: 'ignored_duplicate' });
-          return;
+        const whatsappNumberId = value.metadata?.phone_number_id;
+        if (!whatsappNumberId) {
+          console.error('[Webhook] لم يتم العثور على phone_number_id في تفاصيل الرسالة.');
+          continue;
         }
-      } catch (e) {}
-    }
 
-    // 1. استخراج معرف رقم الهاتف المستلم للرسالة (WhatsApp Phone Number ID)
-    const whatsappNumberId = value.metadata?.phone_number_id;
-    if (!whatsappNumberId) {
-      console.error('[Webhook] لم يتم العثور على phone_number_id في تفاصيل الرسالة.');
-      res.status(200).json({ status: 'error_no_phone_number_id' });
-      return;
-    }
-
-    // 2. استخراج رقم هاتف الزبون وتوحيد صيغته ومحتوى الرسالة والوسائط
-    const rawCustomerPhone = message.from;
-    const customerPhone = normalizePhone(rawCustomerPhone) || (rawCustomerPhone ? String(rawCustomerPhone).trim() : 'unknown_user');
-    let messageText = '';
-    let mediaId = '';
-
-    if (message.type === 'text') {
-      messageText = message.text?.body || '';
-    } else if (message.type === 'image') {
-      const caption = message.image?.caption || '';
-      messageText = caption ? `[📷 صورة مرفقة]: ${caption}` : '[📷 صورة مرفقة]';
-      mediaId = message.image?.id || '';
-    } else if (message.type === 'document') {
-      const caption = message.document?.caption || message.document?.filename || '';
-      messageText = caption ? `[📄 مستند مرفق]: ${caption}` : '[📄 مستند مرفق]';
-      mediaId = message.document?.id || '';
-    } else if (message.type === 'audio' || message.type === 'voice') {
-      const audioObj = message.audio || message.voice;
-      messageText = '[🎙️ تسجيل صوتي]';
-      mediaId = audioObj?.id || '';
-    } else if (message.type === 'sticker') {
-      messageText = '[ملصق 🎨]';
-      mediaId = message.sticker?.id || '';
-    } else if (message.type === 'interactive') {
-      const interactive = message.interactive;
-      if (interactive.type === 'button_reply') {
-        messageText = interactive.button_reply?.title || '';
-      } else if (interactive.type === 'list_reply') {
-        messageText = interactive.list_reply?.title || '';
-      }
-    } else if (message.type === 'reaction') {
-      const reactionObj = message.reaction;
-      const targetMessageId = reactionObj?.message_id;
-      const emoji = reactionObj?.emoji || '';
-      console.log(`[Webhook Reaction] تم استلام تفاعل (${emoji}) على الرسالة (${targetMessageId}) من العميل [${customerPhone}].`);
-
-      if (targetMessageId) {
-        try {
-          const conv = await prisma.conversation.findFirst({
-            where: { customer_phone: customerPhone }
-          });
-          if (conv) {
-            let jsonMsgs: any[] = [];
-            try {
-              jsonMsgs = typeof conv.messages_json === 'string' ? JSON.parse(conv.messages_json) : (conv.messages_json as any[]) || [];
-            } catch (e) {}
-
-            let updated = false;
-            jsonMsgs = jsonMsgs.map(m => {
-              if (m.wamid === targetMessageId || m.id === targetMessageId) {
-                updated = true;
-                return { ...m, reaction: emoji };
-              }
-              return m;
-            });
-
-            if (updated) {
-              await prisma.conversation.update({
-                where: { id: conv.id },
-                data: { messages_json: jsonMsgs, updated_at: new Date() }
-              });
+        for (const message of messages) {
+          // 0. فحص الطابع الزمني وكتم الرسائل القديمة التي مر عليها أكثر من 10 دقائق من سيرفرات Meta
+          const msgTimestamp = Number(message.timestamp);
+          if (msgTimestamp && !isNaN(msgTimestamp)) {
+            const ageInSeconds = Math.floor(Date.now() / 1000) - msgTimestamp;
+            if (ageInSeconds > 600) {
+              console.log(`[Webhook Deduplication] 🛑 تم كتم وتجاهل رسالة قديمة مكررة من سيرفرات Meta (ID: ${message.id}, عمر الرسالة: ${Math.floor(ageInSeconds / 60)} دقيقة)`);
+              continue;
             }
           }
-        } catch (err) {
-          console.error('[Webhook Reaction Error]:', err);
+
+          // 1. كتم التكرار عبر Upstash Redis الحتمي فقط (مع وضع علامة فشل إذا تعثر الاتصال دون قطع بقية اللوب)
+          const messageId = message.id;
+          if (messageId) {
+            const redisDedupKey = `msg_dedup:${messageId}`;
+            try {
+              const setRes = await redisClient.set(redisDedupKey, '1', 'EX', 604800, 'NX');
+              if (setRes === null) {
+                console.log(`[Webhook Deduplication Upstash Redis] تم كتم رسالة مكررة حتمياً عبر Redis (ID: ${messageId})`);
+                continue;
+              }
+            } catch (redisErr: any) {
+              console.error(`[Webhook Redis Dedup Failure] ❌ فشل الاتصال بـ Upstash Redis للرسالة (${messageId}):`, redisErr.message);
+              hasRedisFailure = true;
+              continue;
+            }
+          }
+
+          // 2. استخراج رقم هاتف الزبون وتوحيد صيغته ومحتوى الرسالة والوسائط
+          const rawCustomerPhone = message.from;
+          const customerPhone = normalizePhone(rawCustomerPhone) || (rawCustomerPhone ? String(rawCustomerPhone).trim() : 'unknown_user');
+          let messageText = '';
+          let mediaId = '';
+
+          if (message.type === 'text') {
+            messageText = message.text?.body || '';
+          } else if (message.type === 'image') {
+            const caption = message.image?.caption || '';
+            messageText = caption ? `[📷 صورة مرفقة]: ${caption}` : '[📷 صورة مرفقة]';
+            mediaId = message.image?.id || '';
+          } else if (message.type === 'document') {
+            const caption = message.document?.caption || message.document?.filename || '';
+            messageText = caption ? `[📄 مستند مرفق]: ${caption}` : '[📄 مستند مرفق]';
+            mediaId = message.document?.id || '';
+          } else if (message.type === 'audio' || message.type === 'voice') {
+            const audioObj = message.audio || message.voice;
+            messageText = '[🎙️ تسجيل صوتي]';
+            mediaId = audioObj?.id || '';
+          } else if (message.type === 'sticker') {
+            messageText = '[ملصق 🎨]';
+            mediaId = message.sticker?.id || '';
+          } else if (message.type === 'interactive') {
+            const interactive = message.interactive;
+            if (interactive.type === 'button_reply') {
+              messageText = interactive.button_reply?.title || '';
+            } else if (interactive.type === 'list_reply') {
+              messageText = interactive.list_reply?.title || '';
+            }
+          } else if (message.type === 'reaction') {
+            const reactionObj = message.reaction;
+            const targetMessageId = reactionObj?.message_id;
+            const emoji = reactionObj?.emoji || '';
+            console.log(`[Webhook Reaction] تم استلام تفاعل (${emoji}) على الرسالة (${targetMessageId}) من العميل [${customerPhone}].`);
+
+            if (targetMessageId) {
+              try {
+                const conv = await prisma.conversation.findFirst({
+                  where: { customer_phone: customerPhone }
+                });
+                if (conv) {
+                  let jsonMsgs: any[] = [];
+                  try {
+                    jsonMsgs = typeof conv.messages_json === 'string' ? JSON.parse(conv.messages_json) : (conv.messages_json as any[]) || [];
+                  } catch (e) {}
+
+                  let updated = false;
+                  jsonMsgs = jsonMsgs.map(m => {
+                    if (m.wamid === targetMessageId || m.id === targetMessageId) {
+                      updated = true;
+                      return { ...m, reaction: emoji };
+                    }
+                    return m;
+                  });
+
+                  if (updated) {
+                    await prisma.conversation.update({
+                      where: { id: conv.id },
+                      data: { messages_json: jsonMsgs, updated_at: new Date() }
+                    });
+                  }
+                }
+              } catch (err) {
+                console.error('[Webhook Reaction Error]:', err);
+              }
+            }
+            processedAny = true;
+            continue;
+          } else if (message.type === 'button') {
+            messageText = message.button?.text || '';
+          }
+
+          if (!messageText.trim()) {
+            console.log(`[Webhook] تم استلام رسالة غير مدعومة من النوع (${message.type}). تم تخطي المعالجة.`);
+            continue;
+          }
+
+          console.log(`[Webhook] تم استلام رسالة جديدة من [${customerPhone}] متجهة للمعرف [${whatsappNumberId}] (${message.type}): "${messageText}".`);
+
+          const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NOW_REGION);
+
+          if (isServerless) {
+            // 🛑 الانتظار الحتمي في Vercel لمنع التجميد والاستئناف المكرر لـ Serverless Function
+            await processDirectly(whatsappNumberId, customerPhone, messageText, mediaId, message);
+          } else {
+            let queuedInRedis = false;
+            try {
+              const pendingKey = `pending_messages:${whatsappNumberId}:${customerPhone}`;
+              const payload = JSON.stringify({
+                whatsappNumberId,
+                customerPhone,
+                messageText,
+                mediaId,
+                messageType: message.type,
+                timestamp: new Date().toISOString(),
+              });
+
+              await redisClient.rpush(pendingKey, payload);
+              await redisClient.expire(pendingKey, 120);
+
+              const jobId = `chat_${whatsappNumberId}_${customerPhone}`;
+              await whatsappQueue.add(
+                'process-whatsapp-message',
+                {
+                  whatsappNumberId,
+                  customerPhone,
+                  messageText: messageText.trim(),
+                  mediaId,
+                  messageType: message.type,
+                  timestamp: new Date().toISOString(),
+                },
+                { jobId, delay: 0 }
+              ).catch(() => {});
+              queuedInRedis = true;
+            } catch (redisErr: any) {
+              console.warn('[Webhook] تحذير: تعذر دفع المهام لـ Redis/BullMQ (سيتم الاعتماد على المعالجة المباشرة):', redisErr.message);
+            }
+
+            if (!queuedInRedis) {
+              await processDirectly(whatsappNumberId, customerPhone, messageText, mediaId, message);
+            }
+          }
+
+          processedAny = true;
         }
       }
-      res.status(200).json({ status: 'reaction_processed' });
-      return;
-    } else if (message.type === 'button') {
-      messageText = message.button?.text || '';
     }
 
-    if (!messageText.trim()) {
-      console.log(`[Webhook] تم استلام رسالة غير مدعومة من النوع (${message.type}). تم تخطي المعالجة.`);
-      res.status(200).json({ status: 'ignored_unsupported_type' });
+    // إذا فشل الـ Dedup بـ Redis لأي رسالة، نرجع HTTP 500 لإجبار Meta على إعادة الإرسال اللاحق
+    if (hasRedisFailure) {
+      console.warn('[Webhook] ⚠️ تعثر الاتصال بـ Upstash Redis لبعض الرسائل. إرجاع HTTP 500 لإجبار Meta على إعادة الإرسال.');
+      res.status(500).json({ status: 'error_redis_failed', message: 'تعثر الاتصال بالذاكرة المؤقتة لمنع التكرار' });
       return;
     }
 
-    console.log(`[Webhook] تم استلام رسالة جديدة من [${customerPhone}] متجهة للمعرف [${whatsappNumberId}] (${message.type}): "${messageText}".`);
-
-    // إرسال استجابة HTTP 200 OK فورية لخوادم Meta لمنع التكدر وتجاوز مهلة الـ Webhook
-    res.status(200).json({ status: 'processed' });
-
-    // 3. دفع المهمة إلى Redis / BullMQ إذا كانت بيئة خادم دائم، أو المعالجة المباشرة في الخلفية
-    const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NOW_REGION);
-
-    if (!isServerless) {
-      let queuedInRedis = false;
-      try {
-        const pendingKey = `pending_messages:${whatsappNumberId}:${customerPhone}`;
-        const payload = JSON.stringify({
-          whatsappNumberId,
-          customerPhone,
-          messageText,
-          mediaId,
-          messageType: message.type,
-          timestamp: new Date().toISOString(),
-        });
-
-        await redisClient.rpush(pendingKey, payload);
-        await redisClient.expire(pendingKey, 120);
-
-        const jobId = `chat_${whatsappNumberId}_${customerPhone}`;
-        await whatsappQueue.add(
-          'process-whatsapp-message',
-          {
-            whatsappNumberId,
-            customerPhone,
-            messageText: messageText.trim(),
-            mediaId,
-            messageType: message.type,
-            timestamp: new Date().toISOString(),
-          },
-          {
-            jobId,
-            delay: 0,
-          }
-        ).catch(() => {});
-        queuedInRedis = true;
-      } catch (redisErr: any) {
-        console.warn('[Webhook] تحذير: تعذر دفع المهام لـ Redis/BullMQ (سيتم الاعتماد على المعالجة المباشرة):', redisErr.message);
-      }
-
-      if (!queuedInRedis) {
-        processDirectly(whatsappNumberId, customerPhone, messageText, mediaId, message).catch((err) => {
-          console.error('[Webhook DirectProcess Async Error]:', err.message || err);
-        });
-      }
-    } else {
-      processDirectly(whatsappNumberId, customerPhone, messageText, mediaId, message).catch((err) => {
-        console.error('[Webhook DirectProcess Async Error]:', err.message || err);
-      });
-    }
-
+    res.status(200).json({ status: processedAny ? 'processed' : 'ignored' });
   } catch (error: any) {
     console.error('[Webhook] خطأ أثناء معالجة الـ Webhook:', error.message);
     res.status(200).json({ status: 'error', message: error.message });
@@ -364,11 +351,13 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
     const msgType = rawMessage?.type || '';
     const isAudioType = (msgType === 'audio' || msgType === 'voice' || messageText.includes('[🎙️ تسجيل صوتي]'));
     const isStickerType = (msgType === 'sticker' || messageText.includes('[ملصق 🎨]'));
-    const isImageType = (msgType === 'image' || messageText.includes('[📷 صورة مرفقة]') || (!isAudioType && !isStickerType && Boolean(mediaId)));
+    const isDocumentType = (msgType === 'document' || messageText.includes('[📄 مستند مرفق]'));
+    const isImageType = (msgType === 'image' || messageText.includes('[📷 صورة مرفقة]') || (!isAudioType && !isStickerType && !isDocumentType && Boolean(mediaId)));
 
     const finalImageUrl = isImageType && mediaId ? `/api/media/${mediaId}` : undefined;
     const finalAudioUrl = isAudioType && mediaId ? `/api/media/${mediaId}` : undefined;
     const finalStickerUrl = isStickerType && mediaId ? `/api/media/${mediaId}` : undefined;
+    const finalDocumentUrl = isDocumentType && mediaId ? `/api/media/${mediaId}` : undefined;
 
     const msgWamid = rawMessage?.id || undefined;
     const isAlreadyInMsgs = currentMsgs.some((m: any) =>
@@ -387,6 +376,7 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
         image_url: finalImageUrl,
         audio_url: finalAudioUrl,
         sticker_url: finalStickerUrl,
+        document_url: finalDocumentUrl,
         timestamp: new Date().toISOString()
       });
     }
@@ -497,6 +487,21 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
           { role: 'assistant', content: responseText, timestamp: new Date().toISOString() }
         ];
       }
+    }
+
+    // 4.5. فحص ثانٍ وتأكيدي لحالة المحادثة قبل إرسال الرسالة عبر الواتساب لتفادي الـ Race Condition مع الموظف
+    try {
+      const freshConv = await prisma.conversation.findUnique({
+        where: { id: conversation.id },
+        select: { status: true, assigned_to: true }
+      });
+      const freshStaffAssigned = Boolean(freshConv?.assigned_to && freshConv.assigned_to.trim().length > 0);
+      if (freshConv?.status === 'IN_PROGRESS' || freshStaffAssigned) {
+        console.log(`[DirectProcess 🛑] تم إلغاء إرسال رد الذكاء الاصطناعي للزبون [${customerPhone}] لأن الموظف قام بالرد/التحويل أثناء معالجة الذكاء الاصطناعي.`);
+        return;
+      }
+    } catch (e: any) {
+      console.error('[DirectProcess Re-check Warning] ⚠️ تعذر الاستعلام عن حالة المحادثة قبل الإرسال، وسيتم الاستمرار بالرد (Fail-Open):', e.message || e);
     }
 
     // 5 & 6. إرسال رد الـ AI وحفظ السجل بالتوازي لتسريع الإرسال للزبون فوراً

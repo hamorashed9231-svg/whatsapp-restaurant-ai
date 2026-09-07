@@ -3831,77 +3831,128 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                       );
                                     })()}
 
-                                      {(() => {
-                                        const mediaId = (msg as any).media_id || (msg as any).mediaId;
-                                        const displayImgUrl = msg.image_url || (msg as any).imageUrl || (mediaId ? `/api/media/${mediaId}` : undefined) || (msgContent && (msgContent.startsWith('data:image') || msgContent.startsWith('http://') || msgContent.startsWith('https://') || msgContent.startsWith('/api/media/')) ? msgContent : undefined);
-                                        const captionText = msgContent && msgContent.includes('[📷 صورة مرفقة]')
-                                          ? (msgContent.includes(': ') ? msgContent.split(': ').slice(1).join(': ') : '')
-                                          : (!msgContent?.startsWith('data:image') && !msgContent?.startsWith('http') && !msgContent?.startsWith('/api/media/') ? msgContent : '');
+                                       {(() => {
+                                         const mediaId = (msg as any).media_id || (msg as any).mediaId;
+                                         const isDocMsg = Boolean(msgContent && (msgContent.includes('[📄 مستند مرفق]') || (msg as any).document_url));
+                                         const displayImgUrl = !isDocMsg
+                                           ? (msg.image_url || (msg as any).imageUrl || (mediaId && !msgContent?.includes('[🎙️ تسجيل صوتي]') && !msgContent?.includes('[ملصق 🎨]') ? `/api/media/${mediaId}` : undefined) || (msgContent && (msgContent.startsWith('data:image') || msgContent.startsWith('http://') || msgContent.startsWith('https://') || msgContent.startsWith('/api/media/')) ? msgContent : undefined))
+                                           : undefined;
+                                         const captionText = msgContent && msgContent.includes('[📷 صورة مرفقة]')
+                                           ? (msgContent.includes(': ') ? msgContent.split(': ').slice(1).join(': ') : '')
+                                           : (!msgContent?.startsWith('data:image') && !msgContent?.startsWith('http') && !msgContent?.startsWith('/api/media/') ? msgContent : '');
 
-                                        if (displayImgUrl) {
-                                          return (
-                                            <div style={{ marginBottom: '6px', position: 'relative', overflow: 'hidden', borderRadius: '10px' }}>
-                                              <img
-                                                src={displayImgUrl}
-                                                alt="صورة مرفقة"
-                                                onClick={() => setPreviewImageUrl(displayImgUrl)}
-                                                onError={(e) => {
-                                                  if (mediaId && !(e.currentTarget.src.includes('/api/media/'))) {
-                                                    e.currentTarget.src = `/api/media/${mediaId}`;
-                                                  }
-                                                }}
-                                                style={{
-                                                  maxWidth: '260px',
-                                                  maxHeight: '200px',
-                                                  borderRadius: '10px',
-                                                  objectFit: 'cover',
-                                                  display: 'block',
-                                                  cursor: 'pointer',
-                                                  boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-                                                  transition: 'transform 0.2s ease-in-out',
-                                                }}
-                                                title="انقر لتكبير الصورة وتحميلها على جهازك 🔍"
-                                              />
-                                              {captionText && captionText.trim() && (
-                                                <p style={{ fontSize: '0.85rem', color: darkMode ? '#F8FAFC' : '#0F172A', marginTop: '6px', marginBottom: 0, whiteSpace: 'pre-wrap' }}>
-                                                  {captionText}
-                                                </p>
-                                              )}
-                                            </div>
-                                          );
-                                        } else if (msgContent && msgContent.includes('[📷 صورة مرفقة]')) {
-                                          return (
-                                            <div style={{
-                                              display: 'flex',
-                                              alignItems: 'center',
-                                              gap: '10px',
-                                              padding: '10px 14px',
-                                              borderRadius: '10px',
-                                              backgroundColor: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
-                                              color: darkMode ? '#F8FAFC' : '#1E293B',
-                                              fontSize: '0.85rem',
-                                              marginBottom: '6px'
-                                            }}>
-                                              <span style={{ fontSize: '1.4rem' }}>📷</span>
-                                              <div>
-                                                <div style={{ fontWeight: 'bold' }}>صورة مرفقة من العميل</div>
-                                                {captionText ? (
-                                                  <div style={{ fontSize: '0.8rem', opacity: 0.9, marginTop: '2px' }}>{captionText}</div>
-                                                ) : (
-                                                  <div style={{ fontSize: '0.75rem', opacity: 0.75 }}>تعذر معاينة الصورة المباشرة من Meta</div>
-                                                )}
-                                              </div>
-                                            </div>
-                                          );
-                                        }
-                                        return null;
-                                      })()}
+                                         if (displayImgUrl) {
+                                           return (
+                                             <div style={{ marginBottom: '6px', position: 'relative', overflow: 'hidden', borderRadius: '10px' }}>
+                                               <img
+                                                 src={displayImgUrl}
+                                                 alt="صورة مرفقة"
+                                                 onClick={() => setPreviewImageUrl(displayImgUrl)}
+                                                 onError={(e) => {
+                                                   if (mediaId && !(e.currentTarget.src.includes('/api/media/'))) {
+                                                     e.currentTarget.src = `/api/media/${mediaId}`;
+                                                   }
+                                                 }}
+                                                 style={{
+                                                   maxWidth: '260px',
+                                                   maxHeight: '200px',
+                                                   borderRadius: '10px',
+                                                   objectFit: 'cover',
+                                                   display: 'block',
+                                                   cursor: 'pointer',
+                                                   boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                                                   transition: 'transform 0.2s ease-in-out',
+                                                 }}
+                                                 title="انقر لتكبير الصورة وتحميلها على جهازك 🔍"
+                                               />
+                                               {captionText && captionText.trim() && (
+                                                 <p style={{ fontSize: '0.85rem', color: darkMode ? '#F8FAFC' : '#0F172A', marginTop: '6px', marginBottom: 0, whiteSpace: 'pre-wrap' }}>
+                                                   {captionText}
+                                                 </p>
+                                               )}
+                                             </div>
+                                           );
+                                         } else if (msgContent && msgContent.includes('[📷 صورة مرفقة]')) {
+                                           return (
+                                             <div style={{
+                                               display: 'flex',
+                                               alignItems: 'center',
+                                               gap: '10px',
+                                               padding: '10px 14px',
+                                               borderRadius: '10px',
+                                               backgroundColor: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+                                               color: darkMode ? '#F8FAFC' : '#1E293B',
+                                               fontSize: '0.85rem',
+                                               marginBottom: '6px'
+                                             }}>
+                                               <span style={{ fontSize: '1.4rem' }}>📷</span>
+                                               <div>
+                                                 <div style={{ fontWeight: 'bold' }}>صورة مرفقة من العميل</div>
+                                                 {captionText ? (
+                                                   <div style={{ fontSize: '0.8rem', opacity: 0.9, marginTop: '2px' }}>{captionText}</div>
+                                                 ) : (
+                                                   <div style={{ fontSize: '0.75rem', opacity: 0.75 }}>تعذر معاينة الصورة المباشرة من Meta</div>
+                                                 )}
+                                               </div>
+                                             </div>
+                                           );
+                                         }
+                                         return null;
+                                       })()}
 
-                                     {(msg.audio_url || (msg as any).media_id) && (msg.audio_url || msgContent?.includes('[🎙️ تسجيل صوتي]')) && (
-                                       <div style={{ marginBottom: '6px', marginTop: '4px' }}>
-                                         <audio controls src={msg.audio_url || `/api/media/${(msg as any).media_id}`} style={{ maxWidth: '240px', width: '100%', borderRadius: '20px' }} />
-                                       </div>
-                                     )}
+                                       {(() => {
+                                         const isDocMsg = Boolean(msgContent && (msgContent.includes('[📄 مستند مرفق]') || (msg as any).document_url));
+                                         if (!isDocMsg) return null;
+
+                                         const mediaId = (msg as any).media_id || (msg as any).mediaId;
+                                         const docUrl = (msg as any).document_url || (mediaId ? `/api/media/${mediaId}` : undefined);
+                                         const docCaption = msgContent && msgContent.includes('[📄 مستند مرفق]')
+                                           ? (msgContent.includes(': ') ? msgContent.split(': ').slice(1).join(': ') : 'مستند مرفق')
+                                           : 'مستند مرفق';
+
+                                         return (
+                                           <div style={{
+                                             display: 'flex',
+                                             alignItems: 'center',
+                                             gap: '10px',
+                                             padding: '10px 14px',
+                                             borderRadius: '10px',
+                                             backgroundColor: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+                                             color: darkMode ? '#F8FAFC' : '#1E293B',
+                                             marginBottom: '6px'
+                                           }}>
+                                             <span style={{ fontSize: '1.4rem' }}>📄</span>
+                                             <div style={{ flex: 1 }}>
+                                               <div style={{ fontWeight: 'bold', fontSize: '0.85rem' }}>{docCaption}</div>
+                                               {docUrl ? (
+                                                 <a
+                                                   href={docUrl}
+                                                   target="_blank"
+                                                   rel="noopener noreferrer"
+                                                   download
+                                                   style={{
+                                                     fontSize: '0.8rem',
+                                                     color: '#3B82F6',
+                                                     textDecoration: 'underline',
+                                                     display: 'inline-block',
+                                                     marginTop: '4px'
+                                                   }}
+                                                 >
+                                                   📥 تحميل / معاينة المستند
+                                                 </a>
+                                               ) : (
+                                                 <div style={{ fontSize: '0.75rem', opacity: 0.75 }}>تعذر تحميل المستند</div>
+                                               )}
+                                             </div>
+                                           </div>
+                                         );
+                                       })()}
+
+                                      {(msg.audio_url || (msg as any).media_id) && (msg.audio_url || msgContent?.includes('[🎙️ تسجيل صوتي]')) && (
+                                        <div style={{ marginBottom: '6px', marginTop: '4px' }}>
+                                          <audio controls src={msg.audio_url || `/api/media/${(msg as any).media_id}`} style={{ maxWidth: '240px', width: '100%', borderRadius: '20px' }} />
+                                        </div>
+                                      )}
 
                                      {msg.sticker_url && (
                                        <div style={{ marginBottom: '6px' }}>

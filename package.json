@@ -27,6 +27,7 @@
     "@anthropic-ai/sdk": "^0.26.0",
     "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^5.18.0",
+    "@vercel/blob": "^2.8.0",
     "axios": "^1.7.4",
     "bullmq": "^6.3.3",
     "cors": "^2.8.5",

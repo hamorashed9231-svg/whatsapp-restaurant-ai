@@ -128,3 +128,15 @@ model User {
 
   @@map("users")
 }
+
+// نموذج التخزين الدائم للوسائط (Vercel Blob Storage Cache)
+model MediaAsset {
+  id            String   @id @default(uuid())
+  media_id      String   @unique
+  permanent_url String
+  mime_type     String?
+  created_at    DateTime @default(now())
+
+  @@index([media_id])
+  @@map("media_assets")
+}

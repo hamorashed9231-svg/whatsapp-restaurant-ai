@@ -11,6 +11,7 @@ export interface ChatMessage {
   media_id?: string;
   audio_url?: string;
   sticker_url?: string;
+  document_url?: string;
   reply_to_id?: string;
   reaction?: string;
   is_edited?: boolean;

@@ -9,6 +9,8 @@ import { hashPassword, comparePassword } from '../utils/auth';
 import { checkSessionWindow } from '../utils/sessionWindow';
 import { normalizePhone } from '../utils/phone';
 import { syncMenuItemToMetaCatalog, deleteMenuItemFromMetaCatalog, syncFullMenuToMetaCatalog } from '../services/catalog.service';
+import { redisClient } from '../services/redis.service';
+import { put } from '@vercel/blob';
 
 /**
  * 1. تسجيل الدخول لمسؤول لوحة تحكم المطعم
@@ -493,16 +495,22 @@ export const getConversationMessages = async (req: Request, res: Response): Prom
         msgs = jsonMsgs.map((m: any) => {
           const mId = m.media_id || m.mediaId;
           const contentStr = m.content || '';
-          const isImg = m.role === 'user' && (contentStr.includes('[📷 صورة مرفقة]') || Boolean(mId && !contentStr.includes('[🎙️ تسجيل صوتي]') && !contentStr.includes('[ملصق 🎨]')));
-          const isAudio = m.role === 'user' && contentStr.includes('[🎙️ تسجيل صوتي]');
+          const isAudio = contentStr.includes('[🎙️ تسجيل صوتي]');
+          const isDoc = contentStr.includes('[📄 مستند مرفق]');
+          const isSticker = contentStr.includes('[ملصق 🎨]');
+          const isImg = contentStr.includes('[📷 صورة مرفقة]') || Boolean(mId && !isAudio && !isSticker && !isDoc);
 
-          const imageUrl = m.image_url || (isImg && mId ? `/api/media/${mId}` : undefined);
+          const imageUrl = (m.image_url && !m.image_url.startsWith('data:image'))
+            ? m.image_url
+            : (mId && isImg ? `/api/media/${mId}` : m.image_url);
           const audioUrl = m.audio_url || (isAudio && mId ? `/api/media/${mId}` : undefined);
+          const documentUrl = m.document_url || (isDoc && mId ? `/api/media/${mId}` : undefined);
 
           return {
             ...m,
             image_url: imageUrl,
-            audio_url: audioUrl
+            audio_url: audioUrl,
+            document_url: documentUrl
           };
         });
 
@@ -1089,6 +1097,7 @@ export const sendManualMessage = async (req: AuthenticatedRequest, res: Response
             }
             if (sentMediaId) {
               (newMsg as any).media_id = sentMediaId;
+              (newMsg as any).image_url = `/api/media/${sentMediaId}`;
             }
             await prisma.conversation.update({
               where: { id: conv.id },
@@ -1639,6 +1648,21 @@ export const reactToMessageEndpoint = async (req: AuthenticatedRequest, res: Res
 /**
  * 41. البروكسي المباشر لعرض وسائط واتساب (Media Proxy for Images & Audio)
  */
+function getExtensionFromMime(mimeType?: string): string {
+  if (!mimeType) return 'bin';
+  if (mimeType.includes('image/jpeg') || mimeType.includes('image/jpg')) return 'jpg';
+  if (mimeType.includes('image/png')) return 'png';
+  if (mimeType.includes('image/webp')) return 'webp';
+  if (mimeType.includes('image/gif')) return 'gif';
+  if (mimeType.includes('audio/ogg')) return 'ogg';
+  if (mimeType.includes('audio/mpeg') || mimeType.includes('audio/mp3')) return 'mp3';
+  if (mimeType.includes('application/pdf')) return 'pdf';
+  return 'bin';
+}
+
+/**
+ * 41. البروكسي المباشر لعرض وسائط واتساب مع إعادة التوجيه للرابط الدائم (Vercel Blob Storage + Neon DB Index)
+ */
 export const getMediaProxy = async (req: Request, res: Response): Promise<void> => {
   const mediaId = req.params.mediaId || (req.query.mediaId as string);
   if (!mediaId) {
@@ -1647,6 +1671,22 @@ export const getMediaProxy = async (req: Request, res: Response): Promise<void> 
   }
 
   try {
+    // 1. فحص قاعدة بيانات Neon أولاً (استعلام سريع جداً بفضل وجود Index فريد على media_id)
+    try {
+      const existingAsset = await prisma.mediaAsset.findUnique({
+        where: { media_id: mediaId }
+      });
+
+      if (existingAsset && existingAsset.permanent_url) {
+        // إعادة توجيه 302 مباشرة للرابط الدائم من Vercel Edge CDN دون بث البيانات من السيرفر
+        res.redirect(302, existingAsset.permanent_url);
+        return;
+      }
+    } catch (dbQueryErr: any) {
+      console.error('[MediaAsset DB Query Error]: خطأ أثناء البحث عن الوسيط في Neon DB:', dbQueryErr.message);
+    }
+
+    // 2. إذا لم يكن محفوظاً مسبقاً، جلب البيانات لأول مرة من Meta Graph API
     const restaurant = await prisma.restaurant.findFirst({
       where: { subscription_status: 'ACTIVE' }
     }) || await prisma.restaurant.findFirst();
@@ -1654,13 +1694,46 @@ export const getMediaProxy = async (req: Request, res: Response): Promise<void> 
 
     const mediaObj = await whatsappService.getMediaBinary(mediaId, token);
     if (!mediaObj || !mediaObj.buffer) {
-      res.status(404).send('تعذّر العثور على محتوى الوسائط.');
+      res.status(404).send('تعذّر العثور على محتوى الوسائط (قد تكون انتهت صلاحيتها من Meta بعد 30 يوماً).');
       return;
     }
 
-    res.setHeader('Content-Type', mediaObj.mimeType || 'image/jpeg');
-    res.setHeader('Cache-Control', 'public, max-age=86400');
-    res.send(mediaObj.buffer);
+    // 3. رفع الملف إلى التخزين الدائم (Vercel Blob Storage) وتخزين الرابط في Neon DB
+    let permanentUrl: string | null = null;
+    try {
+      const ext = getExtensionFromMime(mediaObj.mimeType);
+      const blob = await put(`whatsapp-media/${mediaId}.${ext}`, mediaObj.buffer, {
+        access: 'public',
+        addRandomSuffix: false,
+      });
+      permanentUrl = blob.url;
+
+      // حفظ الرابط الدائم في جدول media_assets في Neon Postgres
+      await prisma.mediaAsset.upsert({
+        where: { media_id: mediaId },
+        update: { permanent_url: permanentUrl, mime_type: mediaObj.mimeType },
+        create: {
+          media_id: mediaId,
+          permanent_url: permanentUrl,
+          mime_type: mediaObj.mimeType
+        }
+      }).catch((dbSaveErr: any) => {
+        console.error('[MediaAsset DB Save Error]: فشل كتابة الرابط الدائم في جدول media_assets:', dbSaveErr.message);
+      });
+    } catch (uploadErr: any) {
+      console.error('[Vercel Blob Upload Error] ⚠️ فشل رفع الوسيط لـ Vercel Blob Storage:', uploadErr.message);
+      console.warn('[Vercel Blob Notice] سيتم بث البيانات للمستقبل كـ Fallback مؤقت مباشر من Meta، وسيتم إعادة محاولة الرفع لاحقاً عند الطلب القادم.');
+    }
+
+    // 4. الإرجاع للمستخدم
+    if (permanentUrl) {
+      res.redirect(302, permanentUrl);
+    } else {
+      // Fallback: بث البيانات مباشرة للمستخدم بدون كاش في حالة فشل الرفع الدائم
+      res.setHeader('Content-Type', mediaObj.mimeType || 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.send(mediaObj.buffer);
+    }
   } catch (err: any) {
     console.error('[GetMediaProxy Error]:', err.message);
     res.status(500).send('خطأ في استرجاع الوسائط.');
