@@ -677,6 +677,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [currentUsername, setCurrentUsername] = useState<string>('موظف الخدمة');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<'ALL' | 'ORDER' | 'COMPLAINT' | 'INQUIRY' | 'GROUP'>('ALL');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<'ALL' | 'UNANSWERED' | 'IN_PROGRESS' | 'CLOSED'>('ALL');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [viewArchived, setViewArchived] = useState(false);
   const [usersList, setUsersList] = useState<{ id: string; username: string; role: string; created_at: string }[]>([]);
   const [newUsername, setNewUsername] = useState('');
@@ -3162,10 +3163,73 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                     </h4>
                   </div>
                   
-                  {/* مفتاح التنقل بين الدردشات النشطة والأرشيف بأسلوب كبسولة متناسق */}
+                  {/* شريط البحث التفاعلي في المحادثات */}
                   <div style={{
                     backgroundColor: darkMode ? '#111B21' : '#FFFFFF',
                     padding: '8px 12px 4px 12px',
+                  }}>
+                    <div style={{
+                      position: 'relative',
+                      display: 'flex',
+                      alignItems: 'center'
+                    }}>
+                      <span style={{
+                        position: 'absolute',
+                        right: lang === 'ar' ? '12px' : 'auto',
+                        left: lang === 'en' ? '12px' : 'auto',
+                        fontSize: '0.85rem',
+                        color: darkMode ? '#8696A0' : '#64748B',
+                        pointerEvents: 'none',
+                        zIndex: 1
+                      }}>
+                        🔍
+                      </span>
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder={lang === 'ar' ? 'بحث باسم العميل، الهاتف، أو نص الرسالة...' : 'Search phone, name, or message...'}
+                        style={{
+                          width: '100%',
+                          padding: lang === 'ar' ? '8px 32px 8px 28px' : '8px 28px 8px 32px',
+                          fontSize: '0.78rem',
+                          borderRadius: '18px',
+                          border: darkMode ? '1px solid #2A3942' : '1px solid #CBD5E1',
+                          backgroundColor: darkMode ? '#202C33' : '#F8FAFC',
+                          color: darkMode ? '#E9EDEF' : '#0F172A',
+                          outline: 'none',
+                          transition: 'all 0.2s ease-in-out',
+                          boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.05)'
+                        }}
+                      />
+                      {searchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setSearchQuery('')}
+                          style={{
+                            position: 'absolute',
+                            left: lang === 'ar' ? '10px' : 'auto',
+                            right: lang === 'en' ? '10px' : 'auto',
+                            background: 'none',
+                            border: 'none',
+                            color: darkMode ? '#8696A0' : '#64748B',
+                            cursor: 'pointer',
+                            fontSize: '0.85rem',
+                            padding: '2px 4px',
+                            fontWeight: 'bold'
+                          }}
+                          title="مسح البحث"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* مفتاح التنقل بين الدردشات النشطة والأرشيف بأسلوب كبسولة متناسق */}
+                  <div style={{
+                    backgroundColor: darkMode ? '#111B21' : '#FFFFFF',
+                    padding: '6px 12px 4px 12px',
                     borderBottom: darkMode ? '1px solid #222D34' : '1px solid #F1F5F9'
                   }}>
                     <div style={{
@@ -3372,46 +3436,83 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                     </button>
                   </div>
 
-                  {conversations
-                    .filter(c => Boolean(c))
-                    .filter(c => viewArchived ? Boolean(c.is_archived) : !c.is_archived)
-                    .filter(c => {
-                      if (selectedCategoryFilter === 'ALL') return true;
-                      if (selectedCategoryFilter === 'GROUP') {
-                        return isGroupConvCheck(c);
-                      }
-                      return c.category === selectedCategoryFilter;
-                    })
-                    .filter(c => {
-                      const s = (c?.status || 'UNANSWERED').toUpperCase();
-                      if (selectedStatusFilter === 'UNANSWERED') return s === 'UNANSWERED';
-                      if (selectedStatusFilter === 'IN_PROGRESS') return s === 'IN_PROGRESS' || s === 'ACTIVE';
-                      if (selectedStatusFilter === 'CLOSED') return s === 'CLOSED' || s === 'ARCHIVED';
-                      return true;
-                    }).length === 0 ? (
-                    <p style={{ color: '#5E6E85', padding: '20px', textAlign: 'center', fontSize: '0.85rem' }}>
-                      {viewArchived ? 'لا توجد محادثات مؤرشفة حالياً.' : 'لا توجد محادثات نشطة تطابق التصفية.'}
-                    </p>
-                  ) : (
-                    <div style={{ overflowY: 'auto', flex: 1, padding: '6px', minHeight: 0 }}>
-                      {conversations
-                        .filter(c => Boolean(c))
-                        .filter(c => viewArchived ? Boolean(c.is_archived) : !c.is_archived)
-                        .filter(c => {
-                          if (selectedCategoryFilter === 'ALL') return true;
-                          if (selectedCategoryFilter === 'GROUP') {
-                            return isGroupConvCheck(c);
-                          }
-                          return c.category === selectedCategoryFilter;
-                        })
-                        .filter(c => {
-                          const s = (c?.status || 'UNANSWERED').toUpperCase();
-                          if (selectedStatusFilter === 'UNANSWERED') return s === 'UNANSWERED';
-                          if (selectedStatusFilter === 'IN_PROGRESS') return s === 'IN_PROGRESS' || s === 'ACTIVE';
-                          if (selectedStatusFilter === 'CLOSED') return s === 'CLOSED' || s === 'ARCHIVED';
-                          return true;
-                        })
-                        .map(conv => {
+                  {(() => {
+                    const matchSearchQuery = (c: any) => {
+                      if (!searchQuery.trim()) return true;
+                      const q = searchQuery.trim().toLowerCase();
+
+                      const phone = getSafePhone(c).toLowerCase();
+                      if (phone.includes(q)) return true;
+
+                      const assigned = (c.assigned_to || '').toLowerCase();
+                      if (assigned.includes(q)) return true;
+
+                      let msgsText = '';
+                      try {
+                        const msgs = typeof c.messages_json === 'string' ? JSON.parse(c.messages_json) : (c.messages_json as any[]) || [];
+                        msgsText = msgs.map((m: any) => m.content || m.text || '').join(' ').toLowerCase();
+                      } catch (e) {}
+
+                      return msgsText.includes(q);
+                    };
+
+                    const filteredConvs = conversations
+                      .filter(c => Boolean(c))
+                      .filter(c => viewArchived ? Boolean(c.is_archived) : !c.is_archived)
+                      .filter(c => {
+                        if (selectedCategoryFilter === 'ALL') return true;
+                        if (selectedCategoryFilter === 'GROUP') {
+                          return isGroupConvCheck(c);
+                        }
+                        return c.category === selectedCategoryFilter;
+                      })
+                      .filter(c => {
+                        const s = (c?.status || 'UNANSWERED').toUpperCase();
+                        if (selectedStatusFilter === 'UNANSWERED') return s === 'UNANSWERED';
+                        if (selectedStatusFilter === 'IN_PROGRESS') return s === 'IN_PROGRESS' || s === 'ACTIVE';
+                        if (selectedStatusFilter === 'CLOSED') return s === 'CLOSED' || s === 'ARCHIVED';
+                        return true;
+                      })
+                      .filter(matchSearchQuery);
+
+                    if (filteredConvs.length === 0) {
+                      return (
+                        <div style={{ padding: '30px 16px', textAlign: 'center' }}>
+                          {searchQuery.trim() ? (
+                            <>
+                              <div style={{ fontSize: '2rem', marginBottom: '8px' }}>🔍</div>
+                              <p style={{ color: darkMode ? '#8696A0' : '#64748B', fontSize: '0.85rem', margin: '0 0 12px 0' }}>
+                                لا توجد محادثات تطابق "{searchQuery}"
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => setSearchQuery('')}
+                                style={{
+                                  padding: '6px 14px',
+                                  fontSize: '0.78rem',
+                                  borderRadius: '12px',
+                                  border: 'none',
+                                  backgroundColor: darkMode ? '#202C33' : '#E2E8F0',
+                                  color: darkMode ? '#00A884' : '#0066FF',
+                                  cursor: 'pointer',
+                                  fontWeight: 'bold'
+                                }}
+                              >
+                                مسح فلتر البحث ✕
+                              </button>
+                            </>
+                          ) : (
+                            <p style={{ color: '#5E6E85', fontSize: '0.85rem', margin: 0 }}>
+                              {viewArchived ? 'لا توجد محادثات مؤرشفة حالياً.' : 'لا توجد محادثات نشطة تطابق التصفية.'}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div style={{ overflowY: 'auto', flex: 1, padding: '6px', minHeight: 0 }}>
+                        {filteredConvs.map(conv => {
                           if (!conv) return null;
                           const phoneStr = getSafePhone(conv);
                           const isGroupConv = isGroupConvCheck(conv);
