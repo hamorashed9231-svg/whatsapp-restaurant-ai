@@ -571,6 +571,19 @@ export const getConversationMessages = async (req: Request, res: Response): Prom
           cleanMsgs.push(m);
         }
       }
+
+      // ترتيب تصاعدي حتمي بحسب وقت إنشاء الرسالة (من الأقدم للأحدث)
+      cleanMsgs.sort((a: any, b: any) => {
+        const getMsgTime = (msg: any) => {
+          if (!msg) return 0;
+          const raw = msg.timestamp || msg.created_at;
+          if (!raw) return 0;
+          const parsed = new Date(raw).getTime();
+          return isNaN(parsed) ? 0 : parsed;
+        };
+        return getMsgTime(a) - getMsgTime(b);
+      });
+
       msgs = cleanMsgs;
     }
 

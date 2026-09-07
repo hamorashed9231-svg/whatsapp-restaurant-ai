@@ -512,7 +512,18 @@ const Dashboard: React.FC<DashboardProps> = ({
         result.push(m);
       }
     }
-    return result;
+
+    // ترتيب تصاعدي حتمي حسب وقت إنشاء الرسالة (من الأقدم للأحدث)
+    return result.sort((a, b) => {
+      const getMsgTime = (msg: ChatMessage) => {
+        if (!msg) return 0;
+        const raw = msg.timestamp || msg.created_at;
+        if (!raw) return 0;
+        const parsed = new Date(raw).getTime();
+        return isNaN(parsed) ? 0 : parsed;
+      };
+      return getMsgTime(a) - getMsgTime(b);
+    });
   };
   const [chatInput, setChatInput] = useState<string>('');
   const [chatImageUrls, setChatImageUrls] = useState<string[]>([]);
