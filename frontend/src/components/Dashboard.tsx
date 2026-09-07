@@ -1111,9 +1111,19 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
         setLoading(true);
         setError(null);
         
-        // جلب بيانات المطعم الافتراضي
-        const resRest = await api.get(`/restaurants/${restaurantId}`);
-        const restData = resRest.data;
+        // جلب بيانات المطعم والمحادثات بالتوازي للتحميل الفوري
+        const [resRest, resConvers] = await Promise.all([
+          api.get(`/restaurants/${restaurantId}`).catch((e) => {
+            console.error('فشل جلب بيانات المطعم:', e);
+            return { data: { id: restaurantId, name: 'مطعم عم عيسى' } };
+          }),
+          api.get(`/restaurants/${restaurantId}/conversations`).catch((e) => {
+            console.error('فشل جلب المحادثات:', e);
+            return { data: [] };
+          })
+        ]);
+
+        const restData = resRest.data || { id: restaurantId, name: 'مطعم عم عيسى' };
         if (token) {
           try {
             const base64Url = token.split('.')[1];
@@ -1134,34 +1144,39 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
           logo_url: restData.logo_url || localStorage.getItem('restaurant_logo') || '',
         });
 
-        // جلب بقية البيانات من قاعدة البيانات المركزية وحمايتها من أخطاء الاتصال
-        const actualRestId = resRest.data.id;
-        const [resMenu, resOrders, resReserv, resConvers, resAiInst, resCats, resQuick] = await Promise.all([
+        setConversations(resConvers.data || []);
+        
+        // إزالة شاشة التحميل فوراً لفتح واجهة لوحة التحكم والدردشات مباشرة
+        setLoading(false);
+
+        // جلب بقية البيانات الثانوية في الخلفية دون تعطيل الواجهة
+        const actualRestId = restData.id || restaurantId;
+        Promise.all([
           api.get(`/restaurants/${actualRestId}/menu`).catch(() => ({ data: [] })),
           api.get(`/restaurants/${actualRestId}/orders`).catch(() => ({ data: [] })),
           api.get(`/restaurants/${actualRestId}/reservations`).catch(() => ({ data: [] })),
-          api.get(`/restaurants/${actualRestId}/conversations`).catch(() => ({ data: [] })),
           api.get(`/restaurants/${actualRestId}/ai-instructions`).catch(() => ({ data: { instructions: '' } })),
           api.get(`/restaurants/${actualRestId}/categories`).catch(() => ({ data: [] })),
           api.get(`/restaurants/${actualRestId}/quick-replies`).catch(() => ({ data: [] }))
-        ]);
+        ]).then(([resMenu, resOrders, resReserv, resAiInst, resCats, resQuick]) => {
+          setMenuItems(resMenu.data || []);
+          setOrders(resOrders.data || []);
+          setReservations(resReserv.data || []);
+          setAiInstructions(resAiInst.data?.instructions || '');
 
-        setMenuItems(resMenu.data || []);
-        setOrders(resOrders.data || []);
-        setReservations(resReserv.data || []);
-        setConversations(resConvers.data || []);
-        setAiInstructions(resAiInst.data?.instructions || '');
+          if (Array.isArray(resCats.data) && resCats.data.length > 0) {
+            setCustomCategories(resCats.data);
+          }
+          if (Array.isArray(resQuick.data) && resQuick.data.length > 0) {
+            setSavedReplies(resQuick.data);
+          }
+        }).catch((e) => {
+          console.error('خطأ في جلب بيانات الخلفية:', e);
+        });
 
-        if (Array.isArray(resCats.data) && resCats.data.length > 0) {
-          setCustomCategories(resCats.data);
-        }
-        if (Array.isArray(resQuick.data) && resQuick.data.length > 0) {
-          setSavedReplies(resQuick.data);
-        }
       } catch (err: any) {
         console.error('خطأ أثناء جلب بيانات لوحة التحكم:', err);
         setError(err.response?.data?.message || 'عذراً، فشل الاتصال بالباك إند وقاعدة البيانات. تأكد من تشغيل المخدم وتهيئة قاعدة البيانات.');
-      } finally {
         setLoading(false);
       }
     };
