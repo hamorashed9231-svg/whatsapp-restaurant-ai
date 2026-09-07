@@ -482,14 +482,37 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
 
   const deduplicateMessages = (msgs: ChatMessage[]): ChatMessage[] => {
-    const seen = new Set<string>();
-    return (msgs || []).filter(m => {
-      if (!m) return false;
-      const key = m.wamid || m.id || `${m.role}-${(m.content || '').trim()}-${(m.timestamp || '').slice(0, 19)}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+    if (!Array.isArray(msgs)) return [];
+    const result: ChatMessage[] = [];
+    for (const m of msgs) {
+      if (!m) continue;
+      const content = (m.content || m.text || '').trim();
+      const role = m.role || 'user';
+      const media = m.image_url || m.audio_url || m.sticker_url || '';
+      const mTime = m.timestamp ? new Date(m.timestamp).getTime() : (m.created_at ? new Date(m.created_at).getTime() : 0);
+
+      const isDuplicate = result.some(existing => {
+        // فحص مطابقة wamid أو id المباشرة
+        if (m.wamid && existing.wamid && m.wamid === existing.wamid) return true;
+        if (m.id && existing.id && m.id === existing.id) return true;
+
+        if (existing.role !== role) return false;
+
+        const exContent = (existing.content || existing.text || '').trim();
+        const exMedia = existing.image_url || existing.audio_url || existing.sticker_url || '';
+        const exTime = existing.timestamp ? new Date(existing.timestamp).getTime() : (existing.created_at ? new Date(existing.created_at).getTime() : 0);
+
+        const sameContent = (content && exContent && content === exContent) || (!content && !exContent && media && exMedia && media === exMedia);
+        const closeInTime = (mTime && exTime) ? Math.abs(mTime - exTime) < 30000 : true;
+
+        return sameContent && closeInTime;
+      });
+
+      if (!isDuplicate) {
+        result.push(m);
+      }
+    }
+    return result;
   };
   const [chatInput, setChatInput] = useState<string>('');
   const [chatImageUrls, setChatImageUrls] = useState<string[]>([]);
@@ -1521,15 +1544,12 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
     selectedConversationIdRef.current = conversation.id;
     setSelectedConversation(conversation);
 
-    // ✅ عرض الرسائل الموجودة فوراً من الـ conversation object (بدون انتظار)
-    const existingMsgs: ChatMessage[] = Array.isArray((conversation as any).messages_json)
+    // ✅ عرض الرسائل الموجودة فوراً من الـ conversation object (بدون انتظار) بعد تصفية التكرارات
+    const rawMsgs: ChatMessage[] = Array.isArray((conversation as any).messages_json)
       ? (conversation as any).messages_json
       : [];
-    if (existingMsgs.length > 0) {
-      setChatMessages(existingMsgs);
-    } else {
-      setChatMessages([]); // نفرغ فقط لو مفيش رسائل مؤقتة
-    }
+    const existingMsgs = deduplicateMessages(rawMsgs);
+    setChatMessages(existingMsgs);
 
     setUnreadConvIds(prev => {
       const next = new Set(prev);
@@ -1546,10 +1566,8 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
       const res = await api.get(`/conversations/${conversation.id}/messages`);
       if (selectedConversationIdRef.current === conversation.id) {
         const msgList = Array.isArray(res.data) ? res.data : (res.data?.messages || []);
-        // نُحدِّث الرسائل فقط لو الـ API رجع بيانات أحدث أو أكثر
-        if (msgList.length >= existingMsgs.length) {
-          setChatMessages(msgList);
-        }
+        const cleanList = deduplicateMessages(msgList);
+        setChatMessages(cleanList);
         if (res.data && res.data.isWindowOpen !== undefined) {
           setSelectedConvWindowOpen(res.data.isWindowOpen);
           setSelectedConvExpiresAt(res.data.windowExpiresAt || null);

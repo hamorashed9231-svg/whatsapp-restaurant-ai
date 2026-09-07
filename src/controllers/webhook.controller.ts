@@ -87,9 +87,7 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
                 continue;
               }
             } catch (redisErr: any) {
-              console.error(`[Webhook Redis Dedup Failure] ❌ فشل الاتصال بـ Upstash Redis للرسالة (${messageId}):`, redisErr.message);
-              hasRedisFailure = true;
-              continue;
+              console.warn(`[Webhook Redis Dedup Failure] ⚠️ فشل الاتصال بـ Upstash Redis للرسالة (${messageId})، الاستمرار بالاعتماد على الفحص المباشر:`, redisErr.message);
             }
           }
 
@@ -222,13 +220,6 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
       }
     }
 
-    // إذا فشل الـ Dedup بـ Redis لأي رسالة، نرجع HTTP 500 لإجبار Meta على إعادة الإرسال اللاحق
-    if (hasRedisFailure) {
-      console.warn('[Webhook] ⚠️ تعثر الاتصال بـ Upstash Redis لبعض الرسائل. إرجاع HTTP 500 لإجبار Meta على إعادة الإرسال.');
-      res.status(500).json({ status: 'error_redis_failed', message: 'تعثر الاتصال بالذاكرة المؤقتة لمنع التكرار' });
-      return;
-    }
-
     res.status(200).json({ status: processedAny ? 'processed' : 'ignored' });
   } catch (error: any) {
     console.error('[Webhook] خطأ أثناء معالجة الـ Webhook:', error.message);
@@ -351,10 +342,14 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
     const finalDocumentUrl = isDocumentType && mediaId ? `/api/media/${mediaId}` : undefined;
 
     const msgWamid = rawMessage?.id || undefined;
-    const isAlreadyInMsgs = currentMsgs.some((m: any) =>
-      (msgWamid && (m.wamid === msgWamid || m.id === msgWamid)) ||
-      (m.role === 'user' && m.content === messageText && (Date.now() - new Date(m.timestamp || m.created_at).getTime() < 15000))
-    );
+    const isAlreadyInMsgs = currentMsgs.some((m: any) => {
+      if (msgWamid && (m.wamid === msgWamid || m.id === msgWamid)) return true;
+      const sameRole = m.role === 'user';
+      const sameContent = (m.content || '').trim() === messageText.trim();
+      const mTime = m.timestamp ? new Date(m.timestamp).getTime() : 0;
+      const closeInTime = mTime ? Math.abs(Date.now() - mTime) < 30000 : true;
+      return sameRole && sameContent && closeInTime;
+    });
 
     if (!isAlreadyInMsgs) {
       currentMsgs.push({

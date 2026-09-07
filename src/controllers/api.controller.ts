@@ -515,9 +515,17 @@ export const getConversationMessages = async (req: Request, res: Response): Prom
         });
 
         // في حال وجود رسائل فائضة جديدة في جدول Message لم تلحق بـ messages_json
-        if (dbMsgs.length > jsonMsgs.length) {
-          const extraDbMsgs = dbMsgs.slice(jsonMsgs.length);
-          for (const extra of extraDbMsgs) {
+        for (const extra of dbMsgs) {
+          const extraTime = extra.created_at ? extra.created_at.getTime() : 0;
+          const existsInJson = msgs.some((m: any) => {
+            if (m.id && m.id === extra.id) return true;
+            const sameRole = m.role === extra.role;
+            const sameContent = (m.content || '').trim() === (extra.content || '').trim();
+            const mTime = m.timestamp ? new Date(m.timestamp).getTime() : 0;
+            const closeTime = (mTime && extraTime) ? Math.abs(mTime - extraTime) < 30000 : true;
+            return sameRole && sameContent && closeTime;
+          });
+          if (!existsInJson) {
             msgs.push({
               id: extra.id,
               role: extra.role,
@@ -534,6 +542,36 @@ export const getConversationMessages = async (req: Request, res: Response): Prom
           timestamp: m.created_at ? m.created_at.toISOString() : new Date().toISOString()
         }));
       }
+
+      // تصفية التكرارات حتمياً من قائمة الرسائل قبل إرجاعها للفرونت إند
+      const cleanMsgs: any[] = [];
+      for (const m of msgs) {
+        if (!m) continue;
+        const content = (m.content || m.text || '').trim();
+        const role = m.role || 'user';
+        const media = m.image_url || m.audio_url || m.sticker_url || '';
+        const mTime = m.timestamp ? new Date(m.timestamp).getTime() : (m.created_at ? new Date(m.created_at).getTime() : 0);
+
+        const isDup = cleanMsgs.some((ex: any) => {
+          if (m.wamid && ex.wamid && m.wamid === ex.wamid) return true;
+          if (m.id && ex.id && m.id === ex.id) return true;
+          if (ex.role !== role) return false;
+
+          const exContent = (ex.content || ex.text || '').trim();
+          const exMedia = ex.image_url || ex.audio_url || ex.sticker_url || '';
+          const exTime = ex.timestamp ? new Date(ex.timestamp).getTime() : (ex.created_at ? new Date(ex.created_at).getTime() : 0);
+
+          const sameContent = (content && exContent && content === exContent) || (!content && !exContent && media && exMedia && media === exMedia);
+          const closeInTime = (mTime && exTime) ? Math.abs(mTime - exTime) < 30000 : true;
+
+          return sameContent && closeInTime;
+        });
+
+        if (!isDup) {
+          cleanMsgs.push(m);
+        }
+      }
+      msgs = cleanMsgs;
     }
 
     const lastUserMsg = msgs.slice().reverse().find((m: any) => m.role === 'user');
@@ -1044,10 +1082,18 @@ export const sendManualMessage = async (req: AuthenticatedRequest, res: Response
       }
     }
 
-    // 2. حفظ الرسالة في DB أولاً (دائماً، بغض النظر عن نتيجة الإرسال عبر واتساب)
+    // 2. حفظ الرسالة في DB أولاً مع التحقق من عدم كتم التكرار
     let whatsappWarning: string | null = null;
     if (conv && conv.id && conv.restaurant_id) {
-      msgs.push(newMsg);
+      const isDuplicateOutgoing = msgs.some((m: any) => {
+        const sameRole = m.role === 'assistant';
+        const sameContent = (m.content || '').trim() === (content || '').trim();
+        const mTime = m.timestamp ? new Date(m.timestamp).getTime() : 0;
+        return sameRole && sameContent && mTime && (Math.abs(Date.now() - mTime) < 15000);
+      });
+      if (!isDuplicateOutgoing) {
+        msgs.push(newMsg);
+      }
       await prisma.message.create({
         data: {
           conversation_id: conv.id,
