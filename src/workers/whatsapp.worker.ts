@@ -138,18 +138,29 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
               const fetched = await whatsappService.getMediaUrl(pMsg.mediaId, mediaToken).catch(() => null);
               if (fetched) mediaUrl = fetched;
             }
+            const pText = pMsg.messageText ? pMsg.messageText.trim() : '';
             const msgType = pMsg.messageType || '';
-            const isAudioType = (msgType === 'audio' || msgType === 'voice');
-            const isStickerType = (msgType === 'sticker');
-            const isImageType = (msgType === 'image' || (!isAudioType && !isStickerType && mediaUrl && mediaUrl.startsWith('data:image')));
+            const isAudioType = (msgType === 'audio' || msgType === 'voice' || pText.includes('[🎙️ تسجيل صوتي]'));
+            const isStickerType = (msgType === 'sticker' || pText.includes('[ملصق 🎨]'));
+            const isImageType = (msgType === 'image' || pText.includes('[📷 صورة مرفقة]') || (!isAudioType && !isStickerType && Boolean(pMsg.mediaId)));
+
+            const finalImageUrl = (mediaUrl && mediaUrl.startsWith('data:image'))
+              ? mediaUrl
+              : (isImageType ? (mediaUrl || (pMsg.mediaId ? `/api/media/${pMsg.mediaId}` : undefined)) : undefined);
+
+            const finalAudioUrl = (mediaUrl && (mediaUrl.startsWith('data:audio') || mediaUrl.startsWith('data:video/webm')))
+              ? mediaUrl
+              : (isAudioType ? (mediaUrl || (pMsg.mediaId ? `/api/media/${pMsg.mediaId}` : undefined)) : undefined);
+
+            const finalStickerUrl = isStickerType ? (mediaUrl || (pMsg.mediaId ? `/api/media/${pMsg.mediaId}` : undefined)) : undefined;
 
             userMessageEntries.push({
               role: 'user',
-              content: pMsg.messageText.trim(),
+              content: pText,
               media_id: pMsg.mediaId || undefined,
-              image_url: (isImageType && mediaUrl) ? mediaUrl : (mediaUrl && !isAudioType && !isStickerType ? mediaUrl : (isImageType && pMsg.mediaId ? `/api/media/${pMsg.mediaId}` : undefined)),
-              audio_url: (isAudioType && mediaUrl) ? mediaUrl : (isAudioType && pMsg.mediaId ? `/api/media/${pMsg.mediaId}` : undefined),
-              sticker_url: (isStickerType && mediaUrl) ? mediaUrl : (isStickerType && pMsg.mediaId ? `/api/media/${pMsg.mediaId}` : undefined),
+              image_url: finalImageUrl,
+              audio_url: finalAudioUrl,
+              sticker_url: finalStickerUrl,
               timestamp: pMsg.timestamp || new Date().toISOString()
             });
           }
@@ -162,17 +173,27 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
           if (fetched) mediaUrl = fetched;
         }
         const msgType = job.data.messageType || '';
-        const isAudioType = (msgType === 'audio' || msgType === 'voice');
-        const isStickerType = (msgType === 'sticker');
-        const isImageType = (msgType === 'image' || (!isAudioType && !isStickerType && mediaUrl && mediaUrl.startsWith('data:image')));
+        const isAudioType = (msgType === 'audio' || msgType === 'voice' || combinedMessageText.includes('[🎙️ تسجيل صوتي]'));
+        const isStickerType = (msgType === 'sticker' || combinedMessageText.includes('[ملصق 🎨]'));
+        const isImageType = (msgType === 'image' || combinedMessageText.includes('[📷 صورة مرفقة]') || (!isAudioType && !isStickerType && Boolean(jobMediaId)));
+
+        const finalImageUrl = (mediaUrl && mediaUrl.startsWith('data:image'))
+          ? mediaUrl
+          : (isImageType ? (mediaUrl || (jobMediaId ? `/api/media/${jobMediaId}` : undefined)) : undefined);
+
+        const finalAudioUrl = (mediaUrl && (mediaUrl.startsWith('data:audio') || mediaUrl.startsWith('data:video/webm')))
+          ? mediaUrl
+          : (isAudioType ? (mediaUrl || (jobMediaId ? `/api/media/${jobMediaId}` : undefined)) : undefined);
+
+        const finalStickerUrl = isStickerType ? (mediaUrl || (jobMediaId ? `/api/media/${jobMediaId}` : undefined)) : undefined;
 
         userMessageEntries.push({
           role: 'user',
           content: combinedMessageText,
           media_id: jobMediaId || undefined,
-          image_url: (isImageType && mediaUrl) ? mediaUrl : (mediaUrl && !isAudioType && !isStickerType ? mediaUrl : (isImageType && jobMediaId ? `/api/media/${jobMediaId}` : undefined)),
-          audio_url: (isAudioType && mediaUrl) ? mediaUrl : (isAudioType && jobMediaId ? `/api/media/${jobMediaId}` : undefined),
-          sticker_url: (isStickerType && mediaUrl) ? mediaUrl : (isStickerType && jobMediaId ? `/api/media/${jobMediaId}` : undefined),
+          image_url: finalImageUrl,
+          audio_url: finalAudioUrl,
+          sticker_url: finalStickerUrl,
           timestamp: job.data.timestamp || new Date().toISOString()
         });
       }

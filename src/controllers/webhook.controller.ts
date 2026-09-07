@@ -219,6 +219,7 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
             customerPhone,
             messageText: messageText.trim(),
             mediaId,
+            messageType: message.type,
             timestamp: new Date().toISOString(),
           },
           {
@@ -368,9 +369,19 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
     } catch (e) {}
 
     const msgType = rawMessage?.type || '';
-    const isAudioType = (msgType === 'audio' || msgType === 'voice');
-    const isStickerType = (msgType === 'sticker');
-    const isImageType = (msgType === 'image' || (!isAudioType && !isStickerType && mediaUrl && mediaUrl.startsWith('data:image')));
+    const isAudioType = (msgType === 'audio' || msgType === 'voice' || messageText.includes('[🎙️ تسجيل صوتي]'));
+    const isStickerType = (msgType === 'sticker' || messageText.includes('[ملصق 🎨]'));
+    const isImageType = (msgType === 'image' || messageText.includes('[📷 صورة مرفقة]') || (!isAudioType && !isStickerType && Boolean(mediaId)));
+
+    const finalImageUrl = (mediaUrl && mediaUrl.startsWith('data:image'))
+      ? mediaUrl
+      : (isImageType ? (mediaUrl || (mediaId ? `/api/media/${mediaId}` : undefined)) : undefined);
+
+    const finalAudioUrl = (mediaUrl && (mediaUrl.startsWith('data:audio') || mediaUrl.startsWith('data:video/webm')))
+      ? mediaUrl
+      : (isAudioType ? (mediaUrl || (mediaId ? `/api/media/${mediaId}` : undefined)) : undefined);
+
+    const finalStickerUrl = isStickerType ? (mediaUrl || (mediaId ? `/api/media/${mediaId}` : undefined)) : undefined;
 
     currentMsgs.push({
       role: 'user',
@@ -379,9 +390,9 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
       wamid: rawMessage?.id || undefined,
       id: rawMessage?.id || undefined,
       reply_to_id: rawMessage?.context?.id || undefined,
-      image_url: (isImageType && mediaUrl) ? mediaUrl : (mediaUrl && !isAudioType && !isStickerType ? mediaUrl : (isImageType && mediaId ? `/api/media/${mediaId}` : undefined)),
-      audio_url: (isAudioType && mediaUrl) ? mediaUrl : (isAudioType && mediaId ? `/api/media/${mediaId}` : undefined),
-      sticker_url: (isStickerType && mediaUrl) ? mediaUrl : (isStickerType && mediaId ? `/api/media/${mediaId}` : undefined),
+      image_url: finalImageUrl,
+      audio_url: finalAudioUrl,
+      sticker_url: finalStickerUrl,
       timestamp: new Date().toISOString()
     });
     const isWasClosed = (conversation.status === 'CLOSED');

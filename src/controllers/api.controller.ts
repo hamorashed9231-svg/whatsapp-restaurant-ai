@@ -479,7 +479,21 @@ export const getConversationMessages = async (req: Request, res: Response): Prom
 
       if (jsonMsgs && jsonMsgs.length > 0) {
         // messages_json يحتوي على السجل الموحد الكامل للوسائط والرسائل بالترتيب الزمني الصحيح
-        msgs = jsonMsgs;
+        msgs = jsonMsgs.map((m: any) => {
+          const mId = m.media_id || m.mediaId;
+          const contentStr = m.content || '';
+          const isImg = m.role === 'user' && (contentStr.includes('[📷 صورة مرفقة]') || Boolean(mId && !contentStr.includes('[🎙️ تسجيل صوتي]') && !contentStr.includes('[ملصق 🎨]')));
+          const isAudio = m.role === 'user' && contentStr.includes('[🎙️ تسجيل صوتي]');
+
+          const imageUrl = m.image_url || (isImg && mId ? `/api/media/${mId}` : undefined);
+          const audioUrl = m.audio_url || (isAudio && mId ? `/api/media/${mId}` : undefined);
+
+          return {
+            ...m,
+            image_url: imageUrl,
+            audio_url: audioUrl
+          };
+        });
 
         // في حال وجود رسائل فائضة جديدة في جدول Message لم تلحق بـ messages_json
         if (dbMsgs.length > jsonMsgs.length) {
