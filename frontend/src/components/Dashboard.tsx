@@ -1559,10 +1559,28 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
     }
   };
 
-  // جلب رسائل محادثة معينة
+  // جلب رسائل محادثة معينة وإسنادها للموظف فوراً
   const handleSelectConversation = async (conversation: Conversation) => {
     selectedConversationIdRef.current = conversation.id;
-    setSelectedConversation(conversation);
+
+    // ✅ إسناد تفاؤلي فوري بـ 0 ملي ثانية للموظف الحالي عند فتح أي شات معلّق
+    const currentAssigned = conversation.assigned_to || currentUsername;
+    const assignedConv = {
+      ...conversation,
+      status: conversation.status === 'UNANSWERED' ? 'IN_PROGRESS' : conversation.status,
+      assigned_to: currentAssigned,
+      updated_at: new Date().toISOString()
+    };
+
+    setSelectedConversation(assignedConv);
+    setConversations(prev => prev.map(c => c.id === conversation.id ? assignedConv : c));
+
+    if (conversation.status === 'UNANSWERED' || !conversation.assigned_to) {
+      api.put(`/conversations/${conversation.id}/status`, {
+        status: 'IN_PROGRESS',
+        assigned_to: currentUsername
+      }).catch(() => {});
+    }
 
     // ✅ عرض الرسائل الموجودة فوراً من الـ conversation object (بدون انتظار) بعد تصفية التكرارات
     const rawMsgs: ChatMessage[] = Array.isArray((conversation as any).messages_json)
@@ -1648,6 +1666,17 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
 
     setChatMessages(prev => [...prev, ...newMsgs]);
 
+    // ✅ تحديث تفاؤلي فوري بـ 0 ملي ثانية لإسناد المحادثة للموظف وحالتها لقيد الرد
+    const updatedData = {
+      status: 'IN_PROGRESS',
+      assigned_to: selectedConversation.assigned_to || currentUsername,
+      updated_at: new Date().toISOString(),
+      isWindowOpen: true
+    };
+    setConversations(prev => prev.map(c => c.id === selectedConversation.id ? { ...c, ...updatedData } : c));
+    setSelectedConversation(prev => prev ? { ...prev, ...updatedData } : null);
+    setSelectedConvWindowOpen(true);
+
     try {
       if (imagesToSend.length > 0) {
         for (let i = 0; i < imagesToSend.length; i++) {
@@ -1664,16 +1693,6 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
           reply_to_id: replyTargetId
         });
       }
-
-      const updatedData = {
-        status: 'IN_PROGRESS',
-        assigned_to: selectedConversation.assigned_to || currentUsername,
-        updated_at: new Date().toISOString(),
-        isWindowOpen: true
-      };
-      setConversations(prev => prev.map(c => c.id === selectedConversation.id ? { ...c, ...updatedData } : c));
-      setSelectedConversation(prev => prev ? { ...prev, ...updatedData } : null);
-      setSelectedConvWindowOpen(true);
     } catch (err: any) {
       console.error('خطأ إرسال رد يدوي:', err);
       if (err.response?.status === 400 && (err.response?.data?.error === 'SESSION_WINDOW_EXPIRED' || err.response?.data?.message?.includes('24'))) {
