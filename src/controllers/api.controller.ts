@@ -300,8 +300,17 @@ export const deleteMenuItem = async (req: Request, res: Response): Promise<void>
 export const getOrders = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params; // restaurant_id
   try {
+    const rest = await getOrCreateDefaultRestaurant(id);
+    const targetRestId = rest ? rest.id : id;
+
     const orders = await prisma.order.findMany({
-      where: { restaurant_id: id },
+      where: {
+        OR: [
+          { restaurant_id: targetRestId },
+          { restaurant_id: id },
+          ...(id === 'default' ? [{ restaurant_id: 'restaurant-am-eissa' }] : [])
+        ]
+      },
       orderBy: { created_at: 'desc' }
     });
     res.status(200).json(orders);
@@ -339,8 +348,17 @@ export const updateOrderStatus = async (req: Request, res: Response): Promise<vo
 export const getReservations = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params; // restaurant_id
   try {
+    const rest = await getOrCreateDefaultRestaurant(id);
+    const targetRestId = rest ? rest.id : id;
+
     const reservations = await prisma.reservation.findMany({
-      where: { restaurant_id: id },
+      where: {
+        OR: [
+          { restaurant_id: targetRestId },
+          { restaurant_id: id },
+          ...(id === 'default' ? [{ restaurant_id: 'restaurant-am-eissa' }] : [])
+        ]
+      },
       orderBy: { date_time: 'desc' }
     });
     res.status(200).json(reservations);
@@ -425,8 +443,17 @@ export let memoryConversations: any[] = [
 export const getConversations = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params; // restaurant_id
   try {
+    const rest = await getOrCreateDefaultRestaurant(id);
+    const targetRestId = rest ? rest.id : id;
+
     const conversations = await prisma.conversation.findMany({
-      where: { restaurant_id: id },
+      where: {
+        OR: [
+          { restaurant_id: targetRestId },
+          { restaurant_id: id },
+          ...(id === 'default' ? [{ restaurant_id: 'restaurant-am-eissa' }] : [])
+        ]
+      },
       orderBy: { updated_at: 'desc' }
     });
 

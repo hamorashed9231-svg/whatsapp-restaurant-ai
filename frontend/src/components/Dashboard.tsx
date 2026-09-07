@@ -1183,19 +1183,20 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
         setLoading(true);
         setError(null);
         
-        // جلب بيانات المطعم والمحادثات بالتوازي للتحميل الفوري
-        const [resRest, resConvers] = await Promise.all([
-          api.get(`/restaurants/${restaurantId}`).catch((e) => {
-            console.error('فشل جلب بيانات المطعم:', e);
-            return { data: { id: restaurantId, name: 'مطعم عم عيسى' } };
-          }),
-          api.get(`/restaurants/${restaurantId}/conversations`).catch((e) => {
-            console.error('فشل جلب المحادثات:', e);
-            return { data: [] };
-          })
-        ]);
+        // جلب بيانات المطعم أولاً للحصول على الـ ID الفعلي ثم جلب المحادثات
+        const resRest = await api.get(`/restaurants/${restaurantId}`).catch((e) => {
+          console.error('فشل جلب بيانات المطعم:', e);
+          return { data: { id: restaurantId, name: 'مطعم عم عيسى' } };
+        });
 
         const restData = resRest.data || { id: restaurantId, name: 'مطعم عم عيسى' };
+        const actualRestId = restData.id || restaurantId;
+
+        const resConvers = await api.get(`/restaurants/${actualRestId}/conversations`).catch((e) => {
+          console.error('فشل جلب المحادثات:', e);
+          return { data: [] };
+        });
+
         if (token) {
           try {
             const base64Url = token.split('.')[1];
@@ -1222,7 +1223,6 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
         setLoading(false);
 
         // جلب بقية البيانات الثانوية في الخلفية دون تعطيل الواجهة
-        const actualRestId = restData.id || restaurantId;
         Promise.all([
           api.get(`/restaurants/${actualRestId}/menu`).catch(() => ({ data: [] })),
           api.get(`/restaurants/${actualRestId}/orders`).catch(() => ({ data: [] })),
