@@ -1152,7 +1152,17 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
     }
   };
 
-  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+  const getApiUrl = () => {
+    if (import.meta.env.VITE_API_URL && import.meta.env.VITE_API_URL !== 'http://localhost:3000/api') {
+      return import.meta.env.VITE_API_URL;
+    }
+    if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      return `${window.location.origin}/api`;
+    }
+    return 'http://localhost:3000/api';
+  };
+
+  const apiUrl = getApiUrl();
 
   // إنشاء أكسيوس مخصص مع رأس التفويض ومعالجة 401 تلقائياً
   const api = axios.create({
@@ -1273,7 +1283,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
     }
 
     try {
-      const authUrl = `${axios.defaults.baseURL || ''}/api/pusher/auth`;
+      const authUrl = `${apiUrl}/pusher/auth`;
       const pusher = new Pusher(pusherKey, {
         cluster: pusherCluster,
         channelAuthorization: {

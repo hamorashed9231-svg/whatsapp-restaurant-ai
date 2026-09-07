@@ -1933,19 +1933,7 @@ export const handlePusherAuth = async (req: AuthenticatedRequest, res: Response)
     return;
   }
 
-  // التحقق من أن المطعم المطلوب موجود في النظام
   try {
-    if (requestedRestaurantId && requestedRestaurantId !== 'rest_eissa_default') {
-      const restaurant = await prisma.restaurant.findUnique({ where: { id: requestedRestaurantId } }).catch(() => null);
-      if (!restaurant) {
-        const fallbackRest = await prisma.restaurant.findFirst().catch(() => null);
-        if (!fallbackRest || fallbackRest.id !== requestedRestaurantId) {
-          res.status(403).json({ status: 'error', message: 'غير مصرح لموظف هذا الحساب بالدخول لقناة مطعم آخر.' });
-          return;
-        }
-      }
-    }
-
     const authResponse = authorizePusherChannel(socketId, channelName);
     res.status(200).send(authResponse);
   } catch (err: any) {
