@@ -1056,9 +1056,15 @@ export const sendManualMessage = async (req: AuthenticatedRequest, res: Response
           }
 
           const sentWamid = sendResult?.messages?.[0]?.id;
-          if (sentWamid && conv && conv.id) {
-            (newMsg as any).wamid = sentWamid;
-            (newMsg as any).id = sentWamid;
+          const sentMediaId = sendResult?.mediaId;
+          if (conv && conv.id) {
+            if (sentWamid) {
+              (newMsg as any).wamid = sentWamid;
+              (newMsg as any).id = sentWamid;
+            }
+            if (sentMediaId) {
+              (newMsg as any).media_id = sentMediaId;
+            }
             await prisma.conversation.update({
               where: { id: conv.id },
               data: { messages_json: msgs }
@@ -1604,6 +1610,38 @@ export const reactToMessageEndpoint = async (req: AuthenticatedRequest, res: Res
     res.status(500).json({ status: 'error', message: error.message });
   }
 };
+
+/**
+ * 41. البروكسي المباشر لعرض وسائط واتساب (Media Proxy for Images & Audio)
+ */
+export const getMediaProxy = async (req: Request, res: Response): Promise<void> => {
+  const mediaId = req.params.mediaId || (req.query.mediaId as string);
+  if (!mediaId) {
+    res.status(400).send('معرّف الوسائط مطلوب.');
+    return;
+  }
+
+  try {
+    const restaurant = await prisma.restaurant.findFirst({
+      where: { subscription_status: 'ACTIVE' }
+    }) || await prisma.restaurant.findFirst();
+    const token = restaurant?.whatsapp_access_token || process.env.WHATSAPP_TOKEN;
+
+    const mediaObj = await whatsappService.getMediaBinary(mediaId, token);
+    if (!mediaObj || !mediaObj.buffer) {
+      res.status(404).send('تعذّر العثور على محتوى الوسائط.');
+      return;
+    }
+
+    res.setHeader('Content-Type', mediaObj.mimeType || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.send(mediaObj.buffer);
+  } catch (err: any) {
+    console.error('[GetMediaProxy Error]:', err.message);
+    res.status(500).send('خطأ في استرجاع الوسائط.');
+  }
+};
+
 
 
 

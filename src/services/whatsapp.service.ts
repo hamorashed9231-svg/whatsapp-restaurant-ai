@@ -185,7 +185,7 @@ class WhatsAppService {
       );
 
       console.log(`[WhatsApp] تم إرسال الصورة للرقم ${to}`);
-      return response.data;
+      return { ...response.data, mediaId: imagePayload.id };
     } catch (error: any) {
       console.error('[WhatsApp Error] فشل إرسال الصورة:', error.response?.data || error.message);
       const metaErrMsg = error.response?.data?.error?.message || error.message;
@@ -553,10 +553,17 @@ class WhatsAppService {
   }
 
   /**
-   * جلب وتحويل رابط/بيانات الوسائط الواردة من واتساب Meta Media API
+   * جلب الوسائط الثنائية (Binary Buffer) وتأكيد التوكيل والمرونة
    */
-  public async getMediaUrl(mediaId: string, customToken?: string): Promise<string | null> {
-    const token = customToken || this.token || process.env.WHATSAPP_TOKEN;
+  public async getMediaBinary(mediaId: string, customToken?: string): Promise<{ buffer: Buffer; mimeType: string } | null> {
+    let token = customToken || this.token || process.env.WHATSAPP_TOKEN;
+    if (!token || token.includes('ضع_توكين') || token === 'mock-token' || token.startsWith('EAAG...')) {
+      try {
+        const { prisma } = await import('./prisma.service');
+        const rest = await prisma.restaurant.findFirst({ where: { subscription_status: 'ACTIVE' } }) || await prisma.restaurant.findFirst();
+        if (rest?.whatsapp_access_token) token = rest.whatsapp_access_token;
+      } catch (e) {}
+    }
     if (!token || token.includes('ضع_توكين') || token === 'mock-token') {
       return null;
     }
@@ -572,7 +579,7 @@ class WhatsAppService {
       const mediaDirectUrl = metaRes.data?.url;
       if (!mediaDirectUrl) return null;
 
-      // 2. تحميل محتوى الصورة/الوسائط بـ Manual Redirect Handling للتحكم بـ Auth Header ومنع 401 Unauthorized عند التوجيه لـ lookaside.fbsbx.com
+      // 2. تحميل محتوى الصورة/الوسائط بـ Manual Redirect Handling
       let currentUrl = mediaDirectUrl;
       let binaryRes: any = null;
 
@@ -604,13 +611,23 @@ class WhatsAppService {
       }
 
       const mimeType = metaRes.data?.mime_type || 'image/jpeg';
-      const base64Data = Buffer.from(binaryRes.data).toString('base64');
-      return `data:${mimeType};base64,${base64Data}`;
+      const buffer = Buffer.from(binaryRes.data);
+      return { buffer, mimeType };
     } catch (err: any) {
       console.error('[WhatsApp Media Fetch Error]:', err.response?.data || err.message);
       return null;
     }
   }
+
+  /**
+   * جلب وتحويل رابط/بيانات الوسائط الواردة من واتساب Meta Media API إلى Data URL
+   */
+  public async getMediaUrl(mediaId: string, customToken?: string): Promise<string | null> {
+    const binaryObj = await this.getMediaBinary(mediaId, customToken);
+    if (!binaryObj) return null;
+    return `data:${binaryObj.mimeType};base64,${binaryObj.buffer.toString('base64')}`;
+  }
 }
 
 export const whatsappService = new WhatsAppService();
+

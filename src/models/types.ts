@@ -8,6 +8,7 @@ export interface ChatMessage {
   content: string;
   sender_name?: string;
   image_url?: string;
+  media_id?: string;
   audio_url?: string;
   sticker_url?: string;
   reply_to_id?: string;

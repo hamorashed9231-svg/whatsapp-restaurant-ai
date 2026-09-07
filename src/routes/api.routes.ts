@@ -37,7 +37,8 @@ import {
   getCategories,
   updateCategories,
   getQuickReplies,
-  updateQuickReplies
+  updateQuickReplies,
+  getMediaProxy
 } from '../controllers/api.controller';
 import { upload } from '../middlewares/upload.middleware';
 
@@ -50,6 +51,10 @@ router.post('/auth/login', login);
 
 // محاكاة الشات التجريبية لصفحة الهبوط (محدودة بـ 5 رسائل)
 router.post('/demo/chat', handleDemoChat);
+
+// بروكسي الوسائط المباشرة (الصور والتسجيلات الصوتية)
+router.get('/media/:mediaId', getMediaProxy);
+router.get('/conversations/media/:mediaId', getMediaProxy);
 
 
 // ================= مسارات محمية بـ JWT (Protected Routes) =================

@@ -375,12 +375,13 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
     currentMsgs.push({
       role: 'user',
       content: messageText,
+      media_id: mediaId || undefined,
       wamid: rawMessage?.id || undefined,
       id: rawMessage?.id || undefined,
       reply_to_id: rawMessage?.context?.id || undefined,
-      image_url: (isImageType && mediaUrl) ? mediaUrl : (mediaUrl && !isAudioType && !isStickerType ? mediaUrl : undefined),
-      audio_url: (isAudioType && mediaUrl) ? mediaUrl : undefined,
-      sticker_url: (isStickerType && mediaUrl) ? mediaUrl : undefined,
+      image_url: (isImageType && mediaUrl) ? mediaUrl : (mediaUrl && !isAudioType && !isStickerType ? mediaUrl : (isImageType && mediaId ? `/api/media/${mediaId}` : undefined)),
+      audio_url: (isAudioType && mediaUrl) ? mediaUrl : (isAudioType && mediaId ? `/api/media/${mediaId}` : undefined),
+      sticker_url: (isStickerType && mediaUrl) ? mediaUrl : (isStickerType && mediaId ? `/api/media/${mediaId}` : undefined),
       timestamp: new Date().toISOString()
     });
     const isWasClosed = (conversation.status === 'CLOSED');

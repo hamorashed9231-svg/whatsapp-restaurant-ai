@@ -3820,7 +3820,12 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                     })()}
 
                                       {(() => {
-                                        const displayImgUrl = msg.image_url || (msg as any).imageUrl || (msgContent && (msgContent.startsWith('data:image') || msgContent.startsWith('http://') || msgContent.startsWith('https://')) ? msgContent : undefined);
+                                        const mediaId = (msg as any).media_id || (msg as any).mediaId;
+                                        const displayImgUrl = msg.image_url || (msg as any).imageUrl || (mediaId ? `/api/media/${mediaId}` : undefined) || (msgContent && (msgContent.startsWith('data:image') || msgContent.startsWith('http://') || msgContent.startsWith('https://') || msgContent.startsWith('/api/media/')) ? msgContent : undefined);
+                                        const captionText = msgContent && msgContent.includes('[📷 صورة مرفقة]')
+                                          ? (msgContent.includes(': ') ? msgContent.split(': ').slice(1).join(': ') : '')
+                                          : (!msgContent?.startsWith('data:image') && !msgContent?.startsWith('http') && !msgContent?.startsWith('/api/media/') ? msgContent : '');
+
                                         if (displayImgUrl) {
                                           return (
                                             <div style={{ marginBottom: '6px', position: 'relative', overflow: 'hidden', borderRadius: '10px' }}>
@@ -3828,6 +3833,11 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                                 src={displayImgUrl}
                                                 alt="صورة مرفقة"
                                                 onClick={() => setPreviewImageUrl(displayImgUrl)}
+                                                onError={(e) => {
+                                                  if (mediaId && !(e.currentTarget.src.includes('/api/media/'))) {
+                                                    e.currentTarget.src = `/api/media/${mediaId}`;
+                                                  }
+                                                }}
                                                 style={{
                                                   maxWidth: '260px',
                                                   maxHeight: '200px',
@@ -3840,10 +3850,14 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                                 }}
                                                 title="انقر لتكبير الصورة وتحميلها على جهازك 🔍"
                                               />
+                                              {captionText && captionText.trim() && (
+                                                <p style={{ fontSize: '0.85rem', color: darkMode ? '#F8FAFC' : '#0F172A', marginTop: '6px', marginBottom: 0, whiteSpace: 'pre-wrap' }}>
+                                                  {captionText}
+                                                </p>
+                                              )}
                                             </div>
                                           );
                                         } else if (msgContent && msgContent.includes('[📷 صورة مرفقة]')) {
-                                          const captionText = msgContent.includes(': ') ? msgContent.split(': ').slice(1).join(': ') : '';
                                           return (
                                             <div style={{
                                               display: 'flex',
@@ -3871,9 +3885,9 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                         return null;
                                       })()}
 
-                                     {msg.audio_url && (
+                                     {(msg.audio_url || (msg as any).media_id) && (msg.audio_url || msgContent?.includes('[🎙️ تسجيل صوتي]')) && (
                                        <div style={{ marginBottom: '6px', marginTop: '4px' }}>
-                                         <audio controls src={msg.audio_url} style={{ maxWidth: '240px', width: '100%', borderRadius: '20px' }} />
+                                         <audio controls src={msg.audio_url || `/api/media/${(msg as any).media_id}`} style={{ maxWidth: '240px', width: '100%', borderRadius: '20px' }} />
                                        </div>
                                      )}
 

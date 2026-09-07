@@ -146,17 +146,19 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
             userMessageEntries.push({
               role: 'user',
               content: pMsg.messageText.trim(),
-              image_url: (isImageType && mediaUrl) ? mediaUrl : (mediaUrl && !isAudioType && !isStickerType ? mediaUrl : undefined),
-              audio_url: (isAudioType && mediaUrl) ? mediaUrl : undefined,
-              sticker_url: (isStickerType && mediaUrl) ? mediaUrl : undefined,
+              media_id: pMsg.mediaId || undefined,
+              image_url: (isImageType && mediaUrl) ? mediaUrl : (mediaUrl && !isAudioType && !isStickerType ? mediaUrl : (isImageType && pMsg.mediaId ? `/api/media/${pMsg.mediaId}` : undefined)),
+              audio_url: (isAudioType && mediaUrl) ? mediaUrl : (isAudioType && pMsg.mediaId ? `/api/media/${pMsg.mediaId}` : undefined),
+              sticker_url: (isStickerType && mediaUrl) ? mediaUrl : (isStickerType && pMsg.mediaId ? `/api/media/${pMsg.mediaId}` : undefined),
               timestamp: pMsg.timestamp || new Date().toISOString()
             });
           }
         }
       } else if (combinedMessageText) {
         let mediaUrl: string | undefined = undefined;
-        if (job.data.mediaId && mediaToken) {
-          const fetched = await whatsappService.getMediaUrl(job.data.mediaId, mediaToken).catch(() => null);
+        const jobMediaId = job.data.mediaId || '';
+        if (jobMediaId && mediaToken) {
+          const fetched = await whatsappService.getMediaUrl(jobMediaId, mediaToken).catch(() => null);
           if (fetched) mediaUrl = fetched;
         }
         const msgType = job.data.messageType || '';
@@ -167,9 +169,10 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
         userMessageEntries.push({
           role: 'user',
           content: combinedMessageText,
-          image_url: (isImageType && mediaUrl) ? mediaUrl : (mediaUrl && !isAudioType && !isStickerType ? mediaUrl : undefined),
-          audio_url: (isAudioType && mediaUrl) ? mediaUrl : undefined,
-          sticker_url: (isStickerType && mediaUrl) ? mediaUrl : undefined,
+          media_id: jobMediaId || undefined,
+          image_url: (isImageType && mediaUrl) ? mediaUrl : (mediaUrl && !isAudioType && !isStickerType ? mediaUrl : (isImageType && jobMediaId ? `/api/media/${jobMediaId}` : undefined)),
+          audio_url: (isAudioType && mediaUrl) ? mediaUrl : (isAudioType && jobMediaId ? `/api/media/${jobMediaId}` : undefined),
+          sticker_url: (isStickerType && mediaUrl) ? mediaUrl : (isStickerType && jobMediaId ? `/api/media/${jobMediaId}` : undefined),
           timestamp: job.data.timestamp || new Date().toISOString()
         });
       }
