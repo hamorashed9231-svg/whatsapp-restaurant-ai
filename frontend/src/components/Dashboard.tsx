@@ -3619,8 +3619,9 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                              </div>
                            );
                         })}
-                    </div>
-                  )}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* واجهة الرسائل (يمين) مع حماية ErrorBoundary */}
