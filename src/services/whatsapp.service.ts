@@ -45,7 +45,7 @@ class WhatsAppService {
     customToken?: string
   ): Promise<any> {
     const token = customToken || this.token;
-    if (!token || token.includes('ضع_توكين') || token === 'mock-token' || token.startsWith('EAAG...')) {
+    if (!token || token.includes('ضع_توكين') || token === 'mock-token') {
       console.log('-----------------------------------------------------------');
       console.log(`💬 [WhatsApp Mock Sent] إلى: ${to}`);
       console.log(`📝 [الرسالة]:\n${text}`);
@@ -156,7 +156,7 @@ class WhatsAppService {
     customToken?: string
   ): Promise<any> {
     const token = customToken || this.token;
-    if (!token || token.includes('ضع_توكين') || token === 'mock-token' || token === 'EAAG...') {
+    if (!token || token.includes('ضع_توكين') || token === 'mock-token') {
       console.log(`[WhatsApp Mock Image] إلى ${to}: صورة [${imageUrl.slice(0, 40)}...] - الشرح: ${caption}`);
       return { mock: true, success: true };
     }
@@ -204,7 +204,7 @@ class WhatsAppService {
     customToken?: string
   ): Promise<any> {
     const token = customToken || this.token;
-    if (!token || token.includes('ضع_توكين') || token === 'mock-token' || token.startsWith('EAAG...')) {
+    if (!token || token.includes('ضع_توكين') || token === 'mock-token') {
       console.log(`[WhatsApp Mock Audio] إلى ${to}: تسجيل صوتي [${audioUrlOrDataUrl.slice(0, 40)}...]`);
       return { mock: true, success: true };
     }
@@ -256,7 +256,7 @@ class WhatsAppService {
     customToken?: string
   ): Promise<any> {
     const token = customToken || this.token;
-    if (!token || token.includes('ضع_توكين') || token === 'mock-token' || token.startsWith('EAAG...')) {
+    if (!token || token.includes('ضع_توكين') || token === 'mock-token') {
       console.log(`[WhatsApp Mock Sticker] إلى ${to}: ملصق [${stickerUrlOrDataUrl.slice(0, 40)}...]`);
       return { mock: true, success: true };
     }
@@ -423,7 +423,7 @@ class WhatsAppService {
     customToken?: string
   ): Promise<any> {
     const token = customToken || this.token;
-    if (!token || token.includes('ضع_توكين') || token === 'mock-token' || token.startsWith('EAAG...')) {
+    if (!token || token.includes('ضع_توكين') || token === 'mock-token') {
       console.log('-----------------------------------------------------------');
       console.log(`📋 [WhatsApp Mock Template] إلى: ${to}`);
       console.log(`🏷️ [اسم القالب]: ${templateName} | اللغة: ${languageCode}`);
@@ -557,7 +557,7 @@ class WhatsAppService {
    */
   public async getMediaBinary(mediaId: string, customToken?: string): Promise<{ buffer: Buffer; mimeType: string } | null> {
     let token = customToken || this.token || process.env.WHATSAPP_TOKEN;
-    if (!token || token.includes('ضع_توكين') || token === 'mock-token' || token.startsWith('EAAG...')) {
+    if (!token || token.includes('ضع_توكين') || token === 'mock-token') {
       try {
         const { prisma } = await import('./prisma.service');
         const rest = await prisma.restaurant.findFirst({ where: { subscription_status: 'ACTIVE' } }) || await prisma.restaurant.findFirst();
