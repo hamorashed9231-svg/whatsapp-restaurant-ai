@@ -1373,23 +1373,32 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
     }
   };
 
-  // تحديث حالة المحادثة (UNANSWERED / IN_PROGRESS / CLOSED) والاحتفاظ بتحديد اسم الموظف
+  // تحديث حالة المحادثة (UNANSWERED / IN_PROGRESS / CLOSED) والاحتفاظ بتحديد اسم الموظف بالتحديث الفوري
   const handleUpdateStatus = async (conversationId: string, newStatus: 'UNANSWERED' | 'IN_PROGRESS' | 'CLOSED') => {
+    // 1. تحديث تفاؤلي فوري في الواجهة بدقة 0 ملي ثانية
+    const optimisticData = {
+      status: newStatus,
+      assigned_to: newStatus === 'UNANSWERED' ? null : (newStatus === 'IN_PROGRESS' ? currentUsername : selectedConversation?.assigned_to || currentUsername),
+      closed_by: newStatus === 'CLOSED' ? currentUsername : null,
+      updated_at: new Date().toISOString()
+    };
+    setConversations(prev => prev.map(c => c.id === conversationId ? { ...c, ...optimisticData } : c));
+    if (selectedConversation?.id === conversationId) {
+      setSelectedConversation(prev => prev ? { ...prev, ...optimisticData } : null);
+    }
+
     try {
       const res = await api.put(`/conversations/${conversationId}/status`, {
         status: newStatus,
         assigned_to: newStatus === 'IN_PROGRESS' ? currentUsername : undefined,
         closed_by: newStatus === 'CLOSED' ? currentUsername : undefined
       });
-      const updatedConv = res.data.conversation || {
-        ...selectedConversation,
-        status: newStatus,
-        assigned_to: newStatus === 'UNANSWERED' ? null : (newStatus === 'IN_PROGRESS' ? currentUsername : selectedConversation?.assigned_to || currentUsername),
-        closed_by: newStatus === 'CLOSED' ? currentUsername : null
-      };
-      setConversations(prev => prev.map(c => c.id === conversationId ? { ...c, ...updatedConv } : c));
-      if (selectedConversation?.id === conversationId) {
-        setSelectedConversation(prev => prev ? { ...prev, ...updatedConv } : null);
+      const updatedConv = res.data.conversation;
+      if (updatedConv) {
+        setConversations(prev => prev.map(c => c.id === conversationId ? { ...c, ...updatedConv } : c));
+        if (selectedConversation?.id === conversationId) {
+          setSelectedConversation(prev => prev ? { ...prev, ...updatedConv } : null);
+        }
       }
     } catch (err: any) {
       console.error('Error updating status:', err);

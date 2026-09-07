@@ -892,25 +892,27 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
 export const updateConversationCategory = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params; // conversation_id
   const { category } = req.body;
-  try {
-    try {
-      const updated = await prisma.conversation.update({
-        where: { id },
-        data: { category }
-      });
-      res.status(200).json({ status: 'success', message: 'تم تحديث تصنيف المحادثة بنجاح!', conversation: updated });
-      return;
-    } catch (e) {}
 
-    const memConv = memoryConversations.find(c => c.id === id);
-    if (memConv) {
-      memConv.category = category;
-      res.status(200).json({ status: 'success', message: 'تم تحديث تصنيف المحادثة بنجاح!', conversation: memConv });
+  // 1. تحديث الذاكرة الحية فوراً (دائماً)
+  const memIdx = memoryConversations.findIndex(c => c.id === id);
+  if (memIdx !== -1) {
+    memoryConversations[memIdx].category = category;
+    memoryConversations[memIdx].updated_at = new Date().toISOString();
+  }
+
+  // 2. تحديث قاعدة البيانات
+  try {
+    const updated = await prisma.conversation.update({
+      where: { id },
+      data: { category, updated_at: new Date() }
+    });
+    res.status(200).json({ status: 'success', message: 'تم تحديث تصنيف المحادثة بنجاح!', conversation: updated });
+  } catch (error: any) {
+    console.error('[Update Category Error]:', error.message);
+    if (memIdx !== -1) {
+      res.status(200).json({ status: 'success', message: 'تم تحديث تصنيف المحادثة في الذاكرة!', conversation: memoryConversations[memIdx] });
       return;
     }
-
-    res.status(200).json({ status: 'success', message: 'تم تحديث التصنيف!' });
-  } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message });
   }
 };
@@ -934,7 +936,7 @@ export const archiveConversation = async (req: Request, res: Response): Promise<
   try {
     const updated = await prisma.conversation.update({
       where: { id },
-      data: { is_archived: targetArchived }
+      data: { is_archived: targetArchived, updated_at: new Date() }
     });
     res.status(200).json({ status: 'success', message: 'تم تحديث أرشفة المحادثة بنجاح!', conversation: updated });
   } catch (error: any) {
@@ -987,32 +989,33 @@ export const updateConversationStatus = async (req: AuthenticatedRequest, res: R
     finalClosedBy = null;
   }
 
-  try {
-    try {
-      const updated = await prisma.conversation.update({
-        where: { id },
-        data: {
-          status,
-          assigned_to: finalAssignedTo,
-          closed_by: finalClosedBy
-        }
-      });
-      res.status(200).json({ status: 'success', message: 'تم تحديث حالة المحادثة بنجاح!', conversation: updated });
-      return;
-    } catch (e) {}
+  // 1. تحديث الذاكرة الحية فوراً (دائماً)
+  const memIdx = memoryConversations.findIndex(c => c.id === id);
+  if (memIdx !== -1) {
+    memoryConversations[memIdx].status = status;
+    memoryConversations[memIdx].assigned_to = finalAssignedTo;
+    memoryConversations[memIdx].closed_by = finalClosedBy;
+    memoryConversations[memIdx].updated_at = new Date().toISOString();
+  }
 
-    const memConv = memoryConversations.find(c => c.id === id);
-    if (memConv) {
-      memConv.status = status;
-      memConv.assigned_to = status === 'UNANSWERED' ? null : (finalAssignedTo || memConv.assigned_to || currentUsername);
-      memConv.closed_by = status === 'CLOSED' ? (finalClosedBy || currentUsername) : null;
-      memConv.updated_at = new Date().toISOString();
-      res.status(200).json({ status: 'success', message: 'تم تحديث حالة المحادثة بنجاح!', conversation: memConv });
+  // 2. تحديث قاعدة البيانات
+  try {
+    const updated = await prisma.conversation.update({
+      where: { id },
+      data: {
+        status,
+        assigned_to: finalAssignedTo,
+        closed_by: finalClosedBy,
+        updated_at: new Date()
+      }
+    });
+    res.status(200).json({ status: 'success', message: 'تم تحديث حالة المحادثة بنجاح!', conversation: updated });
+  } catch (error: any) {
+    console.error('[Update Status Error]:', error.message);
+    if (memIdx !== -1) {
+      res.status(200).json({ status: 'success', message: 'تم التحديث في الذاكرة!', conversation: memoryConversations[memIdx] });
       return;
     }
-
-    res.status(200).json({ status: 'success', message: 'تم التحديث بنجاح!' });
-  } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message });
   }
 };
