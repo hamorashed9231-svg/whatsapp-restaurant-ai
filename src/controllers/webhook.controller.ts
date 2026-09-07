@@ -381,7 +381,9 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
       } catch (e) {}
     }
     const isWasClosed = (conversation.status === 'CLOSED');
-    const newStatus = isWasClosed ? 'UNANSWERED' : (conversation.status || 'UNANSWERED');
+    const isWasArchived = Boolean(conversation.is_archived);
+    const shouldReopen = isWasClosed || isWasArchived;
+    const newStatus = shouldReopen ? 'UNANSWERED' : (conversation.status || 'UNANSWERED');
 
     try {
       await prisma.conversation.update({
@@ -390,14 +392,15 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
           messages_json: currentMsgs as any,
           is_archived: false,
           status: newStatus,
-          closed_by: isWasClosed ? null : conversation.closed_by,
+          closed_by: shouldReopen ? null : conversation.closed_by,
           updated_at: new Date()
         }
       }).catch(() => {});
     } catch (e) {}
 
-    if (isWasClosed) {
+    if (shouldReopen) {
       conversation.status = 'UNANSWERED';
+      conversation.is_archived = false;
       conversation.closed_by = null;
     }
 
@@ -407,7 +410,7 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
       memoryConversations[memIdx].messages_json = currentMsgs;
       memoryConversations[memIdx].status = newStatus;
       memoryConversations[memIdx].is_archived = false;
-      if (isWasClosed) memoryConversations[memIdx].closed_by = null;
+      if (shouldReopen) memoryConversations[memIdx].closed_by = null;
       memoryConversations[memIdx].updated_at = new Date().toISOString();
     } else {
       memoryConversations.unshift({

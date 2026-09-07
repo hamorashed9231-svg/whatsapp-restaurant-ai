@@ -921,27 +921,28 @@ export const updateConversationCategory = async (req: Request, res: Response): P
 export const archiveConversation = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params; // conversation_id
   const { is_archived } = req.body;
+  const targetArchived = is_archived !== undefined ? Boolean(is_archived) : true;
 
+  // 1. تحديث الذاكرة الحية فوراً (دائماً)
+  const memIdx = memoryConversations.findIndex(c => c.id === id);
+  if (memIdx !== -1) {
+    memoryConversations[memIdx].is_archived = targetArchived;
+    memoryConversations[memIdx].updated_at = new Date().toISOString();
+  }
+
+  // 2. تحديث قاعدة البيانات
   try {
-    try {
-      const updated = await prisma.conversation.update({
-        where: { id },
-        data: { is_archived: is_archived !== undefined ? is_archived : true }
-      });
-      res.status(200).json({ status: 'success', message: 'تم تحديث أرشفة المحادثة بنجاح!', conversation: updated });
-      return;
-    } catch (e) {}
-
-    const memConv = memoryConversations.find(c => c.id === id);
-    if (memConv) {
-      memConv.is_archived = is_archived !== undefined ? is_archived : true;
-      memConv.updated_at = new Date().toISOString();
-      res.status(200).json({ status: 'success', message: 'تم تحديث أرشفة المحادثة بنجاح!', conversation: memConv });
+    const updated = await prisma.conversation.update({
+      where: { id },
+      data: { is_archived: targetArchived }
+    });
+    res.status(200).json({ status: 'success', message: 'تم تحديث أرشفة المحادثة بنجاح!', conversation: updated });
+  } catch (error: any) {
+    console.error('[Archive Conversation Error]:', error.message);
+    if (memIdx !== -1) {
+      res.status(200).json({ status: 'success', message: 'تم تحديث أرشفة المحادثة في الذاكرة!', conversation: memoryConversations[memIdx] });
       return;
     }
-
-    res.status(200).json({ status: 'success', message: 'تمت الأرشفة بنجاح!' });
-  } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message });
   }
 };
