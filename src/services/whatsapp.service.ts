@@ -111,16 +111,22 @@ class WhatsAppService {
       }
     }
 
+    // تنظيف وتوافق نوع الوسائط (MIME Type) مع الاشتراطات الرسمية لـ Meta WhatsApp API
+    let cleanMimeType = mimeType.split(';')[0].trim().toLowerCase();
+    if (cleanMimeType.includes('webm') || cleanMimeType === 'video/webm' || cleanMimeType === 'audio/webm') {
+      cleanMimeType = 'audio/ogg';
+    }
+
     const cleanBase64 = rawBase64.trim().replace(/\s/g, '').replace(/ /g, '+');
     const buffer = Buffer.from(cleanBase64, 'base64');
-    let extension = mimeType.split('/')[1] || 'jpg';
+    let extension = cleanMimeType.split('/')[1] || 'jpg';
     if (extension === 'jpeg') extension = 'jpg';
-    const filename = `image_${Date.now()}.${extension}`;
+    const filename = `media_${Date.now()}.${extension}`;
 
     const formData = new FormData();
     formData.append('messaging_product', 'whatsapp');
-    formData.append('file', buffer, { filename, contentType: mimeType });
-    formData.append('type', mimeType);
+    formData.append('file', buffer, { filename, contentType: cleanMimeType });
+    formData.append('type', cleanMimeType);
 
     try {
       const response = await axios.post(
@@ -138,7 +144,7 @@ class WhatsAppService {
     } catch (uploadErr: any) {
       console.error('[WhatsApp Media Upload Error]:', uploadErr.response?.data || uploadErr.message);
       const metaErrMsg = uploadErr.response?.data?.error?.message || uploadErr.message;
-      throw new Error(`فشل رفع الصورة لـ Meta Media API: ${metaErrMsg}`);
+      throw new Error(`فشل رفع الوسائط لـ Meta Media API: ${metaErrMsg}`);
     }
   }
 
@@ -556,6 +562,7 @@ class WhatsAppService {
     }
 
     try {
+      // 1. استرجاع رابط الوسائط المباشر من Graph API
       const metaRes = await axios.get(`https://graph.facebook.com/v20.0/${mediaId}`, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -565,15 +572,39 @@ class WhatsAppService {
       const mediaDirectUrl = metaRes.data?.url;
       if (!mediaDirectUrl) return null;
 
-      const binaryRes = await axios.get(mediaDirectUrl, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'User-Agent': 'curl/7.64.1'
-        },
-        responseType: 'arraybuffer'
-      });
+      // 2. تحميل محتوى الصورة/الوسائط بـ Manual Redirect Handling للتحكم بـ Auth Header ومنع 401 Unauthorized عند التوجيه لـ lookaside.fbsbx.com
+      let currentUrl = mediaDirectUrl;
+      let binaryRes: any = null;
+
+      for (let i = 0; i < 5; i++) {
+        const urlWithToken = currentUrl.includes('access_token=')
+          ? currentUrl
+          : (currentUrl.includes('?') ? `${currentUrl}&access_token=${encodeURIComponent(token)}` : `${currentUrl}?access_token=${encodeURIComponent(token)}`);
+
+        binaryRes = await axios.get(urlWithToken, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'User-Agent': 'curl/7.64.1'
+          },
+          responseType: 'arraybuffer',
+          maxRedirects: 0,
+          validateStatus: (status) => status >= 200 && status < 400
+        }).catch((err) => err.response || null);
+
+        if (binaryRes && binaryRes.status >= 300 && binaryRes.status < 400 && binaryRes.headers?.location) {
+          currentUrl = binaryRes.headers.location;
+        } else {
+          break;
+        }
+      }
+
+      if (!binaryRes || !binaryRes.data) {
+        console.error(`[WhatsApp Media Fetch Error]: تعذر استرجاع ثنائيات الوسائط للمعرف (${mediaId})`);
+        return null;
+      }
+
       const mimeType = metaRes.data?.mime_type || 'image/jpeg';
-      const base64Data = Buffer.from(binaryRes.data, 'binary').toString('base64');
+      const base64Data = Buffer.from(binaryRes.data).toString('base64');
       return `data:${mimeType};base64,${base64Data}`;
     } catch (err: any) {
       console.error('[WhatsApp Media Fetch Error]:', err.response?.data || err.message);

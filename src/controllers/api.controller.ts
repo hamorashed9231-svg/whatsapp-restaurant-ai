@@ -477,37 +477,29 @@ export const getConversationMessages = async (req: Request, res: Response): Prom
         orderBy: { created_at: 'asc' }
       });
 
-      if (dbMsgs && dbMsgs.length > 0) {
-        // دمج المصدرين: ابدأ بـ messages_json (له image_url)
-        // وأضف أي رسائل جديدة من Message table غير موجودة في messages_json
-        if (jsonMsgs.length >= dbMsgs.length) {
-          // messages_json أكتمل - استخدمه كمصدر أساسي (يحفظ image_url)
-          msgs = jsonMsgs;
-        } else {
-          // Message table أحدث - استخدمه لكن أضف image_url والوسائط من messages_json لو متاح
-          msgs = dbMsgs.map((m, idx) => {
-            const matchingJsonMsg = jsonMsgs.find((j: any) => (j.wamid && j.wamid === m.id) || (j.id && j.id === m.id)) || jsonMsgs[idx];
-            return {
-              id: m.id,
-              role: m.role,
-              content: m.content,
-              image_url: matchingJsonMsg?.image_url || (m as any).image_url || undefined,
-              audio_url: matchingJsonMsg?.audio_url || (m as any).audio_url || undefined,
-              sticker_url: matchingJsonMsg?.sticker_url || (m as any).sticker_url || undefined,
-              wamid: matchingJsonMsg?.wamid || m.id,
-              reply_to_id: matchingJsonMsg?.reply_to_id,
-              reaction: matchingJsonMsg?.reaction,
-              sender_name: matchingJsonMsg?.sender_name || undefined,
-              timestamp: m.created_at ? m.created_at.toISOString() : new Date().toISOString()
-            };
-          });
-          if (jsonMsgs.length > dbMsgs.length) {
-            const extraJsonMsgs = jsonMsgs.slice(dbMsgs.length);
-            msgs = [...msgs, ...extraJsonMsgs];
+      if (jsonMsgs && jsonMsgs.length > 0) {
+        // messages_json يحتوي على السجل الموحد الكامل للوسائط والرسائل بالترتيب الزمني الصحيح
+        msgs = jsonMsgs;
+
+        // في حال وجود رسائل فائضة جديدة في جدول Message لم تلحق بـ messages_json
+        if (dbMsgs.length > jsonMsgs.length) {
+          const extraDbMsgs = dbMsgs.slice(jsonMsgs.length);
+          for (const extra of extraDbMsgs) {
+            msgs.push({
+              id: extra.id,
+              role: extra.role,
+              content: extra.content,
+              timestamp: extra.created_at ? extra.created_at.toISOString() : new Date().toISOString()
+            });
           }
         }
-      } else if (jsonMsgs.length > 0) {
-        msgs = jsonMsgs;
+      } else if (dbMsgs && dbMsgs.length > 0) {
+        msgs = dbMsgs.map(m => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          timestamp: m.created_at ? m.created_at.toISOString() : new Date().toISOString()
+        }));
       }
     }
 

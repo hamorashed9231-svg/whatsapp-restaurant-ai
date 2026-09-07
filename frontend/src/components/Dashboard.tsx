@@ -466,10 +466,15 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [lang, setLang] = useState<Language>(() => (localStorage.getItem('rivix_lang') as Language) || 'ar');
   const [replyToMessage, setReplyToMessage] = useState<ChatMessage | null>(null);
 
+  useEffect(() => {
+    document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+  }, [lang]);
+
   const toggleLang = () => {
     const nextLang: Language = lang === 'ar' ? 'en' : 'ar';
     setLang(nextLang);
     localStorage.setItem('rivix_lang', nextLang);
+    document.documentElement.dir = nextLang === 'ar' ? 'rtl' : 'ltr';
   };
   const [showEmojiPicker, setShowEmojiPicker] = useState<boolean>(false);
 
@@ -546,7 +551,13 @@ const Dashboard: React.FC<DashboardProps> = ({
   const startVoiceRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
+      const preferredMimeType = (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('audio/ogg;codecs=opus'))
+        ? 'audio/ogg;codecs=opus'
+        : (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('audio/mp4'))
+        ? 'audio/mp4'
+        : 'audio/webm';
+
+      const mediaRecorder = new MediaRecorder(stream, preferredMimeType ? { mimeType: preferredMimeType } : undefined);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
@@ -575,7 +586,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     recorder.onstop = async () => {
       clearInterval(recordingTimerRef.current);
       setIsRecordingAudio(false);
-      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+      const audioBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/ogg' });
 
       recorder.stream.getTracks().forEach(track => track.stop());
 
@@ -3125,7 +3136,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
             <div className="animate-fade-in" style={{ ...styles.tabContent, height: 'calc(100vh - 85px)', padding: 0 }}>
               <div style={styles.conversationsLayout}>
                 {/* قائمة المحادثات (يسار) */}
-                <div style={styles.conversationsListPane}>
+                <div style={{ ...styles.conversationsListPane, borderLeft: lang === 'ar' ? styles.conversationsListPane.borderLeft : 'none', borderRight: lang === 'en' ? styles.conversationsListPane.borderLeft : 'none', textAlign: lang === 'ar' ? 'right' : 'left' }}>
                   <div style={{
                     padding: '12px 16px',
                     borderBottom: darkMode ? '1px solid #222D34' : '1px solid #E2E8F0',
@@ -4854,14 +4865,72 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                 )}
 
                 <form onSubmit={handleSaveSettings}>
-                  {/* قسم التحكم بالصوت والإشعارات الصوتية */}
-                  <div style={{ marginBottom: '20px', padding: '16px 20px', borderRadius: '12px', backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ textAlign: 'right' }}>
+                  {/* قسم تحديد لغة واجهة النظام والسيستم والتخطيط */}
+                  <div style={{ marginBottom: '20px', padding: '16px 20px', borderRadius: '12px', backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                    <div style={{ textAlign: lang === 'ar' ? 'right' : 'left' }}>
                       <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: 'var(--text-main)' }}>
-                        🔊 إشعار نغمة الرسايل الجديدة من العملاء
+                        🌐 {lang === 'ar' ? 'لغة واجهة لوحة التحكم والسيستم' : 'System Interface & Layout Language'}
                       </div>
                       <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                        تشغيل تنبيه صوتي فور ورود أي رسالة جديدة غير مجاب عليها من عميل على الواتساب.
+                        {lang === 'ar' ? 'تحويل واجهة السيستم بالكامل للإنجليزي ونقل شاشة الشات لليمين (العربية / English)' : 'Convert full system to English and align chat pane to the right'}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLang('ar');
+                          localStorage.setItem('rivix_lang', 'ar');
+                          document.documentElement.dir = 'rtl';
+                        }}
+                        style={{
+                          padding: '8px 16px',
+                          fontSize: '0.82rem',
+                          fontWeight: 'bold',
+                          borderRadius: '8px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          backgroundColor: lang === 'ar' ? '#0066FF' : (darkMode ? '#202C33' : '#F1F5F9'),
+                          color: lang === 'ar' ? '#FFFFFF' : (darkMode ? '#8696A0' : '#64748B'),
+                          boxShadow: lang === 'ar' ? '0 2px 8px rgba(0, 102, 255, 0.3)' : 'none',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        🇸🇦 العربية (Arabic)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLang('en');
+                          localStorage.setItem('rivix_lang', 'en');
+                          document.documentElement.dir = 'ltr';
+                        }}
+                        style={{
+                          padding: '8px 16px',
+                          fontSize: '0.82rem',
+                          fontWeight: 'bold',
+                          borderRadius: '8px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          backgroundColor: lang === 'en' ? '#0066FF' : (darkMode ? '#202C33' : '#F1F5F9'),
+                          color: lang === 'en' ? '#FFFFFF' : (darkMode ? '#8696A0' : '#64748B'),
+                          boxShadow: lang === 'en' ? '0 2px 8px rgba(0, 102, 255, 0.3)' : 'none',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        🇺🇸 English (English)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* قسم التحكم بالصوت والإشعارات الصوتية */}
+                  <div style={{ marginBottom: '20px', padding: '16px 20px', borderRadius: '12px', backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ textAlign: lang === 'ar' ? 'right' : 'left' }}>
+                      <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: 'var(--text-main)' }}>
+                        {t[lang].soundSettingsTitle}
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                        {t[lang].soundSettingsDesc}
                       </div>
                     </div>
                     <button
@@ -4882,7 +4951,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                         transition: 'all 0.2s'
                       }}
                     >
-                      {soundEnabled ? '🔔 الصوت: مفعّل' : '🔇 الصوت: مكتوم'}
+                      {soundEnabled ? t[lang].soundEnabled : t[lang].soundMuted}
                     </button>
                   </div>
 
@@ -5834,7 +5903,6 @@ const getDashboardStyles = (isDark: boolean): Record<string, React.CSSProperties
       borderLeft: `1px solid ${borderColor}`,
       display: 'flex',
       flexDirection: 'column',
-      textAlign: 'right',
       backgroundColor: isDark ? '#111B21' : '#F0F2F5',
       height: '100%',
       maxHeight: '100%',

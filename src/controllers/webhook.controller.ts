@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { whatsappQueue } from '../queues/whatsapp.queue';
 import { redisClient } from '../services/redis.service';
+import { prisma } from '../services/prisma.service';
 import { normalizePhone } from '../utils/phone';
 
 /**
@@ -513,17 +514,22 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
           },
         }).catch(() => {});
 
+        const finalMessagesJson = [
+          ...currentMsgs,
+          { role: 'assistant', content: responseText, timestamp: new Date().toISOString() }
+        ];
+
         await prisma.conversation.update({
           where: { id: conversation.id },
           data: {
-            messages_json: updatedHistory as any,
+            messages_json: finalMessagesJson as any,
             updated_at: new Date(),
           },
         }).catch(() => {});
 
         const finalMemIdx = memoryConversations.findIndex((c: any) => c.id === conversation.id);
         if (finalMemIdx !== -1) {
-          memoryConversations[finalMemIdx].messages_json = updatedHistory;
+          memoryConversations[finalMemIdx].messages_json = finalMessagesJson;
           memoryConversations[finalMemIdx].updated_at = new Date().toISOString();
         }
       } catch (e) {}

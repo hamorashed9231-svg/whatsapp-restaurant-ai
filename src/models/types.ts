@@ -3,10 +3,15 @@
 // هيكلية الرسالة المخزنة في سجل المحادثة
 export interface ChatMessage {
   id?: string;
+  wamid?: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   sender_name?: string;
   image_url?: string;
+  audio_url?: string;
+  sticker_url?: string;
+  reply_to_id?: string;
+  reaction?: string;
   is_edited?: boolean;
   edited_at?: string;
   timestamp: string; // صيغة ISO 8601

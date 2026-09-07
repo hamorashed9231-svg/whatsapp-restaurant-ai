@@ -21,7 +21,7 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
       const rawPendingMessages = await redisClient.lrange(pendingKey, 0, -1);
       await redisClient.del(pendingKey);
 
-      const pendingList: Array<{ whatsappNumberId?: string; messageText: string; timestamp?: string }> = (rawPendingMessages || []).map((item) => {
+      const pendingList: Array<{ whatsappNumberId?: string; customerPhone?: string; messageText: string; mediaId?: string; messageType?: string; timestamp?: string }> = (rawPendingMessages || []).map((item) => {
         try {
           return JSON.parse(item);
         } catch (e) {
@@ -126,7 +126,55 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
         console.log(`[BullMQ Worker] تم إنشاء سجل محادثة جديد للزبون [${customerPhone}] في مطعم [${restaurant.name}]`);
       }
 
-      // 5. فحص شرط التدخل البشري (Human-in-the-Loop / Staff Takeover)
+      // 5. بناء كائنات الرسائل المدعومة بالوسائط (مع استرجاع روابط الصور والتسجيلات من Meta API)
+      const mediaToken = restaurant?.whatsapp_access_token || process.env.WHATSAPP_TOKEN;
+      const userMessageEntries: ChatMessage[] = [];
+
+      if (pendingList.length > 0) {
+        for (const pMsg of pendingList) {
+          if (pMsg.messageText && pMsg.messageText.trim()) {
+            let mediaUrl: string | undefined = undefined;
+            if (pMsg.mediaId && mediaToken) {
+              const fetched = await whatsappService.getMediaUrl(pMsg.mediaId, mediaToken).catch(() => null);
+              if (fetched) mediaUrl = fetched;
+            }
+            const msgType = pMsg.messageType || '';
+            const isAudioType = (msgType === 'audio' || msgType === 'voice');
+            const isStickerType = (msgType === 'sticker');
+            const isImageType = (msgType === 'image' || (!isAudioType && !isStickerType && mediaUrl && mediaUrl.startsWith('data:image')));
+
+            userMessageEntries.push({
+              role: 'user',
+              content: pMsg.messageText.trim(),
+              image_url: (isImageType && mediaUrl) ? mediaUrl : (mediaUrl && !isAudioType && !isStickerType ? mediaUrl : undefined),
+              audio_url: (isAudioType && mediaUrl) ? mediaUrl : undefined,
+              sticker_url: (isStickerType && mediaUrl) ? mediaUrl : undefined,
+              timestamp: pMsg.timestamp || new Date().toISOString()
+            });
+          }
+        }
+      } else if (combinedMessageText) {
+        let mediaUrl: string | undefined = undefined;
+        if (job.data.mediaId && mediaToken) {
+          const fetched = await whatsappService.getMediaUrl(job.data.mediaId, mediaToken).catch(() => null);
+          if (fetched) mediaUrl = fetched;
+        }
+        const msgType = job.data.messageType || '';
+        const isAudioType = (msgType === 'audio' || msgType === 'voice');
+        const isStickerType = (msgType === 'sticker');
+        const isImageType = (msgType === 'image' || (!isAudioType && !isStickerType && mediaUrl && mediaUrl.startsWith('data:image')));
+
+        userMessageEntries.push({
+          role: 'user',
+          content: combinedMessageText,
+          image_url: (isImageType && mediaUrl) ? mediaUrl : (mediaUrl && !isAudioType && !isStickerType ? mediaUrl : undefined),
+          audio_url: (isAudioType && mediaUrl) ? mediaUrl : undefined,
+          sticker_url: (isStickerType && mediaUrl) ? mediaUrl : undefined,
+          timestamp: job.data.timestamp || new Date().toISOString()
+        });
+      }
+
+      // 6. فحص شرط التدخل البشري (Human-in-the-Loop / Staff Takeover)
       const isStaffAssigned = Boolean(conversation.assigned_to && conversation.assigned_to.trim().length > 0);
       const isHumanTakeover =
         conversation.status === 'IN_PROGRESS' ||
@@ -136,38 +184,14 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
       if (isHumanTakeover) {
         console.log(`[BullMQ Worker 🛑] المحادثة مع الزبون [${customerPhone}] تحت إشراف موظف الكول سنتر (${conversation.assigned_to || conversation.status}). تم إيقاف رد الذكاء الاصطناعي وتوثيق الرسائل فقط.`);
 
-        // حفظ رسائل العميل المجمعة في جدول Message وفي messages_json لإظهارها بلوحة التحكم فوراً
-        const userMessageEntries: ChatMessage[] = [];
-        if (pendingList.length > 0) {
-          for (const pMsg of pendingList) {
-            if (pMsg.messageText && pMsg.messageText.trim()) {
-              await prisma.message.create({
-                data: {
-                  conversation_id: conversation.id,
-                  role: 'user',
-                  content: pMsg.messageText.trim(),
-                },
-              });
-              userMessageEntries.push({
-                role: 'user',
-                content: pMsg.messageText.trim(),
-                timestamp: new Date().toISOString(),
-              });
-            }
-          }
-        } else {
+        for (const entry of userMessageEntries) {
           await prisma.message.create({
             data: {
               conversation_id: conversation.id,
               role: 'user',
-              content: combinedMessageText,
+              content: entry.content,
             },
-          });
-          userMessageEntries.push({
-            role: 'user',
-            content: combinedMessageText,
-            timestamp: new Date().toISOString(),
-          });
+          }).catch(() => {});
         }
 
         const currentMessagesJson: ChatMessage[] = Array.isArray(conversation.messages_json)
@@ -187,11 +211,10 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
           },
         });
 
-        // التوقف الفوري دون استدعاء الذكاء الاصطناعي ودون إرسال رد آلي عبر واتساب
         return;
       }
 
-      // 6. في حال كانت المحادثة آليّة (تأخذ الوضع الافتراضي للذكاء الاصطناعي)
+      // 7. في حال كانت المحادثة آليّة (تأخذ الوضع الافتراضي للذكاء الاصطناعي)
       // جلب سياق المحادثة السابق من DB
       const dbPriorMessages = await prisma.message.findMany({
         where: { conversation_id: conversation.id },
@@ -219,43 +242,24 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
       );
 
       if (!isWorkerDuplicate) {
-        if (pendingList.length > 0) {
-          for (const pMsg of pendingList) {
-            if (pMsg.messageText && pMsg.messageText.trim()) {
-              await prisma.message.create({
-                data: {
-                  conversation_id: conversation.id,
-                  role: 'user',
-                  content: pMsg.messageText.trim(),
-                },
-              });
-            }
-          }
-        } else {
+        for (const entry of userMessageEntries) {
           await prisma.message.create({
             data: {
               conversation_id: conversation.id,
               role: 'user',
-              content: combinedMessageText,
+              content: entry.content,
             },
-          });
+          }).catch(() => {});
         }
       }
 
-      // 7. استدعاء خدمة الذكاء الاصطناعي Gemini API أو الرد التلقائي
+      // 8. استدعاء خدمة الذكاء الاصطناعي Gemini API أو الرد التلقائي
       let responseText = '';
-      let updatedHistory = history;
-
       const isAiDisabled = process.env.DISABLE_AI === 'true' || process.env.DISABLE_AI === '1';
 
       if (isAiDisabled) {
         console.log(`[BullMQ Worker] ⚠️ الذكاء الاصطناعي معطل. استخدام الرد التلقائي المباشر للزبون [${customerPhone}]`);
         responseText = `أهلاً بك في مطعم ${restaurant.name}! 🌸\nتم استلام رسالتك بنجاح وسنتابع معك فوراً.`;
-        updatedHistory = [
-          ...history,
-          { role: 'user', content: combinedMessageText, timestamp: new Date().toISOString() },
-          { role: 'assistant', content: responseText, timestamp: new Date().toISOString() }
-        ];
       } else {
         try {
           const aiResult = await geminiService.processMessage(
@@ -267,19 +271,13 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
             combinedMessageText
           );
           responseText = aiResult.responseText;
-          updatedHistory = aiResult.updatedHistory;
         } catch (aiErr: any) {
           console.error('[BullMQ Worker AI Error] ⚠️ تعذر استدعاء الذكاء الاصطناعي، يتم استخدام الرد التلقائي المباشر:', aiErr.message || aiErr);
           responseText = `أهلاً بك في مطعم ${restaurant.name}! 🌸\nتم استلام رسالتك بنجاح وسنتابع معك فوراً.`;
-          updatedHistory = [
-            ...history,
-            { role: 'user', content: combinedMessageText, timestamp: new Date().toISOString() },
-            { role: 'assistant', content: responseText, timestamp: new Date().toISOString() }
-          ];
         }
       }
 
-      // 8 & 9. إرسال رد الـ AI وحفظ السجل بالتوازي لتسريع وصول الرسالة للزبون فوراً
+      // 9 & 10. إرسال رد الـ AI وحفظ السجل بالتوازي مع الحفاظ على الوسائط والروابط والصور
       const sendPromise = whatsappService.sendTextMessage(
         customerPhone,
         responseText,
@@ -301,10 +299,20 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
             },
           });
 
+          const currentMessagesJson: ChatMessage[] = Array.isArray(conversation.messages_json)
+            ? (conversation.messages_json as any)
+            : [];
+
+          const finalMessagesJson = [
+            ...currentMessagesJson,
+            ...userMessageEntries,
+            { role: 'assistant', content: responseText, timestamp: new Date().toISOString() }
+          ];
+
           await prisma.conversation.update({
             where: { id: conversation.id },
             data: {
-              messages_json: updatedHistory as any,
+              messages_json: finalMessagesJson as any,
               updated_at: new Date(),
             },
           });
