@@ -86,22 +86,12 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
 
       if (!restaurant) {
         console.warn(`[BullMQ Worker] تحذير: لم يتم العثور على مطعم للرقم: ${targetWhatsappNumberId}`);
-        await whatsappService.sendTextMessage(
-          customerPhone,
-          'عذراً، هذا الرقم غير مرتبط بأي مطعم مسجل لدينا حالياً.',
-          targetWhatsappNumberId
-        );
         return;
       }
 
       // 3. التحقق من صلاحية وحالة اشتراك المطعم
       if (restaurant.subscription_status !== 'ACTIVE' || new Date(restaurant.subscription_expires_at) < new Date()) {
         console.log(`[BullMQ Worker] اشتراك المطعم "${restaurant.name}" غير نشط أو منتهي الصلاحية.`);
-        await whatsappService.sendTextMessage(
-          customerPhone,
-          `عذراً، خدمة المساعد الذكي لمطعم "${restaurant.name}" معطلة مؤقتاً لانتهاء فترة الاشتراك.`,
-          targetWhatsappNumberId
-        );
         return;
       }
 
@@ -261,7 +251,13 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
         }
       }
 
-      // 8. استدعاء خدمة الذكاء الاصطناعي Gemini API أو الرد التلقائي
+      // 8. تم تعطيل جميع رسائل النظام والردود الآلية بناءً على طلب المستخدم (الرد يدوي عبر الموظف فقط)
+      const isAutoReplyEnabled = process.env.ENABLE_AUTO_REPLY === 'true';
+      if (!isAutoReplyEnabled) {
+        console.log(`[BullMQ Worker] تم استقبال وتوثيق رسالة العميل [${customerPhone}] بنجاح دون إرسال أي رد آلي من النظام (الرد يدوي عبر الموظف فقط).`);
+        return;
+      }
+
       let responseText = '';
       const isAiDisabled = process.env.DISABLE_AI === 'true' || process.env.DISABLE_AI === '1';
 

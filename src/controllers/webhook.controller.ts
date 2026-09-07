@@ -428,12 +428,10 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
       });
     }
 
-    // فحص تدخل العنصر البشري
-    const isStaffAssigned = Boolean(conversation.assigned_to && conversation.assigned_to.trim().length > 0);
-    const isHumanTakeover = conversation.status === 'IN_PROGRESS' || isWasClosed || isStaffAssigned;
-
-    if (isHumanTakeover) {
-      console.log(`[DirectProcess] المحادثة مع [${customerPhone}] تم إعادة فتحها كـ UNANSWERED أو تحت إشراف موظف. تم توثيق الرسالة دون رد آلي.`);
+    // تم تعطيل جميع رسائل النظام والردود الآلية بناءً على طلب المستخدم. الرد فقط يدوي عبر الموظف.
+    const isAutoReplyEnabled = process.env.ENABLE_AUTO_REPLY === 'true';
+    if (!isAutoReplyEnabled) {
+      console.log(`[DirectProcess] تم استقبال وتوثيق رسالة العميل [${customerPhone}] بنجاح دون إرسال أي رد آلي من النظام (الرد يدوي عبر الموظف فقط).`);
       return;
     }
 
