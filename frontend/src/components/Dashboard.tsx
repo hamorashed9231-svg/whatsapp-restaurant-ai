@@ -491,10 +491,10 @@ const Dashboard: React.FC<DashboardProps> = ({
       const media = m.image_url || m.audio_url || m.sticker_url || '';
       const mTime = m.timestamp ? new Date(m.timestamp).getTime() : (m.created_at ? new Date(m.created_at).getTime() : 0);
 
-      const isDuplicate = result.some(existing => {
-        // إذا كانت كلتا الرسالتين تمتلكان wamid أو id: نقارن الـ IDs فقط لحماية الرسائل المتتالية الحقيقية
+      const dupIndex = result.findIndex(existing => {
         if (m.wamid && existing.wamid) return m.wamid === existing.wamid;
-        if (m.id && existing.id) return m.id === existing.id;
+        if (m.id && existing.id && !m.id.startsWith('temp_') && !existing.id.startsWith('temp_')) return m.id === existing.id;
+        if (m.id && existing.id && m.id === existing.id) return true;
 
         if (existing.role !== role) return false;
 
@@ -503,13 +503,19 @@ const Dashboard: React.FC<DashboardProps> = ({
         const exTime = existing.timestamp ? new Date(existing.timestamp).getTime() : (existing.created_at ? new Date(existing.created_at).getTime() : 0);
 
         const sameContent = (content && exContent && content === exContent) || (!content && !exContent && media && exMedia && media === exMedia);
-        const closeInTime = (mTime && exTime) ? Math.abs(mTime - exTime) < 4000 : false;
+        const closeInTime = (mTime && exTime) ? Math.abs(mTime - exTime) < 10000 : false;
 
         return sameContent && closeInTime;
       });
 
-      if (!isDuplicate) {
+      if (dupIndex === -1) {
         result.push(m);
+      } else {
+        const existing = result[dupIndex];
+        // إذا كانت الرسالة الحالية مؤقتة والجديدة مؤكدة من السيرفر، استبدل الرسالة المؤقتة بالمؤكدة
+        if (existing.id?.startsWith('temp_') && (!m.id?.startsWith('temp_') || m.wamid)) {
+          result[dupIndex] = { ...existing, ...m };
+        }
       }
     }
 
@@ -1238,15 +1244,19 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
             api.get(`/conversations/${currentActiveId}/messages`).then(msgRes => {
               if (selectedConversationIdRef.current === currentActiveId) {
                 const msgList = Array.isArray(msgRes.data) ? msgRes.data : (msgRes.data?.messages || []);
-                const cleanList = deduplicateMessages(msgList);
                 setChatMessages(prev => {
-                  if (prev.length !== cleanList.length) {
-                    return cleanList;
+                  const pendingTemps = prev.filter(m => m.id?.startsWith('temp_') && !msgList.some((c: any) => 
+                    ((c.content || '').trim() === (m.content || '').trim()) && c.role === m.role
+                  ));
+                  const merged = deduplicateMessages([...msgList, ...pendingTemps]);
+
+                  if (prev.length !== merged.length) {
+                    return merged;
                   }
                   const lastPrev = prev[prev.length - 1];
-                  const lastNew = cleanList[cleanList.length - 1];
-                  if (lastPrev?.content !== lastNew?.content || lastPrev?.timestamp !== lastNew?.timestamp || lastPrev?.image_url !== lastNew?.image_url) {
-                    return cleanList;
+                  const lastNew = merged[merged.length - 1];
+                  if (lastPrev?.content !== lastNew?.content || lastPrev?.timestamp !== lastNew?.timestamp || lastPrev?.image_url !== lastNew?.image_url || lastPrev?.id !== lastNew?.id) {
+                    return merged;
                   }
                   return prev;
                 });
@@ -1696,26 +1706,51 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
       if (imagesToSend.length > 0) {
         for (let i = 0; i < imagesToSend.length; i++) {
           const caption = i === 0 ? textToSend : '';
-          await api.post(`/conversations/${selectedConversation.id}/messages`, {
+          const res = await api.post(`/conversations/${selectedConversation.id}/messages`, {
             content: caption,
             image_url: imagesToSend[i],
             reply_to_id: replyTargetId
           });
+          if (res.data?.messageObj) {
+            const confirmed = res.data.messageObj;
+            const targetTempId = newMsgs[i]?.id;
+            setChatMessages(prev => deduplicateMessages(prev.map(m => m.id === targetTempId ? { ...m, ...confirmed } : m)));
+          }
+          if (res.data?.conversation) {
+            const updatedConv = res.data.conversation;
+            setConversations(prev => prev.map(c => c.id === updatedConv.id ? { ...c, ...updatedConv } : c));
+            setSelectedConversation(prev => prev ? { ...prev, ...updatedConv } : null);
+          }
         }
       } else {
-        await api.post(`/conversations/${selectedConversation.id}/messages`, {
+        const res = await api.post(`/conversations/${selectedConversation.id}/messages`, {
           content: textToSend,
           reply_to_id: replyTargetId
         });
+        if (res.data?.messageObj) {
+          const confirmed = res.data.messageObj;
+          const targetTempId = newMsgs[0]?.id;
+          setChatMessages(prev => deduplicateMessages(prev.map(m => m.id === targetTempId ? { ...m, ...confirmed } : m)));
+        }
+        if (res.data?.conversation) {
+          const updatedConv = res.data.conversation;
+          setConversations(prev => prev.map(c => c.id === updatedConv.id ? { ...c, ...updatedConv } : c));
+          setSelectedConversation(prev => prev ? { ...prev, ...updatedConv } : null);
+        }
       }
     } catch (err: any) {
       console.error('خطأ إرسال رد يدوي:', err);
+      const savedConv = err.response?.data?.conversation;
+      if (savedConv) {
+        setConversations(prev => prev.map(c => c.id === savedConv.id ? { ...c, ...savedConv } : c));
+        setSelectedConversation(prev => prev ? { ...prev, ...savedConv } : null);
+      }
       if (err.response?.status === 400 && (err.response?.data?.error === 'SESSION_WINDOW_EXPIRED' || err.response?.data?.message?.includes('24'))) {
         setSelectedConvWindowOpen(false);
         setShowTemplateModal(true);
-        setChatMessages(prev => prev.filter(m => !newMsgs.includes(m)));
-      } else {
-        setChatMessages(prev => prev.filter(m => !newMsgs.includes(m)));
+        setChatMessages(prev => prev.filter(m => !newMsgs.some(nm => nm.id === m.id)));
+      } else if (!savedConv) {
+        setChatMessages(prev => prev.filter(m => !newMsgs.some(nm => nm.id === m.id)));
         const errorText = err.response?.data?.message || err.response?.data?.error || err.message || 'فشل إرسال الصورة/الرسالة عبر الواتساب.';
         alert(errorText);
       }
