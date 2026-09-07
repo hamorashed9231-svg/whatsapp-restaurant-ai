@@ -303,13 +303,6 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
       };
     }
 
-    let mediaUrl: string | undefined = undefined;
-    const mediaToken = restaurant?.whatsapp_access_token || process.env.WHATSAPP_TOKEN;
-    if (mediaId && mediaToken) {
-      const fetchedUrl = await whatsappService.getMediaUrl(mediaId, mediaToken).catch(() => null);
-      if (fetchedUrl) mediaUrl = fetchedUrl;
-    }
-
     // 2. جلب المحادثة النشطة للعميل
     let conversation: any = null;
     try {
@@ -373,28 +366,30 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
     const isStickerType = (msgType === 'sticker' || messageText.includes('[ملصق 🎨]'));
     const isImageType = (msgType === 'image' || messageText.includes('[📷 صورة مرفقة]') || (!isAudioType && !isStickerType && Boolean(mediaId)));
 
-    const finalImageUrl = (mediaUrl && mediaUrl.startsWith('data:image'))
-      ? mediaUrl
-      : (isImageType ? (mediaUrl || (mediaId ? `/api/media/${mediaId}` : undefined)) : undefined);
+    const finalImageUrl = isImageType && mediaId ? `/api/media/${mediaId}` : undefined;
+    const finalAudioUrl = isAudioType && mediaId ? `/api/media/${mediaId}` : undefined;
+    const finalStickerUrl = isStickerType && mediaId ? `/api/media/${mediaId}` : undefined;
 
-    const finalAudioUrl = (mediaUrl && (mediaUrl.startsWith('data:audio') || mediaUrl.startsWith('data:video/webm')))
-      ? mediaUrl
-      : (isAudioType ? (mediaUrl || (mediaId ? `/api/media/${mediaId}` : undefined)) : undefined);
+    const msgWamid = rawMessage?.id || undefined;
+    const isAlreadyInMsgs = currentMsgs.some((m: any) =>
+      (msgWamid && (m.wamid === msgWamid || m.id === msgWamid)) ||
+      (m.role === 'user' && m.content === messageText && (Date.now() - new Date(m.timestamp || m.created_at).getTime() < 15000))
+    );
 
-    const finalStickerUrl = isStickerType ? (mediaUrl || (mediaId ? `/api/media/${mediaId}` : undefined)) : undefined;
-
-    currentMsgs.push({
-      role: 'user',
-      content: messageText,
-      media_id: mediaId || undefined,
-      wamid: rawMessage?.id || undefined,
-      id: rawMessage?.id || undefined,
-      reply_to_id: rawMessage?.context?.id || undefined,
-      image_url: finalImageUrl,
-      audio_url: finalAudioUrl,
-      sticker_url: finalStickerUrl,
-      timestamp: new Date().toISOString()
-    });
+    if (!isAlreadyInMsgs) {
+      currentMsgs.push({
+        role: 'user',
+        content: messageText,
+        media_id: mediaId || undefined,
+        wamid: msgWamid,
+        id: msgWamid,
+        reply_to_id: rawMessage?.context?.id || undefined,
+        image_url: finalImageUrl,
+        audio_url: finalAudioUrl,
+        sticker_url: finalStickerUrl,
+        timestamp: new Date().toISOString()
+      });
+    }
     const isWasClosed = (conversation.status === 'CLOSED');
     const newStatus = isWasClosed ? 'UNANSWERED' : (conversation.status || 'UNANSWERED');
 

@@ -432,10 +432,21 @@ export const getConversations = async (req: Request, res: Response): Promise<voi
       try {
         msgs = typeof c.messages_json === 'string' ? JSON.parse(c.messages_json) : (c.messages_json as any[]) || [];
       } catch (e) {}
-      const lastUserMsg = msgs.slice().reverse().find((m: any) => m.role === 'user');
+
+      // تنظيف كائنات الرسائل وحذف نصوص Base64 الضخمة لتسريع الاستجابة لمئة ضعف
+      const cleanMsgs = msgs.map((m: any) => {
+        const mId = m.media_id || m.mediaId;
+        if (m.image_url && m.image_url.startsWith('data:image') && mId) {
+          return { ...m, image_url: `/api/media/${mId}` };
+        }
+        return m;
+      });
+
+      const lastUserMsg = cleanMsgs.slice().reverse().find((m: any) => m.role === 'user');
       const windowInfo = checkSessionWindow(lastUserMsg?.timestamp || lastUserMsg?.created_at || c.updated_at || c.created_at);
       return {
         ...c,
+        messages_json: cleanMsgs,
         isWindowOpen: windowInfo.isWindowOpen,
         windowExpiresAt: windowInfo.windowExpiresAt,
         remainingHours: windowInfo.remainingHours

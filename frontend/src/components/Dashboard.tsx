@@ -480,6 +480,17 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   // Chat Pane state variables
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+
+  const deduplicateMessages = (msgs: ChatMessage[]): ChatMessage[] => {
+    const seen = new Set<string>();
+    return (msgs || []).filter(m => {
+      if (!m) return false;
+      const key = m.wamid || m.id || `${m.role}-${(m.content || '').trim()}-${(m.timestamp || '').slice(0, 19)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
   const [chatInput, setChatInput] = useState<string>('');
   const [chatImageUrls, setChatImageUrls] = useState<string[]>([]);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
@@ -1177,14 +1188,15 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
             api.get(`/conversations/${currentActiveId}/messages`).then(msgRes => {
               if (selectedConversationIdRef.current === currentActiveId) {
                 const msgList = Array.isArray(msgRes.data) ? msgRes.data : (msgRes.data?.messages || []);
+                const cleanList = deduplicateMessages(msgList);
                 setChatMessages(prev => {
-                  if (prev.length !== msgList.length) {
-                    return msgList;
+                  if (prev.length !== cleanList.length) {
+                    return cleanList;
                   }
                   const lastPrev = prev[prev.length - 1];
-                  const lastNew = msgList[msgList.length - 1];
-                  if (lastPrev?.content !== lastNew?.content || lastPrev?.timestamp !== lastNew?.timestamp) {
-                    return msgList;
+                  const lastNew = cleanList[cleanList.length - 1];
+                  if (lastPrev?.content !== lastNew?.content || lastPrev?.timestamp !== lastNew?.timestamp || lastPrev?.image_url !== lastNew?.image_url) {
+                    return cleanList;
                   }
                   return prev;
                 });

@@ -133,26 +133,15 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
       if (pendingList.length > 0) {
         for (const pMsg of pendingList) {
           if (pMsg.messageText && pMsg.messageText.trim()) {
-            let mediaUrl: string | undefined = undefined;
-            if (pMsg.mediaId && mediaToken) {
-              const fetched = await whatsappService.getMediaUrl(pMsg.mediaId, mediaToken).catch(() => null);
-              if (fetched) mediaUrl = fetched;
-            }
             const pText = pMsg.messageText ? pMsg.messageText.trim() : '';
             const msgType = pMsg.messageType || '';
             const isAudioType = (msgType === 'audio' || msgType === 'voice' || pText.includes('[🎙️ تسجيل صوتي]'));
             const isStickerType = (msgType === 'sticker' || pText.includes('[ملصق 🎨]'));
             const isImageType = (msgType === 'image' || pText.includes('[📷 صورة مرفقة]') || (!isAudioType && !isStickerType && Boolean(pMsg.mediaId)));
 
-            const finalImageUrl = (mediaUrl && mediaUrl.startsWith('data:image'))
-              ? mediaUrl
-              : (isImageType ? (mediaUrl || (pMsg.mediaId ? `/api/media/${pMsg.mediaId}` : undefined)) : undefined);
-
-            const finalAudioUrl = (mediaUrl && (mediaUrl.startsWith('data:audio') || mediaUrl.startsWith('data:video/webm')))
-              ? mediaUrl
-              : (isAudioType ? (mediaUrl || (pMsg.mediaId ? `/api/media/${pMsg.mediaId}` : undefined)) : undefined);
-
-            const finalStickerUrl = isStickerType ? (mediaUrl || (pMsg.mediaId ? `/api/media/${pMsg.mediaId}` : undefined)) : undefined;
+            const finalImageUrl = isImageType && pMsg.mediaId ? `/api/media/${pMsg.mediaId}` : undefined;
+            const finalAudioUrl = isAudioType && pMsg.mediaId ? `/api/media/${pMsg.mediaId}` : undefined;
+            const finalStickerUrl = isStickerType && pMsg.mediaId ? `/api/media/${pMsg.mediaId}` : undefined;
 
             userMessageEntries.push({
               role: 'user',
@@ -166,26 +155,15 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
           }
         }
       } else if (combinedMessageText) {
-        let mediaUrl: string | undefined = undefined;
         const jobMediaId = job.data.mediaId || '';
-        if (jobMediaId && mediaToken) {
-          const fetched = await whatsappService.getMediaUrl(jobMediaId, mediaToken).catch(() => null);
-          if (fetched) mediaUrl = fetched;
-        }
         const msgType = job.data.messageType || '';
         const isAudioType = (msgType === 'audio' || msgType === 'voice' || combinedMessageText.includes('[🎙️ تسجيل صوتي]'));
         const isStickerType = (msgType === 'sticker' || combinedMessageText.includes('[ملصق 🎨]'));
         const isImageType = (msgType === 'image' || combinedMessageText.includes('[📷 صورة مرفقة]') || (!isAudioType && !isStickerType && Boolean(jobMediaId)));
 
-        const finalImageUrl = (mediaUrl && mediaUrl.startsWith('data:image'))
-          ? mediaUrl
-          : (isImageType ? (mediaUrl || (jobMediaId ? `/api/media/${jobMediaId}` : undefined)) : undefined);
-
-        const finalAudioUrl = (mediaUrl && (mediaUrl.startsWith('data:audio') || mediaUrl.startsWith('data:video/webm')))
-          ? mediaUrl
-          : (isAudioType ? (mediaUrl || (jobMediaId ? `/api/media/${jobMediaId}` : undefined)) : undefined);
-
-        const finalStickerUrl = isStickerType ? (mediaUrl || (jobMediaId ? `/api/media/${jobMediaId}` : undefined)) : undefined;
+        const finalImageUrl = isImageType && jobMediaId ? `/api/media/${jobMediaId}` : undefined;
+        const finalAudioUrl = isAudioType && jobMediaId ? `/api/media/${jobMediaId}` : undefined;
+        const finalStickerUrl = isStickerType && jobMediaId ? `/api/media/${jobMediaId}` : undefined;
 
         userMessageEntries.push({
           role: 'user',
