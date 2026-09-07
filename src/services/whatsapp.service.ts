@@ -569,26 +569,21 @@ class WhatsAppService {
     }
 
     try {
-      // 1. استرجاع رابط الوسائط المباشر من Graph API
+      // 1. استرجاع رابط الوسائط المباشر من Graph API مع Bearer Token
       const metaRes = await axios.get(`https://graph.facebook.com/v20.0/${mediaId}`, {
         headers: {
-          Authorization: `Bearer ${token}`,
-          'User-Agent': 'curl/7.64.1'
+          Authorization: `Bearer ${token}`
         }
       });
       const mediaDirectUrl = metaRes.data?.url;
       if (!mediaDirectUrl) return null;
 
-      // 2. تحميل محتوى الصورة/الوسائط بـ Manual Redirect Handling
+      // 2. تحميل محتوى الصورة/الوسائط باستخدام Authorization: Bearer {token} فقط (دون إلحاق access_token بالرابط لتجنب خطأ 401 من Meta CDN)
       let currentUrl = mediaDirectUrl;
       let binaryRes: any = null;
 
       for (let i = 0; i < 5; i++) {
-        const urlWithToken = currentUrl.includes('access_token=')
-          ? currentUrl
-          : (currentUrl.includes('?') ? `${currentUrl}&access_token=${encodeURIComponent(token)}` : `${currentUrl}?access_token=${encodeURIComponent(token)}`);
-
-        binaryRes = await axios.get(urlWithToken, {
+        binaryRes = await axios.get(currentUrl, {
           headers: {
             Authorization: `Bearer ${token}`,
             'User-Agent': 'curl/7.64.1'
@@ -610,8 +605,16 @@ class WhatsAppService {
         return null;
       }
 
-      const mimeType = metaRes.data?.mime_type || 'image/jpeg';
       const buffer = Buffer.from(binaryRes.data);
+
+      // 3. التحقق التام من أن محتوى البايتات ليس نص خطأ JSON (مثل Authentication Error 401)
+      const strPeek = buffer.toString('utf-8', 0, 120);
+      if (strPeek.includes('Authentication Error') || strPeek.includes('"error"') || strPeek.startsWith('{"title":')) {
+        console.error(`[WhatsApp Media Fetch Error]: Meta CDN returned JSON authentication error for mediaId (${mediaId}):`, strPeek);
+        return null;
+      }
+
+      const mimeType = metaRes.data?.mime_type || 'image/jpeg';
       return { buffer, mimeType };
     } catch (err: any) {
       console.error('[WhatsApp Media Fetch Error]:', err.response?.data || err.message);
