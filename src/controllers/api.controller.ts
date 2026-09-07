@@ -553,8 +553,9 @@ export const getConversationMessages = async (req: Request, res: Response): Prom
         const mTime = m.timestamp ? new Date(m.timestamp).getTime() : (m.created_at ? new Date(m.created_at).getTime() : 0);
 
         const isDup = cleanMsgs.some((ex: any) => {
-          if (m.wamid && ex.wamid && m.wamid === ex.wamid) return true;
-          if (m.id && ex.id && m.id === ex.id) return true;
+          // إذا كانت كلتا الرسالتين تمتلكان wamid أو id: نقارن الـ IDs فقط لحماية الرسائل المتتالية الحقيقية
+          if (m.wamid && ex.wamid) return m.wamid === ex.wamid;
+          if (m.id && ex.id) return m.id === ex.id;
           if (ex.role !== role) return false;
 
           const exContent = (ex.content || ex.text || '').trim();
@@ -562,7 +563,7 @@ export const getConversationMessages = async (req: Request, res: Response): Prom
           const exTime = ex.timestamp ? new Date(ex.timestamp).getTime() : (ex.created_at ? new Date(ex.created_at).getTime() : 0);
 
           const sameContent = (content && exContent && content === exContent) || (!content && !exContent && media && exMedia && media === exMedia);
-          const closeInTime = (mTime && exTime) ? Math.abs(mTime - exTime) < 30000 : true;
+          const closeInTime = (mTime && exTime) ? Math.abs(mTime - exTime) < 4000 : false;
 
           return sameContent && closeInTime;
         });
@@ -1065,7 +1066,10 @@ export const sendManualMessage = async (req: AuthenticatedRequest, res: Response
       return;
     }
 
+    const uniqueMsgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     const newMsg = {
+      id: uniqueMsgId,
+      wamid: uniqueMsgId,
       role: 'assistant',
       content: content || '',
       image_url: image_url || undefined,
@@ -1095,18 +1099,10 @@ export const sendManualMessage = async (req: AuthenticatedRequest, res: Response
       }
     }
 
-    // 2. حفظ الرسالة في DB أولاً مع التحقق من عدم كتم التكرار
+    // 2. حفظ الرسالة في DB أولاً (دائماً، بحصولها على معرّف فريد)
     let whatsappWarning: string | null = null;
     if (conv && conv.id && conv.restaurant_id) {
-      const isDuplicateOutgoing = msgs.some((m: any) => {
-        const sameRole = m.role === 'assistant';
-        const sameContent = (m.content || '').trim() === (content || '').trim();
-        const mTime = m.timestamp ? new Date(m.timestamp).getTime() : 0;
-        return sameRole && sameContent && mTime && (Math.abs(Date.now() - mTime) < 15000);
-      });
-      if (!isDuplicateOutgoing) {
-        msgs.push(newMsg);
-      }
+      msgs.push(newMsg);
       await prisma.message.create({
         data: {
           conversation_id: conv.id,

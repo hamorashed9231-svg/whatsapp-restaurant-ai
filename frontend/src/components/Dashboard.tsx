@@ -492,9 +492,9 @@ const Dashboard: React.FC<DashboardProps> = ({
       const mTime = m.timestamp ? new Date(m.timestamp).getTime() : (m.created_at ? new Date(m.created_at).getTime() : 0);
 
       const isDuplicate = result.some(existing => {
-        // فحص مطابقة wamid أو id المباشرة
-        if (m.wamid && existing.wamid && m.wamid === existing.wamid) return true;
-        if (m.id && existing.id && m.id === existing.id) return true;
+        // إذا كانت كلتا الرسالتين تمتلكان wamid أو id: نقارن الـ IDs فقط لحماية الرسائل المتتالية الحقيقية
+        if (m.wamid && existing.wamid) return m.wamid === existing.wamid;
+        if (m.id && existing.id) return m.id === existing.id;
 
         if (existing.role !== role) return false;
 
@@ -503,7 +503,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         const exTime = existing.timestamp ? new Date(existing.timestamp).getTime() : (existing.created_at ? new Date(existing.created_at).getTime() : 0);
 
         const sameContent = (content && exContent && content === exContent) || (!content && !exContent && media && exMedia && media === exMedia);
-        const closeInTime = (mTime && exTime) ? Math.abs(mTime - exTime) < 30000 : true;
+        const closeInTime = (mTime && exTime) ? Math.abs(mTime - exTime) < 4000 : false;
 
         return sameContent && closeInTime;
       });
@@ -1614,7 +1614,9 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
     const newMsgs: ChatMessage[] = [];
     if (imagesToSend.length > 0) {
       imagesToSend.forEach((img, idx) => {
+        const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
         newMsgs.push({
+          id: tempId,
           role: 'assistant',
           content: idx === 0 ? textToSend : '',
           image_url: img,
@@ -1624,7 +1626,9 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
         });
       });
     } else {
+      const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       newMsgs.push({
+        id: tempId,
         role: 'assistant',
         content: textToSend,
         reply_to_id: replyTargetId,
