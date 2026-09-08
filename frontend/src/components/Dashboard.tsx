@@ -4315,6 +4315,12 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                               const senderName = msg.sender_name || (msg as any).senderName || (msg as any).sender || '';
                               const timeStr = safeFormatTime(msg.timestamp || (msg as any).created_at);
 
+                              const mediaId = (msg as any).media_id || (msg as any).mediaId;
+                              const isDocMsg = Boolean(msgContent && (msgContent.includes('[📄 مستند مرفق]') || (msg as any).document_url));
+                              const displayImgUrl = !isDocMsg
+                                ? (msg.image_url || (msg as any).imageUrl || (mediaId && !msgContent?.includes('[🎙️ تسجيل صوتي]') && !msgContent?.includes('[ملصق 🎨]') ? `/api/media/${mediaId}` : undefined) || (msgContent && (msgContent.startsWith('data:image') || msgContent.startsWith('http://') || msgContent.startsWith('https://') || msgContent.startsWith('/api/media/')) ? msgContent : undefined))
+                                : undefined;
+
                               return (
                                 <div
                                   key={i}
@@ -4372,11 +4378,6 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                     })()}
 
                                        {(() => {
-                                         const mediaId = (msg as any).media_id || (msg as any).mediaId;
-                                         const isDocMsg = Boolean(msgContent && (msgContent.includes('[📄 مستند مرفق]') || (msg as any).document_url));
-                                         const displayImgUrl = !isDocMsg
-                                           ? (msg.image_url || (msg as any).imageUrl || (mediaId && !msgContent?.includes('[🎙️ تسجيل صوتي]') && !msgContent?.includes('[ملصق 🎨]') ? `/api/media/${mediaId}` : undefined) || (msgContent && (msgContent.startsWith('data:image') || msgContent.startsWith('http://') || msgContent.startsWith('https://') || msgContent.startsWith('/api/media/')) ? msgContent : undefined))
-                                           : undefined;
                                          const captionText = msgContent && msgContent.includes('[📷 صورة مرفقة]')
                                            ? (msgContent.includes(': ') ? msgContent.split(': ').slice(1).join(': ') : '')
                                            : (!msgContent?.startsWith('data:image') && !msgContent?.startsWith('http') && !msgContent?.startsWith('/api/media/') ? msgContent : '');
@@ -4441,10 +4442,8 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                        })()}
 
                                        {(() => {
-                                         const isDocMsg = Boolean(msgContent && (msgContent.includes('[📄 مستند مرفق]') || (msg as any).document_url));
                                          if (!isDocMsg) return null;
 
-                                         const mediaId = (msg as any).media_id || (msg as any).mediaId;
                                          const docUrl = (msg as any).document_url || (mediaId ? `/api/media/${mediaId}` : undefined);
                                          const docCaption = msgContent && msgContent.includes('[📄 مستند مرفق]')
                                            ? (msgContent.includes(': ') ? msgContent.split(': ').slice(1).join(': ') : 'مستند مرفق')
@@ -4561,7 +4560,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                        </div>
                                      )}
 
-                                     {msgContent && !msgContent.includes('[📷 صورة مرفقة]') && (
+                                     {msgContent && !displayImgUrl && !msgContent.includes('[📷 صورة مرفقة]') && (
                                        <p style={{ fontSize: '0.85rem', color: darkMode ? '#F8FAFC' : '#0F172A', margin: 0, whiteSpace: 'pre-wrap' }}>
                                          {msgContent}
                                        </p>
