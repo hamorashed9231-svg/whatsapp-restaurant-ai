@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import { getApiUrl } from '../utils/api';
 import * as XLSX from 'xlsx';
 import Pusher from 'pusher-js';
 import {
@@ -1155,16 +1156,6 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
     if (chatImageUrls.length <= 1 && chatFileInputRef.current) {
       chatFileInputRef.current.value = '';
     }
-  };
-
-  const getApiUrl = () => {
-    if (import.meta.env.VITE_API_URL && import.meta.env.VITE_API_URL !== 'http://localhost:3000/api') {
-      return import.meta.env.VITE_API_URL;
-    }
-    if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-      return `${window.location.origin}/api`;
-    }
-    return 'http://localhost:3000/api';
   };
 
   const apiUrl = getApiUrl();

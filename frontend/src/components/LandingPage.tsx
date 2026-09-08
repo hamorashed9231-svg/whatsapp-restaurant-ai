@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
+import { getApiUrl } from '../utils/api';
 import { 
   Calendar, 
   Database, 
@@ -70,7 +71,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
 
     setMessages((prev) => [...prev, userMessage]);
 
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+    const apiUrl = getApiUrl();
 
     try {
       const response = await axios.post(`${apiUrl}/demo/chat`, {

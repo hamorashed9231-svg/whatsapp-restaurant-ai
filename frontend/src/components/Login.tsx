@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { LogIn, ArrowRight, AlertCircle, Sun, Moon } from 'lucide-react';
+import { getApiUrl } from '../utils/api';
 
 interface LoginProps {
   onLoginSuccess: (token: string) => void;
@@ -27,7 +28,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onBackToLanding, darkMode
     setLoading(true);
     setError(null);
 
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+    const apiUrl = getApiUrl();
 
     try {
       const response = await axios.post(`${apiUrl}/auth/login`, {
