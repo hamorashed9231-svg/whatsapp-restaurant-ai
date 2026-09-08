@@ -436,14 +436,16 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
       });
     }
 
-    // تم تعطيل جميع رسائل النظام والردود الآلية بناءً على طلب المستخدم. الرد فقط يدوي عبر الموظف.
+    // فحص تعطيل الردود الآلية والذكاء الاصطناعي
+    const isAiDisabled = process.env.DISABLE_AI === 'true' || process.env.DISABLE_AI === '1';
     const isAutoReplyEnabled = process.env.ENABLE_AUTO_REPLY === 'true';
-    if (!isAutoReplyEnabled) {
-      console.log(`[DirectProcess] تم استقبال وتوثيق رسالة العميل [${customerPhone}] بنجاح دون إرسال أي رد آلي من النظام (الرد يدوي عبر الموظف فقط).`);
+
+    if (isAiDisabled || !isAutoReplyEnabled) {
+      console.log(`[DirectProcess] ⚠️ ${isAiDisabled ? 'الذكاء الاصطناعي معطل (DISABLE_AI=true)' : 'الرد التلقائي غير مفعل'}. تم حفظ الرسالة وتحديث الحالة إلى UNANSWERED وإرسال إشعار Pusher بدون إرسال أي رد آلي للعميل.`);
       return;
     }
 
-    // 4. جلب السياق واستدعاء Gemini AI أو الرد التلقائي
+    // 4. جلب السياق واستدعاء Gemini AI
     let dbPriorMessages: any[] = [];
     try {
       dbPriorMessages = await prisma.message.findMany({
@@ -467,37 +469,25 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
     let responseText = '';
     let updatedHistory = history;
 
-    const isAiDisabled = process.env.DISABLE_AI === 'true' || process.env.DISABLE_AI === '1';
-
-    if (isAiDisabled) {
-      console.log(`[DirectProcess] ⚠️ الذكاء الاصطناعي معطل. استخدام الرد التلقائي المباشر للزبون [${customerPhone}]`);
-      responseText = `أهلاً بك في مطعم ${restaurant.name}! 🌸\nتم استلام رسالتك بنجاح. وسنقوم بالمتابعة والرد عليك فوراً.`;
+    try {
+      const aiResult = await geminiService.processMessage(
+        conversation.id,
+        restaurant.id,
+        restaurant.name,
+        customerPhone,
+        history,
+        messageText
+      );
+      responseText = aiResult.responseText;
+      updatedHistory = aiResult.updatedHistory;
+    } catch (aiErr: any) {
+      console.error('[DirectProcess AI Error] ⚠️ فشل الذكاء الاصطناعي، يتم تشغيل الرد التلقائي الاحتياطي المباشر:', aiErr.message || aiErr);
+      responseText = `أهلاً بك في مطعم ${restaurant.name}! 🌸\nتم استلام رسالتك بنجاح، وسنقوم بالرد عليك في أقرب وقت.`;
       updatedHistory = [
         ...history,
         { role: 'user', content: messageText, timestamp: new Date().toISOString() },
         { role: 'assistant', content: responseText, timestamp: new Date().toISOString() }
       ];
-    } else {
-      try {
-        const aiResult = await geminiService.processMessage(
-          conversation.id,
-          restaurant.id,
-          restaurant.name,
-          customerPhone,
-          history,
-          messageText
-        );
-        responseText = aiResult.responseText;
-        updatedHistory = aiResult.updatedHistory;
-      } catch (aiErr: any) {
-        console.error('[DirectProcess AI Error] ⚠️ فشل الذكاء الاصطناعي، يتم تشغيل الرد التلقائي الاحتياطي المباشر:', aiErr.message || aiErr);
-        responseText = `أهلاً بك في مطعم ${restaurant.name}! 🌸\nتم استلام رسالتك بنجاح، وسنقوم بالرد عليك في أقرب وقت.`;
-        updatedHistory = [
-          ...history,
-          { role: 'user', content: messageText, timestamp: new Date().toISOString() },
-          { role: 'assistant', content: responseText, timestamp: new Date().toISOString() }
-        ];
-      }
     }
 
     // 4.5. فحص ثانٍ وتأكيدي لحالة المحادثة قبل إرسال الرسالة عبر الواتساب لتفادي الـ Race Condition مع الموظف

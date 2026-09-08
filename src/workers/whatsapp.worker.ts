@@ -251,34 +251,29 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
         }
       }
 
-      // 8. تم تعطيل جميع رسائل النظام والردود الآلية بناءً على طلب المستخدم (الرد يدوي عبر الموظف فقط)
+      // 8. فحص تعطيل الردود الآلية والذكاء الاصطناعي
+      const isAiDisabled = process.env.DISABLE_AI === 'true' || process.env.DISABLE_AI === '1';
       const isAutoReplyEnabled = process.env.ENABLE_AUTO_REPLY === 'true';
-      if (!isAutoReplyEnabled) {
-        console.log(`[BullMQ Worker] تم استقبال وتوثيق رسالة العميل [${customerPhone}] بنجاح دون إرسال أي رد آلي من النظام (الرد يدوي عبر الموظف فقط).`);
+
+      if (isAiDisabled || !isAutoReplyEnabled) {
+        console.log(`[BullMQ Worker] ⚠️ ${isAiDisabled ? 'الذكاء الاصطناعي معطل (DISABLE_AI=true)' : 'الرد التلقائي غير مفعل'}. تم حفظ الرسالة بنجاح دون إرسال أي رد آلي من النظام (الرد يدوي عبر الموظف فقط).`);
         return;
       }
 
       let responseText = '';
-      const isAiDisabled = process.env.DISABLE_AI === 'true' || process.env.DISABLE_AI === '1';
-
-      if (isAiDisabled) {
-        console.log(`[BullMQ Worker] ⚠️ الذكاء الاصطناعي معطل. استخدام الرد التلقائي المباشر للزبون [${customerPhone}]`);
+      try {
+        const aiResult = await geminiService.processMessage(
+          conversation.id,
+          restaurant.id,
+          restaurant.name,
+          customerPhone,
+          history,
+          combinedMessageText
+        );
+        responseText = aiResult.responseText;
+      } catch (aiErr: any) {
+        console.error('[BullMQ Worker AI Error] ⚠️ تعذر استدعاء الذكاء الاصطناعي، يتم استخدام الرد التلقائي المباشر:', aiErr.message || aiErr);
         responseText = `أهلاً بك في مطعم ${restaurant.name}! 🌸\nتم استلام رسالتك بنجاح وسنتابع معك فوراً.`;
-      } else {
-        try {
-          const aiResult = await geminiService.processMessage(
-            conversation.id,
-            restaurant.id,
-            restaurant.name,
-            customerPhone,
-            history,
-            combinedMessageText
-          );
-          responseText = aiResult.responseText;
-        } catch (aiErr: any) {
-          console.error('[BullMQ Worker AI Error] ⚠️ تعذر استدعاء الذكاء الاصطناعي، يتم استخدام الرد التلقائي المباشر:', aiErr.message || aiErr);
-          responseText = `أهلاً بك في مطعم ${restaurant.name}! 🌸\nتم استلام رسالتك بنجاح وسنتابع معك فوراً.`;
-        }
       }
 
       // 9 & 10. إرسال رد الـ AI وحفظ السجل بالتوازي مع الحفاظ على الوسائط والروابط والصور
