@@ -8,10 +8,12 @@ class PrismaService {
 
   public static getInstance(): PrismaClient {
     if (!PrismaService.instance) {
-      const dbUrl = process.env.DB_URL || process.env.DATABASE_URL;
+      const dbUrl = process.env.DATABASE_URL || process.env.DB_URL;
       if (!dbUrl) {
-        throw new Error('خطأ: لم يتم ضبط متغير البيئة DB_URL أو DATABASE_URL للاتصال بقاعدة البيانات.');
+        throw new Error('خطأ: لم يتم ضبط متغير البيئة DATABASE_URL أو DB_URL للاتصال بقاعدة البيانات.');
       }
+      if (!process.env.DATABASE_URL) process.env.DATABASE_URL = dbUrl;
+      if (!process.env.DB_URL) process.env.DB_URL = dbUrl;
 
       PrismaService.instance = new PrismaClient({
         datasources: {
