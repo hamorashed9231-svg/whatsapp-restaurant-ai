@@ -17,11 +17,12 @@ import { triggerNewMessage, authorizePusherChannel } from '../services/pusher.se
  * 1. تسجيل الدخول لمسؤول لوحة تحكم المطعم
  */
 export const login = async (req: Request, res: Response): Promise<void> => {
-  const { username, password } = req.body;
+  const cleanUsername = String(req.body?.username || '').trim().toLowerCase();
+  const cleanPassword = String(req.body?.password || '').trim();
   const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_change_me_in_production';
 
   // حسابات المطاعم المجهزة مسبقاً للولوج المباشر السريع
-  if (username === 'houda' && password === '20002000') {
+  if (cleanUsername === 'houda' && cleanPassword === '20002000') {
     const token = jwt.sign(
       { username: 'houda', role: 'admin', restaurantName: 'مطعم عم عيسى' },
       JWT_SECRET,
@@ -41,15 +42,15 @@ export const login = async (req: Request, res: Response): Promise<void> => {
   try {
     let user;
     try {
-      user = await prisma.user.findUnique({ where: { username } });
+      user = await prisma.user.findUnique({ where: { username: cleanUsername } });
     } catch (dbErr) {
       console.warn('تنبيه: قاعدة البيانات غير متاحة، يتم التراجع للمصادقة المباشرة.');
     }
 
     // إذا لم يكن حساب الأدمن موجوداً وكان الدخول بـ admin
-    if (!user && username === 'admin') {
+    if (!user && cleanUsername === 'admin') {
       const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin_password_123';
-      if (password === ADMIN_PASSWORD || password === 'admin') {
+      if (cleanPassword === ADMIN_PASSWORD || cleanPassword === 'admin') {
         const token = jwt.sign(
           { username: 'admin', role: 'admin' },
           JWT_SECRET,
@@ -66,9 +67,13 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       }
     }
 
-    if (user && comparePassword(password, user.password)) {
+    if (user && comparePassword(cleanPassword, user.password)) {
+      const defaultRest = await getOrCreateDefaultRestaurant(user.restaurant_id || undefined);
+      const restId = user.restaurant_id || (defaultRest ? defaultRest.id : 'default');
+      const restName = defaultRest ? defaultRest.name : 'مطعم عم عيسى';
+
       const token = jwt.sign(
-        { username: user.username, role: user.role },
+        { username: user.username, role: user.role, restaurant_id: restId, restaurantName: restName },
         JWT_SECRET,
         { expiresIn: '24h' }
       );
@@ -77,6 +82,8 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         status: 'success',
         token,
         role: user.role,
+        restaurant_id: restId,
+        restaurantName: restName,
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         message: 'تم تسجيل الدخول بنجاح!'
       });
@@ -867,28 +874,44 @@ export const updateRestaurant = async (req: Request, res: Response): Promise<voi
  * إنشاء مستخدم (موظف) جديد في لوحة التحكم (للمسؤول فقط)
  */
 export const createUser = async (req: Request, res: Response): Promise<void> => {
-  const { username, password, role } = req.body;
+  const cleanUsername = String(req.body?.username || '').trim().toLowerCase();
+  const cleanPassword = String(req.body?.password || '').trim();
+  const role = req.body?.role || 'staff';
+
+  if (!cleanUsername || !cleanPassword) {
+    res.status(400).json({ status: 'error', message: 'يرجى إدخال اسم المستخدم وكلمة المرور!' });
+    return;
+  }
+
   try {
-    const existingUser = await prisma.user.findUnique({ where: { username } });
+    const existingUser = await prisma.user.findUnique({ where: { username: cleanUsername } });
     if (existingUser) {
       res.status(400).json({ status: 'error', message: 'اسم المستخدم مسجل بالفعل!' });
       return;
     }
 
+    const defaultRest = await getOrCreateDefaultRestaurant();
+    const restId = defaultRest ? defaultRest.id : undefined;
+
     const newUser = await prisma.user.create({
       data: {
-        username,
-        password: hashPassword(password),
-        role
+        username: cleanUsername,
+        password: hashPassword(cleanPassword),
+        role,
+        restaurant_id: restId
       }
     });
 
     res.status(201).json({
       status: 'success',
       message: 'تم إنشاء المستخدم بنجاح!',
-      user: { id: newUser.id, username: newUser.username, role: newUser.role }
+      user: { id: newUser.id, username: newUser.username, role: newUser.role, restaurant_id: newUser.restaurant_id }
     });
   } catch (error: any) {
+    if (error?.code === 'P2002') {
+      res.status(400).json({ status: 'error', message: 'اسم المستخدم مسجل بالفعل!' });
+      return;
+    }
     res.status(500).json({ status: 'error', message: error.message });
   }
 };

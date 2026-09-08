@@ -5,7 +5,8 @@ import crypto from 'crypto';
  * @param password كلمة المرور النصية
  */
 export const hashPassword = (password: string): string => {
-  return crypto.createHash('sha256').update(password).digest('hex');
+  const cleanPassword = String(password || '').trim();
+  return crypto.createHash('sha256').update(cleanPassword).digest('hex');
 };
 
 /**
@@ -14,5 +15,6 @@ export const hashPassword = (password: string): string => {
  * @param hash كلمة المرور المشفرة المخزنة في قاعدة البيانات
  */
 export const comparePassword = (password: string, hash: string): boolean => {
+  if (!hash) return false;
   return hashPassword(password) === hash;
 };

@@ -1175,8 +1175,9 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
   });
 
   api.interceptors.request.use((config) => {
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+    const authToken = token || localStorage.getItem('token');
+    if (authToken) {
+      config.headers.Authorization = `Bearer ${authToken}`;
     }
     return config;
   });
@@ -1540,14 +1541,16 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
   // إنشاء مستخدم جديد
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUsername.trim() || !newPassword.trim()) return;
+    const cleanUser = newUsername.trim();
+    const cleanPass = newPassword.trim();
+    if (!cleanUser || !cleanPass) return;
     setUsersLoading(true);
     setUsersError(null);
     setUsersSuccess(null);
     try {
       const res = await api.post('/users', {
-        username: newUsername,
-        password: newPassword,
+        username: cleanUser,
+        password: cleanPass,
         role: newRole
       });
       setUsersSuccess(res.data.message || 'تم إنشاء الحساب بنجاح!');

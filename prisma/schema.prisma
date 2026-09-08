@@ -32,6 +32,7 @@ model Restaurant {
   conversations           Conversation[]
   orders                  Order[]
   reservations            Reservation[]
+  users                   User[]
 
   @@map("restaurants") // رسم خريطة لاسم الجدول ليكون بصيغة الجمع
 }
@@ -128,11 +129,13 @@ model Reservation {
 
 // نموذج المستخدمين لإدارة الموظفين والمسؤولين
 model User {
-  id         String   @id @default(uuid())
-  username   String   @unique
-  password   String   // كلمة المرور مشفرة بـ SHA-256
-  role       String   // الدور: "admin" (مسؤول) أو "staff" (موظف)
-  created_at DateTime @default(now())
+  id            String      @id @default(uuid())
+  username      String      @unique
+  password      String      // كلمة المرور مشفرة بـ SHA-256
+  role          String      // الدور: "admin" (مسؤول) أو "staff" (موظف)
+  restaurant_id String?
+  restaurant    Restaurant? @relation(fields: [restaurant_id], references: [id], onDelete: SetNull)
+  created_at    DateTime    @default(now())
 
   @@map("users")
 }

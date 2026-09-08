@@ -17,6 +17,13 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onBackToLanding, darkMode
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const cleanUser = username.trim();
+    const cleanPass = password.trim();
+    if (!cleanUser || !cleanPass) {
+      setError('يرجى إدخال اسم المستخدم وكلمة المرور.');
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -24,8 +31,8 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onBackToLanding, darkMode
 
     try {
       const response = await axios.post(`${apiUrl}/auth/login`, {
-        username,
-        password,
+        username: cleanUser,
+        password: cleanPass,
       });
 
       if (response.data && response.data.token) {
