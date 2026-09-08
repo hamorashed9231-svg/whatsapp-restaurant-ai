@@ -981,11 +981,13 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const handlePasteInChat = async (e: React.ClipboardEvent) => {
     if (e.clipboardData) {
-      const handled = await processClipboardData(e.clipboardData);
-      if (handled) {
+      const items = Array.from(e.clipboardData.items || []);
+      const hasImage = items.some(item => (item.type && item.type.startsWith('image/')) || item.kind === 'file');
+      if (hasImage) {
         e.preventDefault();
         e.stopPropagation();
       }
+      await processClipboardData(e.clipboardData);
     }
   };
 
@@ -5030,25 +5032,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                   type="text"
                                   value={chatInput}
                                   onChange={e => setChatInput(e.target.value)}
-                                  onPaste={(e) => {
-                                    const items = e.clipboardData?.items;
-                                    if (items) {
-                                      for (let i = 0; i < items.length; i++) {
-                                        if (items[i].type.indexOf('image') !== -1) {
-                                          const file = items[i].getAsFile();
-                                          if (file) {
-                                            const reader = new FileReader();
-                                            reader.onload = (event) => {
-                                              if (event.target?.result) {
-                                                setChatImageUrls(prev => [...prev, event.target!.result as string]);
-                                              }
-                                            };
-                                            reader.readAsDataURL(file);
-                                          }
-                                        }
-                                      }
-                                    }
-                                  }}
+                                  onPaste={handlePasteInChat}
                                   placeholder={selectedConvWindowOpen ? t[lang].typeMessagePlaceholder : 'إرسال الرسائل العادية معطل - يرجى اختيار قالب رسمي'}
                                   disabled={!selectedConvWindowOpen}
                                   style={{
