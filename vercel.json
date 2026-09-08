@@ -47,5 +47,11 @@
       "src": "/(.*)",
       "dest": "src/index.ts"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/purge-closed-conversations",
+      "schedule": "0 3 * * *"
+    }
   ]
 }

@@ -42,10 +42,14 @@ import {
   handlePusherAuth
 } from '../controllers/api.controller';
 import { upload } from '../middlewares/upload.middleware';
+import { purgeClosedConversations } from '../controllers/purge.controller';
 
 const router = Router();
 
 // ================= مسارات غير محمية (Public Routes) =================
+
+// كرون حذف البيانات المجدول للمحادثات المغلقة
+router.get('/cron/purge-closed-conversations', purgeClosedConversations);
 
 // تسجيل دخول لوحة التحكم
 router.post('/auth/login', login);
