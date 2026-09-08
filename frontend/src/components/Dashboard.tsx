@@ -3698,7 +3698,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                     </div>
                   </div>
                   
-                  {/* شريط الأزرار التفاعلية الأنيق لفلترة الفئات والحالات في سطر واحد انسيابي */}
+                  {/* شريط الأزرار التفاعلية الأنيق لفلترة الفئات والحالات مع التمرير الأفقي والمرونة */}
                   <div style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -3708,9 +3708,9 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                     borderBottom: darkMode ? '1px solid #222D34' : '1px solid #F1F5F9',
                     overflowX: 'auto',
                     whiteSpace: 'nowrap',
-                    scrollbarWidth: 'none'
+                    scrollbarWidth: 'thin'
                   }}>
-                    {/* فلاتر الحالات */}
+                    {/* فلاتر الحالات بـ Icon Buttons أصلية وألوان متباينة */}
                     <button
                       type="button"
                       onClick={() => { setSelectedStatusFilter('ALL'); setSelectedCategoryFilter('ALL'); }}
@@ -3728,129 +3728,142 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                     >
                       الكل ({conversations.filter(c => viewArchived ? Boolean(c.is_archived) : !c.is_archived).length})
                     </button>
+
+                    {/* زر معلق: ⏳ برتقالي */}
                     <button
                       type="button"
                       onClick={() => setSelectedStatusFilter('UNANSWERED')}
                       style={{
                         padding: '4px 10px',
-                        fontSize: '0.72rem',
+                        fontSize: '0.85rem',
                         fontWeight: 'bold',
                         border: 'none',
                         borderRadius: '14px',
                         backgroundColor: selectedStatusFilter === 'UNANSWERED' ? '#F59E0B' : (darkMode ? '#202C33' : '#FEF3C7'),
                         color: selectedStatusFilter === 'UNANSWERED' ? '#FFFFFF' : '#B45309',
                         cursor: 'pointer',
-                        transition: 'all 0.15s'
+                        transition: 'all 0.15s',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
                       }}
+                      title="معلّق"
                     >
-                      🟠 معلّق
+                      ⏳
                     </button>
+
+                    {/* زر قيد الرد: ✏️ بنفسجي مميز لمنع التعارض مع الأزرق */}
                     <button
                       type="button"
                       onClick={() => setSelectedStatusFilter('IN_PROGRESS')}
                       style={{
                         padding: '4px 10px',
-                        fontSize: '0.72rem',
+                        fontSize: '0.85rem',
                         fontWeight: 'bold',
                         border: 'none',
                         borderRadius: '14px',
-                        backgroundColor: selectedStatusFilter === 'IN_PROGRESS' ? '#3B82F6' : (darkMode ? '#202C33' : '#DBEAFE'),
-                        color: selectedStatusFilter === 'IN_PROGRESS' ? '#FFFFFF' : '#1D4ED8',
+                        backgroundColor: selectedStatusFilter === 'IN_PROGRESS' ? '#8B5CF6' : (darkMode ? '#202C33' : '#F3E8FF'),
+                        color: selectedStatusFilter === 'IN_PROGRESS' ? '#FFFFFF' : '#6D28D9',
                         cursor: 'pointer',
-                        transition: 'all 0.15s'
+                        transition: 'all 0.15s',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
                       }}
+                      title="قيد الرد"
                     >
-                      🔵 قيد الرد
+                      ✏️
                     </button>
+
+                    {/* زر مغلقة: ✓ رمادي رصاصي مميز لمنع التعارض مع الأخضر */}
                     <button
                       type="button"
                       onClick={() => setSelectedStatusFilter('CLOSED')}
                       style={{
                         padding: '4px 10px',
-                        fontSize: '0.72rem',
+                        fontSize: '0.85rem',
                         fontWeight: 'bold',
                         border: 'none',
                         borderRadius: '14px',
-                        backgroundColor: selectedStatusFilter === 'CLOSED' ? '#64748B' : (darkMode ? '#202C33' : '#F1F5F9'),
+                        backgroundColor: selectedStatusFilter === 'CLOSED' ? '#475569' : (darkMode ? '#202C33' : '#F1F5F9'),
                         color: selectedStatusFilter === 'CLOSED' ? '#FFFFFF' : '#475569',
                         cursor: 'pointer',
-                        transition: 'all 0.15s'
+                        transition: 'all 0.15s',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
                       }}
+                      title="مغلقة"
                     >
-                      ✅ مغلقة
+                      ✓
                     </button>
 
                     {/* فاصل رأسي شفاف */}
                     <div style={{ width: '1px', height: '16px', backgroundColor: darkMode ? '#2A3942' : '#CBD5E1', flexShrink: 0, margin: '0 2px' }} />
 
-                    {/* فلاتر الفئات */}
+                    {/* فلاتر الفئات بالأيقونات فقط واللوحة الثابتة المميزة */}
                     <button
                       type="button"
                       onClick={() => setSelectedCategoryFilter('ORDER')}
                       style={{
                         padding: '4px 10px',
-                        fontSize: '0.72rem',
+                        fontSize: '0.85rem',
                         fontWeight: 'bold',
                         border: 'none',
                         borderRadius: '14px',
                         backgroundColor: selectedCategoryFilter === 'ORDER' ? '#10B981' : (darkMode ? '#202C33' : '#D1FAE5'),
                         color: selectedCategoryFilter === 'ORDER' ? '#FFFFFF' : '#047857',
                         cursor: 'pointer',
-                        transition: 'all 0.15s'
+                        transition: 'all 0.15s',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
                       }}
+                      title="طلبات"
                     >
-                      📦 طلبات
+                      📦
                     </button>
                     <button
                       type="button"
                       onClick={() => setSelectedCategoryFilter('COMPLAINT')}
                       style={{
                         padding: '4px 10px',
-                        fontSize: '0.72rem',
+                        fontSize: '0.85rem',
                         fontWeight: 'bold',
                         border: 'none',
                         borderRadius: '14px',
                         backgroundColor: selectedCategoryFilter === 'COMPLAINT' ? '#EF4444' : (darkMode ? '#202C33' : '#FEE2E2'),
                         color: selectedCategoryFilter === 'COMPLAINT' ? '#FFFFFF' : '#B91C1C',
                         cursor: 'pointer',
-                        transition: 'all 0.15s'
+                        transition: 'all 0.15s',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
                       }}
+                      title="شكاوى"
                     >
-                      ⚠️ شكاوى ({conversations.filter(c => (viewArchived ? Boolean(c.is_archived) : !c.is_archived) && c.category === 'COMPLAINT').length})
+                      ⚠️
                     </button>
                     <button
                       type="button"
                       onClick={() => setSelectedCategoryFilter('INQUIRY')}
                       style={{
                         padding: '4px 10px',
-                        fontSize: '0.72rem',
+                        fontSize: '0.85rem',
                         fontWeight: 'bold',
                         border: 'none',
                         borderRadius: '14px',
                         backgroundColor: selectedCategoryFilter === 'INQUIRY' ? '#3B82F6' : (darkMode ? '#202C33' : '#EFF6FF'),
                         color: selectedCategoryFilter === 'INQUIRY' ? '#FFFFFF' : '#1D4ED8',
                         cursor: 'pointer',
-                        transition: 'all 0.15s'
+                        transition: 'all 0.15s',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
                       }}
+                      title="استفسارات"
                     >
-                      ❓ استفسار
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedCategoryFilter('GROUP')}
-                      style={{
-                        padding: '4px 10px',
-                        fontSize: '0.72rem',
-                        fontWeight: 'bold',
-                        border: 'none',
-                        borderRadius: '14px',
-                        backgroundColor: selectedCategoryFilter === 'GROUP' ? '#8B5CF6' : (darkMode ? '#202C33' : '#F3E8FF'),
-                        color: selectedCategoryFilter === 'GROUP' ? '#FFFFFF' : '#6D28D9',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s'
-                      }}
-                    >
-                      👥 الجروبات ({conversations.filter(c => (viewArchived ? Boolean(c.is_archived) : !c.is_archived) && (c.category === 'GROUP' || c.is_group || c.customer_phone.includes('g.us') || c.customer_phone.includes('جروب'))).length})
+                      ❓
                     </button>
                   </div>
 
