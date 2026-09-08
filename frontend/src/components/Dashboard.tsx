@@ -28,6 +28,8 @@ import {
   Copy,
   Download,
   Lock,
+  Unlock,
+  Archive,
   AlertTriangle,
   FileText,
   CornerUpLeft
@@ -4061,7 +4063,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                   <div style={styles.chatPane}>
                     {selectedConversation ? (
                       <>
-                        {/* هيدر الدردشة مع التحكم بالحالة واسم الموظف وزر الأرشفة */}
+                        {/* هيدر الدردشة المطور بأسلوب مدمج مع أيقونات تفاعلية ونسخ ذكي */}
                         <div style={{ ...styles.chatPaneHeader, padding: '12px 16px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', flexWrap: 'wrap', gap: '10px' }}>
                             <div>
@@ -4071,44 +4073,42 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                   const isGroup = isGroupConvCheck(selectedConversation);
                                   return (
                                     <>
-                                      <span style={{ fontWeight: 'bold', fontSize: '0.95rem', color: darkMode ? '#FFFFFF' : '#0F1E36' }}>
-                                        {isGroup ? `👥 مجموعة: ${phoneStr}` : `📱 رقم العميل: ${phoneStr}`}
+                                      <span style={{ fontWeight: 'bold', fontSize: '0.95rem', color: darkMode ? '#FFFFFF' : '#0F1E36', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                        <span>{isGroup ? '👥' : '📱'}</span>
+                                        <span>{phoneStr}</span>
                                       </span>
                                       <button
                                         type="button"
                                         onClick={() => {
                                           if (phoneStr && phoneStr !== 'رقم غير متاح') {
-                                            navigator.clipboard.writeText(phoneStr);
+                                            let textToCopy = phoneStr.trim();
+                                            if (/^[0-9]+$/.test(textToCopy) && textToCopy.startsWith('20') && textToCopy.length === 12) {
+                                              textToCopy = '0' + textToCopy.slice(2);
+                                            }
+                                            navigator.clipboard.writeText(textToCopy);
                                             setCopySuccess(true);
                                             setTimeout(() => setCopySuccess(false), 2000);
                                           }
                                         }}
                                         style={{
                                           border: '1px solid #CBD5E1',
-                                          backgroundColor: copySuccess ? '#10B981' : '#FFFFFF',
-                                          color: copySuccess ? '#FFFFFF' : '#0F1E36',
+                                          backgroundColor: copySuccess ? '#10B981' : (darkMode ? '#1E293B' : '#FFFFFF'),
+                                          color: copySuccess ? '#FFFFFF' : (darkMode ? '#CBD5E1' : '#0F1E36'),
                                           borderRadius: '6px',
-                                          padding: '3px 8px',
-                                          fontSize: '0.72rem',
-                                          fontWeight: 'bold',
+                                          padding: '4px 7px',
+                                          fontSize: '0.75rem',
                                           cursor: 'pointer',
                                           display: 'inline-flex',
                                           alignItems: 'center',
-                                          gap: '4px',
+                                          justifyContent: 'center',
                                           transition: 'all 0.2s'
                                         }}
                                         title="نسخ رقم الهاتف للحافظة"
                                       >
                                         {copySuccess ? (
-                                          <>
-                                            <CheckCircle size={13} color="#FFFFFF" />
-                                            <span>تم النسخ!</span>
-                                          </>
+                                          <CheckCircle size={14} color="#FFFFFF" />
                                         ) : (
-                                          <>
-                                            <Copy size={13} color="#0066FF" />
-                                            <span>نسخ الرقم</span>
-                                          </>
+                                          <Copy size={14} color="#0066FF" />
                                         )}
                                       </button>
                                     </>
@@ -4129,7 +4129,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                               </div>
                             </div>
                             
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                               {/* زر إرسال الكتالوج الرسمي المباشر للعميل */}
                               <button
                                 type="button"
@@ -4148,71 +4148,6 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                 title="إرسال كارت الكتالوج الرسمي المباشر للعميل على الواتساب"
                               >
                                 🛍️ إرسال الكتالوج
-                              </button>
-
-                              {/* زر الأرشفة / إلغاء الأرشفة */}
-                              {!selectedConversation.is_archived ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleArchive(selectedConversation.id, true)}
-                                  style={{
-                                    border: 'none',
-                                    backgroundColor: '#475569',
-                                    color: '#FFFFFF',
-                                    padding: '6px 12px',
-                                    borderRadius: '6px',
-                                    fontSize: '0.75rem',
-                                    fontWeight: 'bold',
-                                    cursor: 'pointer',
-                                    boxShadow: '0 2px 6px rgba(71, 85, 105, 0.3)'
-                                  }}
-                                  title="أرشفة المحادثة ونقلها لأرشيف النظام"
-                                >
-                                  📦 أرشفة الشات
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleArchive(selectedConversation.id, false)}
-                                  style={{
-                                    border: 'none',
-                                    backgroundColor: '#0066FF',
-                                    color: '#FFFFFF',
-                                    padding: '6px 12px',
-                                    borderRadius: '6px',
-                                    fontSize: '0.75rem',
-                                    fontWeight: 'bold',
-                                    cursor: 'pointer',
-                                    boxShadow: '0 2px 6px rgba(0, 102, 255, 0.3)'
-                                  }}
-                                  title="إعادة الشات للقائمة النشطة"
-                                >
-                                  📤 إلغاء الأرشفة
-                                </button>
-                              )}
-
-                              {/* زر حذف المحادثة نهائياً */}
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteConversation(selectedConversation.id)}
-                                style={{
-                                  border: 'none',
-                                  backgroundColor: '#EF4444',
-                                  color: '#FFFFFF',
-                                  padding: '6px 12px',
-                                  borderRadius: '6px',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 'bold',
-                                  cursor: 'pointer',
-                                  boxShadow: '0 2px 6px rgba(239, 68, 68, 0.3)',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '4px'
-                                }}
-                                title="حذف هذه المحادثة وكافة رسائلها نهائياً"
-                              >
-                                <Trash size={13} />
-                                <span>حذف المحادثة</span>
                               </button>
 
                               {/* أزرار التحكم الفوري بالحالة لتحديد اسم الموظف */}
@@ -4237,23 +4172,72 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                 </button>
                               )}
 
+                              {/* زر الأرشفة / إلغاء الأرشفة كـ Icon Button */}
+                              {!selectedConversation.is_archived ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleArchive(selectedConversation.id, true)}
+                                  style={{
+                                    border: 'none',
+                                    backgroundColor: '#475569',
+                                    color: '#FFFFFF',
+                                    padding: '6px 10px',
+                                    borderRadius: '6px',
+                                    fontSize: '0.85rem',
+                                    cursor: 'pointer',
+                                    boxShadow: '0 2px 6px rgba(71, 85, 105, 0.3)',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                  }}
+                                  title="أرشفة المحادثة"
+                                >
+                                  <Archive size={15} />
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleArchive(selectedConversation.id, false)}
+                                  style={{
+                                    border: 'none',
+                                    backgroundColor: '#0066FF',
+                                    color: '#FFFFFF',
+                                    padding: '6px 10px',
+                                    borderRadius: '6px',
+                                    fontSize: '0.85rem',
+                                    cursor: 'pointer',
+                                    boxShadow: '0 2px 6px rgba(0, 102, 255, 0.3)',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                  }}
+                                  title="إلغاء أرشفة المحادثة"
+                                >
+                                  <Archive size={15} />
+                                </button>
+                              )}
+
+                              {/* زر القفل / فتح القفل للحالة (Lock/Unlock Icon Button) */}
                               {(selectedConversation.status || '').toUpperCase() !== 'CLOSED' ? (
                                 <button
                                   type="button"
                                   onClick={() => handleUpdateStatus(selectedConversation.id, 'CLOSED')}
                                   style={{
                                     border: 'none',
-                                    backgroundColor: '#EF4444',
+                                    backgroundColor: '#10B981',
                                     color: '#FFFFFF',
-                                    padding: '6px 12px',
+                                    padding: '6px 10px',
                                     borderRadius: '6px',
-                                    fontSize: '0.75rem',
-                                    fontWeight: 'bold',
+                                    fontSize: '0.85rem',
                                     cursor: 'pointer',
-                                    boxShadow: '0 2px 6px rgba(239, 68, 68, 0.3)'
+                                    boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
                                   }}
+                                  title="المحادثة نشطة - اضغط للإغلاق"
                                 >
-                                  🔴 إغلاق المحادثة
+                                  <Unlock size={15} />
                                 </button>
                               ) : (
                                 <button
@@ -4261,40 +4245,65 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                   onClick={() => handleUpdateStatus(selectedConversation.id, 'IN_PROGRESS')}
                                   style={{
                                     border: 'none',
-                                    backgroundColor: '#10B981',
+                                    backgroundColor: '#EF4444',
                                     color: '#FFFFFF',
-                                    padding: '6px 12px',
+                                    padding: '6px 10px',
                                     borderRadius: '6px',
-                                    fontSize: '0.75rem',
-                                    fontWeight: 'bold',
+                                    fontSize: '0.85rem',
                                     cursor: 'pointer',
-                                    boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
+                                    boxShadow: '0 2px 6px rgba(239, 68, 68, 0.3)',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
                                   }}
+                                  title="المحادثة مغلقة - اضغط للفتح"
                                 >
-                                  🔄 إعادة فتح الدردشة
+                                  <Lock size={15} />
                                 </button>
                               )}
 
+                              {/* زر حذف المحادثة نهائياً كـ Icon Button */}
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteConversation(selectedConversation.id)}
+                                style={{
+                                  border: 'none',
+                                  backgroundColor: '#EF4444',
+                                  color: '#FFFFFF',
+                                  padding: '6px 10px',
+                                  borderRadius: '6px',
+                                  fontSize: '0.85rem',
+                                  cursor: 'pointer',
+                                  boxShadow: '0 2px 6px rgba(239, 68, 68, 0.3)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center'
+                                }}
+                                title="حذف المحادثة"
+                              >
+                                <Trash size={15} />
+                              </button>
+
+                              {/* قائمة التصنيف المنسدلة بدون خيار الجروبات */}
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', borderRight: '1px solid #E2E8F0', paddingRight: '10px' }}>
-                                <span style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 'bold' }}>التصنيف:</span>
+                                <span style={{ fontSize: '0.75rem', color: darkMode ? '#CBD5E1' : '#64748B', fontWeight: 'bold' }}>التصنيف:</span>
                                 <select
-                                  value={selectedConversation.category || (isGroupConvCheck(selectedConversation) ? 'GROUP' : 'INQUIRY')}
+                                  value={selectedConversation.category || 'INQUIRY'}
                                   onChange={(e) => handleUpdateCategory(selectedConversation.id, e.target.value as any)}
                                   style={{
                                     padding: '4px 8px',
                                     borderRadius: '6px',
                                     fontSize: '0.75rem',
                                     border: '1px solid #CBD5E1',
-                                    backgroundColor: '#FFFFFF',
+                                    backgroundColor: darkMode ? '#1E293B' : '#FFFFFF',
                                     fontWeight: 'bold',
                                     cursor: 'pointer',
-                                    color: selectedConversation.category === 'ORDER' ? '#10B981' : selectedConversation.category === 'COMPLAINT' ? '#EF4444' : selectedConversation.category === 'GROUP' ? '#8B5CF6' : '#3B82F6'
+                                    color: selectedConversation.category === 'ORDER' ? '#10B981' : selectedConversation.category === 'COMPLAINT' ? '#EF4444' : '#3B82F6'
                                   }}
                                 >
                                   <option value="INQUIRY">❓ استفسارات</option>
                                   <option value="ORDER">📦 طلبات</option>
                                   <option value="COMPLAINT">⚠️ شكاوى</option>
-                                  <option value="GROUP">👥 مجموعات الواتساب (API Group)</option>
                                 </select>
                               </div>
                             </div>
