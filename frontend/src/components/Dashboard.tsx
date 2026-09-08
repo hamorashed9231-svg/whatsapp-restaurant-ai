@@ -1689,13 +1689,97 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
     api.post(`/restaurants/${restId}/quick-replies`, { replies: updated }).catch(() => {});
   };
 
+  // 🎨 Employee Color Palette for staff assigned_to & closed_by (8 accessible, high-contrast colors)
+  const STAFF_COLOR_PALETTE = [
+    { light: '#4F46E5', dark: '#818CF8' }, // 0: Indigo
+    { light: '#0D9488', dark: '#2DD4BF' }, // 1: Teal (Malak)
+    { light: '#E11D48', dark: '#FB7185' }, // 2: Rose
+    { light: '#9D174D', dark: '#F472B6' }, // 3: Plum/Berry
+    { light: '#0284C7', dark: '#38BDF8' }, // 4: Cyan
+    { light: '#92400E', dark: '#FDBA74' }, // 5: Bronze/Warm Brown
+    { light: '#4D7C0F', dark: '#A3E635' }, // 6: Lime/Olive
+    { light: '#C026D3', dark: '#E879F9' }, // 7: Fuchsia/Magenta
+  ];
+
+  /**
+   * Returns a consistent per-user color from STAFF_COLOR_PALETTE based on username hash.
+   */
+  const getStaffColor = (username: string | null | undefined, isDark: boolean): string => {
+    if (!username || !username.trim()) {
+      return isDark ? '#94A3B8' : '#64748B';
+    }
+    const cleanName = username.trim().toLowerCase();
+    let hash = 0;
+    for (let i = 0; i < cleanName.length; i++) {
+      hash = cleanName.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const index = Math.abs(hash) % STAFF_COLOR_PALETTE.length;
+    const colorObj = STAFF_COLOR_PALETTE[index];
+    return isDark ? colorObj.dark : colorObj.light;
+  };
+
+  /**
+   * Returns color, label, and tooltip for category dot.
+   * Category "Other/General" uses Slate Gray (#64748B) - 100% distinct from Teal (#0D9488 / #2DD4BF).
+   */
+  const getCategoryDotInfo = (conv: Conversation, isDark: boolean) => {
+    const isGroup = Boolean(conv?.is_group || conv?.customer_phone?.includes('g.us') || conv?.customer_phone?.includes('جروب') || conv?.category === 'GROUP');
+    const cat = (conv?.category || '').toUpperCase();
+
+    if (cat === 'COMPLAINT') {
+      return {
+        color: isDark ? '#F87171' : '#EF4444',
+        label: 'شكوى',
+        tooltip: 'التصنيف: شكوى'
+      };
+    }
+    if (cat === 'ORDER') {
+      return {
+        color: isDark ? '#34D399' : '#10B981',
+        label: 'طلب',
+        tooltip: 'التصنيف: طلب'
+      };
+    }
+    if (cat === 'RESERVATION') {
+      return {
+        color: isDark ? '#A78BFA' : '#8B5CF6',
+        label: 'حجز',
+        tooltip: 'التصنيف: حجز'
+      };
+    }
+    if (cat === 'GROUP' || isGroup) {
+      return {
+        color: isDark ? '#FBBF24' : '#F59E0B',
+        label: 'مجموعة',
+        tooltip: 'التصنيف: مجموعة'
+      };
+    }
+    if (cat === 'INQUIRY') {
+      return {
+        color: isDark ? '#60A5FA' : '#3B82F6',
+        label: 'استفسار',
+        tooltip: 'التصنيف: استفسار'
+      };
+    }
+    // Other / General fallback (Slate Gray #64748B - 100% distinct from Teal #0D9488)
+    return {
+      color: isDark ? '#94A3B8' : '#64748B',
+      label: conv?.category || 'عام',
+      tooltip: `التصنيف: ${conv?.category || 'عام'}`
+    };
+  };
+
   // دالة تحديد الألوان والبادجات للحالات الـ 3 (غير مردود، جاري الرد، مغلقة)
   const getStatusInfo = (conv: Conversation) => {
     const s = (conv.status || 'UNANSWERED').toUpperCase();
     if (s === 'CLOSED' || s === 'ARCHIVED') {
+      const staffName = conv.closed_by;
+      const staffColor = getStaffColor(staffName, darkMode);
       return {
-        label: conv.closed_by ? `✅ مغلقة (${conv.closed_by})` : '✅ مغلقة',
+        label: staffName ? `✅ مغلقة (${staffName})` : '✅ مغلقة',
         shortLabel: 'مغلقة',
+        staffName,
+        staffColor,
         color: darkMode ? '#94A3B8' : '#64748B',
         bgColor: darkMode ? '#111B21' : '#FFFFFF',
         borderColor: '#64748B',
@@ -1704,9 +1788,13 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
       };
     }
     if (s === 'IN_PROGRESS' || s === 'ACTIVE') {
+      const staffName = conv.assigned_to;
+      const staffColor = getStaffColor(staffName, darkMode);
       return {
-        label: conv.assigned_to ? `🔵 المتابعة: ${conv.assigned_to}` : '🔵 جاري المتابعة',
+        label: staffName ? `🔵 المتابعة: ${staffName}` : '🔵 جاري المتابعة',
         shortLabel: 'جاري المتابعة',
+        staffName,
+        staffColor,
         color: darkMode ? '#60A5FA' : '#1E40AF',
         bgColor: darkMode ? '#111B21' : '#FFFFFF',
         borderColor: '#3B82F6',
@@ -1717,6 +1805,8 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
     return {
       label: '🟠 لم يتم الرد عليه بعد',
       shortLabel: 'لم يتم الرد',
+      staffName: null,
+      staffColor: null,
       color: darkMode ? '#FBBF24' : '#D97706',
       bgColor: darkMode ? '#111B21' : '#FFFFFF',
       borderColor: '#F59E0B',
@@ -3796,9 +3886,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                         {filteredConvs.map(conv => {
                           if (!conv) return null;
                           const phoneStr = getSafePhone(conv);
-                          const isGroupConv = isGroupConvCheck(conv);
-                          const catColor = conv.category === 'ORDER' ? '#10B981' : conv.category === 'COMPLAINT' ? '#EF4444' : isGroupConv ? '#8B5CF6' : '#3B82F6';
-                          const catLabel = conv.category === 'ORDER' ? 'طلب' : conv.category === 'COMPLAINT' ? 'شكوى' : isGroupConv ? '👥 مجموعة' : 'استفسار';
+                          const catDot = getCategoryDotInfo(conv, darkMode);
                           const statusInfo = getStatusInfo(conv);
                           const isSelected = selectedConversation?.id === conv.id;
                           const timeFormatted = safeFormatTime(conv.updated_at || conv.created_at);
@@ -3827,27 +3915,44 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                      width: '38px',
                                      height: '38px',
                                      borderRadius: '50%',
-                                     backgroundColor: `${catColor}18`,
+                                     backgroundColor: `${catDot.color}18`,
                                      display: 'flex',
                                      alignItems: 'center',
                                      justifyContent: 'center',
                                      flexShrink: 0
                                    }}>
-                                     <MessageSquare size={16} color={catColor} />
+                                     <MessageSquare size={16} color={catDot.color} />
                                    </div>
 
                                    <div style={{ flex: 1, minWidth: 0 }}>
                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                       <span style={{
-                                         fontWeight: '600',
-                                         fontSize: '0.88rem',
-                                         color: darkMode ? '#E9EDEF' : '#111B21',
-                                         overflow: 'hidden',
-                                         textOverflow: 'ellipsis',
-                                         whiteSpace: 'nowrap'
-                                       }}>
-                                         {phoneStr}
-                                       </span>
+                                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                                         {/* 🔴 نقطة التصنيف الملونة مع التلميحة Tooltip عند التمرير */}
+                                         <span
+                                           title={catDot.tooltip}
+                                           style={{
+                                             display: 'inline-block',
+                                             width: '9px',
+                                             height: '9px',
+                                             borderRadius: '50%',
+                                             backgroundColor: catDot.color,
+                                             boxShadow: `0 0 0 2px ${catDot.color}30`,
+                                             cursor: 'help',
+                                             flexShrink: 0
+                                           }}
+                                         />
+                                         <span style={{
+                                           fontWeight: '600',
+                                           fontSize: '0.88rem',
+                                           color: darkMode ? '#E9EDEF' : '#111B21',
+                                           overflow: 'hidden',
+                                           textOverflow: 'ellipsis',
+                                           whiteSpace: 'nowrap'
+                                         }}>
+                                           {phoneStr}
+                                         </span>
+                                       </div>
+
                                        {timeFormatted && (
                                          <span style={{ fontSize: '0.68rem', color: darkMode ? '#8696A0' : '#667781', flexShrink: 0 }}>
                                            {timeFormatted}
@@ -3856,16 +3961,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                      </div>
 
                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
-                                       <span style={{
-                                         fontSize: '0.65rem',
-                                         color: catColor,
-                                         fontWeight: 'bold',
-                                         backgroundColor: `${catColor}15`,
-                                         padding: '2px 8px',
-                                         borderRadius: '12px'
-                                       }}>
-                                         {catLabel}
-                                       </span>
+                                       {/* شارة حالة المتابعة مع تلوين اسم الموظف بلونه الخاص */}
                                        <span style={{
                                          fontSize: '0.65rem',
                                          fontWeight: '600',
@@ -3874,7 +3970,17 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                          backgroundColor: statusInfo.badgeBg,
                                          color: statusInfo.textColor
                                        }}>
-                                         {statusInfo.label}
+                                         {statusInfo.staffName ? (
+                                           <>
+                                             {statusInfo.shortLabel === 'مغلقة' ? '✅ مغلقة (' : '🔵 المتابعة: '}
+                                             <span style={{ color: statusInfo.staffColor, fontWeight: '700' }}>
+                                               {statusInfo.staffName}
+                                             </span>
+                                             {statusInfo.shortLabel === 'مغلقة' ? ')' : ''}
+                                           </>
+                                         ) : (
+                                           statusInfo.label
+                                         )}
                                        </span>
                                      </div>
                                    </div>
