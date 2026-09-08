@@ -1,31 +1,49 @@
 import { Request, Response } from 'express';
 import { prisma } from '../services/prisma.service';
-import { del } from '@vercel/blob';
+import { put, del } from '@vercel/blob';
 
 /**
  * Controller to purge closed conversations older than 48 hours.
- * Supports Dry Run Mode (?dryRun=true or default) to safely preview candidates.
- * Secured via CRON_SECRET token or header.
+ * 
+ * Safety Guarantees:
+ * 1. Default mode is 100% DRY RUN unless explicitly requested with dryRun=false AND PURGE_EXECUTION_ENABLED=true in env.
+ * 2. Mandatory Backup Export: In execution mode, full candidate JSON backup is exported and uploaded to Vercel Blob FIRST.
+ * 3. Safe Cascade Deletion: Orders -> Reservations -> MediaAssets & Blobs -> Messages -> Conversation.
  */
 export async function purgeClosedConversations(req: Request, res: Response): Promise<void> {
   try {
     const cronSecret = process.env.CRON_SECRET;
     const providedSecret = req.headers['authorization']?.replace('Bearer ', '') || (req.query.secret as string) || req.headers['x-cron-secret'];
 
-    // Verification of authorization secret if CRON_SECRET is configured
+    // Secret token validation if configured
     if (cronSecret && providedSecret !== cronSecret) {
       res.status(401).json({ success: false, error: 'Unauthorized cron trigger token' });
       return;
     }
 
-    // Dry run mode defaults to true unless explicitly set to false
-    const isDryRun = req.query.dryRun !== 'false' && req.headers['x-dry-run'] !== 'false';
+    // Safety Lock #1: Default mode is strictly DRY RUN
+    const dryRunRequested = req.query.dryRun;
+    const executionEnvEnabled = process.env.PURGE_EXECUTION_ENABLED === 'true';
 
-    // Cutoff time: 48 hours ago
+    // Must explicitly request dryRun=false AND have PURGE_EXECUTION_ENABLED=true to perform actual deletes
+    let isDryRun = true;
+    let safetyNotice = '';
+
+    if (dryRunRequested === 'false') {
+      if (executionEnvEnabled) {
+        isDryRun = false;
+      } else {
+        isDryRun = true;
+        safetyNotice = 'Execution mode (dryRun=false) requested, but environment variable PURGE_EXECUTION_ENABLED is not true. Falling back to DRY RUN for safety.';
+        console.warn(`[PurgeJob ⚠️] ${safetyNotice}`);
+      }
+    }
+
+    // Cutoff: Closed conversations older than 48 hours
     const cutoffHours = 48;
     const cutoffDate = new Date(Date.now() - cutoffHours * 60 * 60 * 1000);
 
-    // 1. Fetch candidate closed conversations older than 48h
+    // 1. Fetch candidate conversations
     const candidates = await prisma.conversation.findMany({
       where: {
         status: 'CLOSED',
@@ -38,116 +56,245 @@ export async function purgeClosedConversations(req: Request, res: Response): Pro
       }
     });
 
-    console.log(`[PurgeJob] Mode: ${isDryRun ? 'DRY_RUN' : 'EXECUTION'} | Found ${candidates.length} candidates older than ${cutoffHours}h (${cutoffDate.toISOString()})`);
+    console.log(`[PurgeJob] Mode: ${isDryRun ? 'DRY_RUN' : 'EXECUTION'} | Found ${candidates.length} candidate conversations older than ${cutoffHours}h (${cutoffDate.toISOString()})`);
 
-    let processedCount = 0;
-    let errorCount = 0;
-    let totalMessagesCount = 0;
-    let totalMediaBlobsCount = 0;
-    const purgeAuditLog: any[] = [];
+    // 2. Gather associated Orders and Reservations for candidate phone numbers & restaurants
+    const candidateData: any[] = [];
+    let totalMessages = 0;
+    let totalOrders = 0;
+    let totalReservations = 0;
+    let totalBlobs = 0;
 
     for (const conv of candidates) {
+      const messages = conv.messages || [];
+      totalMessages += messages.length;
+
+      // Find orders for this customer phone & restaurant created before cutoff
+      let orders: any[] = [];
       try {
-        const messages = conv.messages || [];
-        totalMessagesCount += messages.length;
+        orders = await prisma.order.findMany({
+          where: {
+            restaurant_id: conv.restaurant_id,
+            customer_phone: conv.customer_phone,
+            created_at: { lt: cutoffDate }
+          }
+        });
+      } catch (e) {}
+      totalOrders += orders.length;
 
-        // Collect Vercel Blob URLs & media IDs associated with conversation
-        const blobUrlsToDelete: string[] = [];
-        const mediaIds: string[] = [];
+      // Find reservations for this customer phone & restaurant before cutoff
+      let reservations: any[] = [];
+      try {
+        reservations = await prisma.reservation.findMany({
+          where: {
+            restaurant_id: conv.restaurant_id,
+            customer_phone: conv.customer_phone,
+            date_time: { lt: cutoffDate }
+          }
+        });
+      } catch (e) {}
+      totalReservations += reservations.length;
 
-        for (const msg of messages) {
-          if (msg.media_id) mediaIds.push(msg.media_id);
-          for (const url of [msg.image_url, msg.audio_url, msg.document_url]) {
-            if (url && (url.includes('blob.vercel-storage.com') || url.startsWith('http'))) {
-              blobUrlsToDelete.push(url);
-            }
+      // Collect Vercel Blob URLs & media_ids
+      const blobUrls: string[] = [];
+      const mediaIds: string[] = [];
+
+      for (const msg of messages) {
+        if (msg.media_id) mediaIds.push(msg.media_id);
+        for (const url of [msg.image_url, msg.audio_url, msg.document_url]) {
+          if (url && (url.includes('blob.vercel-storage.com') || url.startsWith('http'))) {
+            blobUrls.push(url);
           }
         }
+      }
 
-        // Also query MediaAsset table for these media_ids if any
-        if (mediaIds.length > 0) {
+      if (mediaIds.length > 0) {
+        try {
           const mediaAssets = await prisma.mediaAsset.findMany({
             where: { media_id: { in: mediaIds } }
           });
           for (const asset of mediaAssets) {
             if (asset.permanent_url && asset.permanent_url.includes('blob.vercel-storage.com')) {
-              if (!blobUrlsToDelete.includes(asset.permanent_url)) {
-                blobUrlsToDelete.push(asset.permanent_url);
+              if (!blobUrls.includes(asset.permanent_url)) {
+                blobUrls.push(asset.permanent_url);
               }
             }
           }
+        } catch (e) {}
+      }
+
+      totalBlobs += blobUrls.length;
+
+      candidateData.push({
+        conversation: conv,
+        orders,
+        reservations,
+        media_ids: mediaIds,
+        blob_urls: blobUrls
+      });
+    }
+
+    let backupUrl: string | null = null;
+
+    // Safety Lock #2: Mandatory Backup Export before any actual DELETE
+    if (!isDryRun && candidates.length > 0) {
+      try {
+        const backupFileName = `purge-backups/purge-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+        const backupPayload = JSON.stringify({
+          exported_at: new Date().toISOString(),
+          cutoff_hours: cutoffHours,
+          cutoff_date: cutoffDate.toISOString(),
+          total_candidates: candidates.length,
+          total_messages: totalMessages,
+          total_orders: totalOrders,
+          total_reservations: totalReservations,
+          total_blobs: totalBlobs,
+          data: candidateData
+        }, null, 2);
+
+        const uploadResult = await put(backupFileName, backupPayload, {
+          access: 'public',
+          contentType: 'application/json'
+        });
+
+        backupUrl = uploadResult.url;
+        console.log(`[PurgeJob 🔒] Mandatory Backup Export successful! Saved to: ${backupUrl}`);
+      } catch (backupErr: any) {
+        console.error('[PurgeJob Fatal Error 🛑] Backup export failed! Aborting purge execution immediately:', backupErr.message || backupErr);
+        res.status(500).json({
+          success: false,
+          error: `Backup Export Failed: ${backupErr.message || backupErr}. Purge aborted for safety.`
+        });
+        return;
+      }
+    }
+
+    // 3. Execution or Dry Run Processing
+    let processedCount = 0;
+    let errorCount = 0;
+    const purgeAuditLog: any[] = [];
+
+    for (const item of candidateData) {
+      const { conversation: conv, orders, reservations, media_ids, blob_urls } = item;
+
+      if (isDryRun) {
+        purgeAuditLog.push({
+          conversation_id: conv.id,
+          customer_phone: conv.customer_phone,
+          restaurant_id: conv.restaurant_id,
+          updated_at: conv.updated_at,
+          messages_count: conv.messages?.length || 0,
+          orders_count: orders.length,
+          reservations_count: reservations.length,
+          blobs_count: blob_urls.length,
+          status: 'WOULD_PURGE'
+        });
+        processedCount++;
+      } else {
+        // Actual Execution Mode - Safe Cascade Deletion Order
+        let itemSuccess = true;
+
+        // 1. Delete Media Blobs from Vercel Blob Storage
+        for (const url of blob_urls) {
+          try {
+            await del(url);
+          } catch (e: any) {
+            console.warn(`[PurgeJob] Failed to delete blob ${url}:`, e.message || e);
+          }
         }
 
-        totalMediaBlobsCount += blobUrlsToDelete.length;
-
-        if (isDryRun) {
-          // Log candidate details without making any mutations
-          purgeAuditLog.push({
-            conversation_id: conv.id,
-            customer_phone: conv.customer_phone,
-            updated_at: conv.updated_at,
-            message_count: messages.length,
-            blob_urls_count: blobUrlsToDelete.length,
-            status: 'WOULD_PURGE'
-          });
-          processedCount++;
-        } else {
-          // Actual Execution Mode: Delete Blob files first
-          for (const blobUrl of blobUrlsToDelete) {
-            try {
-              await del(blobUrl);
-            } catch (blobErr: any) {
-              console.warn(`[PurgeJob] Failed to delete blob ${blobUrl}:`, blobErr.message || blobErr);
-            }
-          }
-
-          // Delete associated MediaAssets
-          if (mediaIds.length > 0) {
+        // 2. Delete MediaAssets
+        if (media_ids.length > 0) {
+          try {
             await prisma.mediaAsset.deleteMany({
-              where: { media_id: { in: mediaIds } }
-            }).catch(() => {});
+              where: { media_id: { in: media_ids } }
+            });
+          } catch (e: any) {
+            console.error(`[PurgeJob Error] Failed to delete media assets for conv ${conv.id}:`, e.message || e);
           }
+        }
 
-          // Delete associated Messages
+        // 3. Delete Orders
+        if (orders.length > 0) {
+          try {
+            const orderIds = orders.map((o: any) => o.id);
+            await prisma.order.deleteMany({
+              where: { id: { in: orderIds } }
+            });
+          } catch (e: any) {
+            console.error(`[PurgeJob Error] Failed to delete orders for conv ${conv.id}:`, e.message || e);
+          }
+        }
+
+        // 4. Delete Reservations
+        if (reservations.length > 0) {
+          try {
+            const reservationIds = reservations.map((r: any) => r.id);
+            await prisma.reservation.deleteMany({
+              where: { id: { in: reservationIds } }
+            });
+          } catch (e: any) {
+            console.error(`[PurgeJob Error] Failed to delete reservations for conv ${conv.id}:`, e.message || e);
+          }
+        }
+
+        // 5. Delete Messages
+        try {
           await prisma.message.deleteMany({
             where: { conversation_id: conv.id }
-          }).catch(() => {});
+          });
+        } catch (e: any) {
+          console.error(`[PurgeJob Error] Failed to delete messages for conv ${conv.id}:`, e.message || e);
+        }
 
-          // Delete Conversation
+        // 6. Delete Conversation
+        try {
           await prisma.conversation.delete({
             where: { id: conv.id }
           });
+        } catch (e: any) {
+          itemSuccess = false;
+          console.error(`[PurgeJob Error] Failed to delete conversation ${conv.id}:`, e.message || e);
+        }
 
+        if (itemSuccess) {
+          processedCount++;
           purgeAuditLog.push({
             conversation_id: conv.id,
             customer_phone: conv.customer_phone,
-            messages_deleted: messages.length,
-            blobs_deleted: blobUrlsToDelete.length,
+            messages_deleted: conv.messages?.length || 0,
+            orders_deleted: orders.length,
+            reservations_deleted: reservations.length,
+            blobs_deleted: blob_urls.length,
             status: 'PURGED'
           });
-          processedCount++;
+        } else {
+          errorCount++;
+          purgeAuditLog.push({
+            conversation_id: conv.id,
+            status: 'ERROR',
+            error: 'Failed to delete conversation row'
+          });
         }
-      } catch (convErr: any) {
-        errorCount++;
-        console.error(`[PurgeJob Error] Failed to purge conversation ${conv.id}:`, convErr.message || convErr);
-        purgeAuditLog.push({
-          conversation_id: conv.id,
-          status: 'ERROR',
-          error: convErr.message || String(convErr)
-        });
       }
     }
 
     res.json({
       success: true,
       mode: isDryRun ? 'DRY_RUN' : 'EXECUTION',
+      safetyNotice: safetyNotice || undefined,
+      backupUrl: backupUrl || (isDryRun ? 'N/A (Dry Run Mode)' : null),
       cutoffHours,
       cutoffDate: cutoffDate.toISOString(),
-      candidatesFound: candidates.length,
-      processedCount,
-      errorCount,
-      totalMessagesPurged: totalMessagesCount,
-      totalMediaBlobsPurged: totalMediaBlobsCount,
+      summary: {
+        totalConversationsFound: candidates.length,
+        totalMessagesFound: totalMessages,
+        totalOrdersFound: totalOrders,
+        totalReservationsFound: totalReservations,
+        totalMediaBlobsFound: totalBlobs,
+        processedCount,
+        errorCount
+      },
       details: purgeAuditLog
     });
   } catch (error: any) {
