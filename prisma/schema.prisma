@@ -68,6 +68,8 @@ model Conversation {
   assigned_to    String?    // اسم الموظف المتابع للمحادثة (المسند إليه)
   closed_by      String?    // اسم الموظف الذي قام بإغلاق المحادثة
   is_archived    Boolean    @default(false) // هل المحادثة مؤرشفة
+  is_blocked     Boolean    @default(false) // هل المحادثة والعميل محظوران
+  blocked_at     DateTime?  // تاريخ ووقت الحظر
   created_at     DateTime   @default(now())
   updated_at     DateTime   @updatedAt
 

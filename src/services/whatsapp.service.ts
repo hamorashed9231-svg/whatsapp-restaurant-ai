@@ -630,6 +630,63 @@ class WhatsAppService {
     if (!binaryObj) return null;
     return `data:${binaryObj.mimeType};base64,${binaryObj.buffer.toString('base64')}`;
   }
+
+  /**
+   * حظر مستخدم على مستوى Meta WhatsApp Cloud API (POST block_users)
+   */
+  public async blockUser(
+    customerPhone: string,
+    customPhoneNumberId?: string,
+    customToken?: string
+  ): Promise<any> {
+    const token = customToken || this.token;
+    const phoneNumberId = customPhoneNumberId || this.defaultPhoneNumberId;
+
+    if (!token || token.includes('ضع_توكين') || token === 'mock-token') {
+      console.log(`🚫 [WhatsApp Mock Block] حظر المستخدم: ${customerPhone}`);
+      return { mock: true, success: true };
+    }
+
+    const url = `https://graph.facebook.com/v20.0/${phoneNumberId}/block_users`;
+    const payload = {
+      messaging_product: 'whatsapp',
+      block_users: [{ user: customerPhone }]
+    };
+
+    const response = await axios.post(url, payload, {
+      headers: this.getHeaders(token)
+    });
+    return response.data;
+  }
+
+  /**
+   * إلغاء حظر مستخدم على مستوى Meta WhatsApp Cloud API (DELETE block_users)
+   */
+  public async unblockUser(
+    customerPhone: string,
+    customPhoneNumberId?: string,
+    customToken?: string
+  ): Promise<any> {
+    const token = customToken || this.token;
+    const phoneNumberId = customPhoneNumberId || this.defaultPhoneNumberId;
+
+    if (!token || token.includes('ضع_توكين') || token === 'mock-token') {
+      console.log(`🔓 [WhatsApp Mock Unblock] إلغاء حظر المستخدم: ${customerPhone}`);
+      return { mock: true, success: true };
+    }
+
+    const url = `https://graph.facebook.com/v20.0/${phoneNumberId}/block_users`;
+    const payload = {
+      messaging_product: 'whatsapp',
+      block_users: [{ user: customerPhone }]
+    };
+
+    const response = await axios.delete(url, {
+      headers: this.getHeaders(token),
+      data: payload
+    });
+    return response.data;
+  }
 }
 
 export const whatsappService = new WhatsAppService();

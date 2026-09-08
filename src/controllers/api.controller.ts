@@ -1983,6 +1983,104 @@ export const handlePusherAuth = async (req: AuthenticatedRequest, res: Response)
   }
 };
 
+/**
+ * 24. حظر المحادثة والعميل لدى Meta وفي قاعدة البيانات محلياً
+ */
+export const blockConversation = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const { id } = req.params;
+  try {
+    const conv = await prisma.conversation.findUnique({
+      where: { id },
+      include: { restaurant: true }
+    });
+
+    if (!conv) {
+      res.status(404).json({ status: 'error', message: 'لم يتم العثور على المحادثة.' });
+      return;
+    }
+
+    // 1. حظر العميل لدى Meta WhatsApp Cloud API أولاً
+    try {
+      await whatsappService.blockUser(
+        conv.customer_phone,
+        conv.restaurant?.whatsapp_number_id,
+        conv.restaurant?.whatsapp_access_token || undefined
+      );
+    } catch (metaErr: any) {
+      const errorDetail = metaErr.response?.data?.error?.message || metaErr.message;
+      console.error('[Meta Block API Error]:', errorDetail);
+      res.status(400).json({
+        status: 'error',
+        message: `فشل حظر العميل عبر Meta API: ${errorDetail}`
+      });
+      return;
+    }
+
+    // 2. تحديث المحادثة محلياً فقط عند نجاح استدعاء Meta
+    const updatedConv = await prisma.conversation.update({
+      where: { id },
+      data: {
+        is_blocked: true,
+        blocked_at: new Date()
+      }
+    });
+
+    res.status(200).json({ status: 'success', conversation: updatedConv });
+  } catch (err: any) {
+    console.error('[Block Conversation Error]:', err);
+    res.status(500).json({ status: 'error', message: 'حدث خطأ في الخادم أثناء حظر العميل.' });
+  }
+};
+
+/**
+ * 25. إلغاء حظر المحادثة والعميل لدى Meta وفي قاعدة البيانات محلياً
+ */
+export const unblockConversation = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const { id } = req.params;
+  try {
+    const conv = await prisma.conversation.findUnique({
+      where: { id },
+      include: { restaurant: true }
+    });
+
+    if (!conv) {
+      res.status(404).json({ status: 'error', message: 'لم يتم العثور على المحادثة.' });
+      return;
+    }
+
+    // 1. إلغاء حظر العميل لدى Meta WhatsApp Cloud API أولاً
+    try {
+      await whatsappService.unblockUser(
+        conv.customer_phone,
+        conv.restaurant?.whatsapp_number_id,
+        conv.restaurant?.whatsapp_access_token || undefined
+      );
+    } catch (metaErr: any) {
+      const errorDetail = metaErr.response?.data?.error?.message || metaErr.message;
+      console.error('[Meta Unblock API Error]:', errorDetail);
+      res.status(400).json({
+        status: 'error',
+        message: `فشل إلغاء الحظر عبر Meta API: ${errorDetail}`
+      });
+      return;
+    }
+
+    // 2. تحديث المحادثة محلياً
+    const updatedConv = await prisma.conversation.update({
+      where: { id },
+      data: {
+        is_blocked: false,
+        blocked_at: null
+      }
+    });
+
+    res.status(200).json({ status: 'success', conversation: updatedConv });
+  } catch (err: any) {
+    console.error('[Unblock Conversation Error]:', err);
+    res.status(500).json({ status: 'error', message: 'حدث خطأ في الخادم أثناء إلغاء الحظر.' });
+  }
+};
+
 
 
 

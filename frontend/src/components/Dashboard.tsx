@@ -562,6 +562,47 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [templateError, setTemplateError] = useState<string | null>(null);
   const [templateSuccess, setTemplateSuccess] = useState<string | null>(null);
 
+  // حالة ومودال حظر العميل (Block / Unblock Customer)
+  const [showBlockConfirmModal, setShowBlockConfirmModal] = useState<boolean>(false);
+  const [blockLoading, setBlockLoading] = useState<boolean>(false);
+
+  const handleBlockCustomer = async (convId: string) => {
+    if (!convId) return;
+    setBlockLoading(true);
+    try {
+      const res = await api.post(`/conversations/${convId}/block`);
+      if (res.data?.conversation) {
+        const updatedConv = res.data.conversation;
+        setConversations(prev => prev.map(c => c.id === updatedConv.id ? { ...c, ...updatedConv } : c));
+        setSelectedConversation(prev => prev ? { ...prev, ...updatedConv } : null);
+      }
+      setShowBlockConfirmModal(false);
+    } catch (err: any) {
+      const errMsg = err.response?.data?.message || err.message || 'فشل حظر العميل';
+      alert(errMsg);
+    } finally {
+      setBlockLoading(false);
+    }
+  };
+
+  const handleUnblockCustomer = async (convId: string) => {
+    if (!convId) return;
+    setBlockLoading(true);
+    try {
+      const res = await api.post(`/conversations/${convId}/unblock`);
+      if (res.data?.conversation) {
+        const updatedConv = res.data.conversation;
+        setConversations(prev => prev.map(c => c.id === updatedConv.id ? { ...c, ...updatedConv } : c));
+        setSelectedConversation(prev => prev ? { ...prev, ...updatedConv } : null);
+      }
+    } catch (err: any) {
+      const errMsg = err.response?.data?.message || err.message || 'فشل إلغاء حظر العميل';
+      alert(errMsg);
+    } finally {
+      setBlockLoading(false);
+    }
+  };
+
   // حالة تفاعلات الإيموجي والـ Hover / Touch على الرسائل (Message Reactions & Long-press)
   const [activeReactionPickerIndex, setActiveReactionPickerIndex] = useState<number | null>(null);
   const [reactionPickerPlacement, setReactionPickerPlacement] = useState<'top' | 'bottom'>('top');
@@ -4297,6 +4338,51 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                 <Trash size={15} />
                               </button>
 
+                              {/* زر حظر/إلغاء حظر العميل كـ Icon Button */}
+                              {!(selectedConversation as any).is_blocked ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setShowBlockConfirmModal(true)}
+                                  style={{
+                                    border: 'none',
+                                    backgroundColor: '#DC2626',
+                                    color: '#FFFFFF',
+                                    padding: '6px 10px',
+                                    borderRadius: '6px',
+                                    fontSize: '0.85rem',
+                                    cursor: 'pointer',
+                                    boxShadow: '0 2px 6px rgba(220, 38, 38, 0.3)',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                  }}
+                                  title="حظر العميل"
+                                >
+                                  🚫
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUnblockCustomer(selectedConversation.id)}
+                                  style={{
+                                    border: 'none',
+                                    backgroundColor: '#059669',
+                                    color: '#FFFFFF',
+                                    padding: '6px 10px',
+                                    borderRadius: '6px',
+                                    fontSize: '0.85rem',
+                                    cursor: 'pointer',
+                                    boxShadow: '0 2px 6px rgba(5, 150, 105, 0.3)',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                  }}
+                                  title="إلغاء حظر العميل"
+                                >
+                                  ✅
+                                </button>
+                              )}
+
                               {/* قائمة التصنيف المنسدلة بدون خيار الجروبات */}
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', borderRight: '1px solid #E2E8F0', paddingRight: '10px' }}>
                                 <span style={{ fontSize: '0.75rem', color: darkMode ? '#CBD5E1' : '#64748B', fontWeight: 'bold' }}>التصنيف:</span>
@@ -4322,6 +4408,43 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                             </div>
                           </div>
                         </div>
+
+                        {/* شريط تحذير أعلى الشات عند حظر العميل */}
+                        {(selectedConversation as any).is_blocked && (
+                          <div style={{
+                            backgroundColor: darkMode ? 'rgba(220, 38, 38, 0.2)' : '#FEF2F2',
+                            borderBottom: '1px solid #FCA5A5',
+                            color: darkMode ? '#FCA5A5' : '#991B1B',
+                            padding: '8px 16px',
+                            fontSize: '0.82rem',
+                            fontWeight: 'bold',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '8px'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span>🚫</span>
+                              <span>هذا العميل محظور محلياً وعلى Meta - متوقف عن استلام وإرسال الرسائل.</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleUnblockCustomer(selectedConversation.id)}
+                              style={{
+                                border: 'none',
+                                backgroundColor: '#DC2626',
+                                color: '#FFFFFF',
+                                padding: '3px 10px',
+                                borderRadius: '4px',
+                                fontSize: '0.75rem',
+                                cursor: 'pointer',
+                                fontWeight: 'bold'
+                              }}
+                            >
+                              إلغاء الحظر الآن
+                            </button>
+                          </div>
+                        )}
 
                         <div style={styles.chatPaneBody}>
                           {!Array.isArray(chatMessages) || chatMessages.length === 0 ? (
@@ -5203,27 +5326,156 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginTop: '20px' }}>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>اللغة:</span>
+                        <button
+                          onClick={() => setTemplateLanguage('ar')}
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            fontSize: '0.8rem',
+                            border: '1px solid var(--border-color)',
+                            backgroundColor: templateLanguage === 'ar' ? '#0066FF' : 'transparent',
+                            color: templateLanguage === 'ar' ? '#FFFFFF' : 'var(--text-main)',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          العربية (ar)
+                        </button>
+                        <button
+                          onClick={() => setTemplateLanguage('en')}
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            fontSize: '0.8rem',
+                            border: '1px solid var(--border-color)',
+                            backgroundColor: templateLanguage === 'en' ? '#0066FF' : 'transparent',
+                            color: templateLanguage === 'en' ? '#FFFFFF' : 'var(--text-main)',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          English (en)
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        <button
+                          onClick={() => { setShowTemplateModal(false); setTemplateError(null); setTemplateSuccess(null); }}
+                          disabled={templateLoading}
+                          style={{
+                            padding: '8px 16px',
+                            borderRadius: '8px',
+                            border: '1px solid var(--border-color)',
+                            backgroundColor: 'transparent',
+                            color: 'var(--text-main)',
+                            fontSize: '0.85rem',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          إلغاء
+                        </button>
+                        <button
+                          onClick={handleSendTemplateMessage}
+                          disabled={templateLoading}
+                          style={{
+                            padding: '8px 20px',
+                            borderRadius: '8px',
+                            border: 'none',
+                            backgroundColor: '#0066FF',
+                            color: '#FFFFFF',
+                            fontSize: '0.85rem',
+                            fontWeight: 'bold',
+                            cursor: templateLoading ? 'wait' : 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                          }}
+                        >
+                          {templateLoading ? 'جاري الإرسال...' : 'إرسال القالب الآن 🚀'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* مودال تأكيد حظر العميل (Block Confirmation Modal) */}
+              {showBlockConfirmModal && selectedConversation && (
+                <div style={{
+                  position: 'fixed',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  backgroundColor: 'rgba(0,0,0,0.6)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  zIndex: 99999,
+                  padding: '16px'
+                }}>
+                  <div style={{
+                    backgroundColor: darkMode ? '#1E293B' : '#FFFFFF',
+                    borderRadius: '12px',
+                    padding: '24px',
+                    maxWidth: '440px',
+                    width: '100%',
+                    boxShadow: '0 10px 25px rgba(0,0,0,0.25)',
+                    color: darkMode ? '#F8FAFC' : '#0F172A'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#DC2626', marginBottom: '12px' }}>
+                      <span style={{ fontSize: '1.6rem' }}>🚫</span>
+                      <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 'bold' }}>تأكيد حظر العميل نهائياً</h3>
+                    </div>
+                    <p style={{ fontSize: '0.88rem', color: darkMode ? '#CBD5E1' : '#475569', lineHeight: 1.5, marginBottom: '20px' }}>
+                      هل أنت متأكد من حظر العميل <strong style={{ color: darkMode ? '#FFFFFF' : '#000000' }}>({getSafePhone(selectedConversation)})</strong>؟
+                      <br />
+                      <span style={{ color: '#DC2626', fontSize: '0.8rem', display: 'inline-block', marginTop: '8px' }}>
+                        ⚠️ لن يتمكن العميل من التواصل معك مجدداً على الواتساب، وسيتم حظره لدى Meta وفي قاعدة البيانات محلياً.
+                      </span>
+                    </p>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                       <button
                         type="button"
-                        onClick={() => { setShowTemplateModal(false); setTemplateError(null); setTemplateSuccess(null); }}
-                        className="btn btn-secondary"
-                        disabled={templateLoading}
+                        onClick={() => setShowBlockConfirmModal(false)}
+                        disabled={blockLoading}
+                        style={{
+                          border: '1px solid #CBD5E1',
+                          backgroundColor: 'transparent',
+                          color: darkMode ? '#CBD5E1' : '#475569',
+                          padding: '8px 16px',
+                          borderRadius: '6px',
+                          fontSize: '0.85rem',
+                          fontWeight: 'bold',
+                          cursor: 'pointer'
+                        }}
                       >
                         إلغاء
                       </button>
                       <button
                         type="button"
-                        onClick={handleSendTemplateMessage}
-                        className="btn btn-primary"
-                        disabled={templateLoading || !selectedTemplateName}
+                        onClick={() => selectedConversation && handleBlockCustomer(selectedConversation.id)}
+                        disabled={blockLoading}
+                        style={{
+                          backgroundColor: '#DC2626',
+                          color: '#FFFFFF',
+                          border: 'none',
+                          padding: '8px 16px',
+                          borderRadius: '6px',
+                          fontSize: '0.85rem',
+                          fontWeight: 'bold',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}
                       >
-                        {templateLoading ? (
+                        {blockLoading ? (
                           <span className="spinner" style={{ width: 16, height: 16 }}></span>
                         ) : (
                           <>
-                            <Send size={16} style={{ transform: 'rotate(180deg)' }} />
-                            <span>تأكيد وإرسال القالب الآن</span>
+                            <span>🚫 تأكيد الحظر النهائي</span>
                           </>
                         )}
                       </button>

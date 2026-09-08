@@ -95,6 +95,22 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
           // 2. استخراج رقم هاتف الزبون وتوحيد صيغته ومحتوى الرسالة والوسائط
           const rawCustomerPhone = message.from;
           const customerPhone = normalizePhone(rawCustomerPhone) || (rawCustomerPhone ? String(rawCustomerPhone).trim() : 'unknown_user');
+
+          // 🛑 فحص حظر الزبون محلياً والمقيد برقم الواتساب المخصص للمطعم الحالي منعاً للتداخل بين المطاعم
+          const existingConvBlockCheck = await prisma.conversation.findFirst({
+            where: {
+              customer_phone: customerPhone,
+              restaurant: {
+                whatsapp_number_id: whatsappNumberId
+              }
+            },
+            select: { is_blocked: true }
+          });
+          if (existingConvBlockCheck?.is_blocked) {
+            console.log(`[Webhook Block Filter] 🚫 تم كتم وتجاهل رسالة قادمة من عميل محظور للمطعم الحالي (${customerPhone}, PhoneID: ${whatsappNumberId})`);
+            continue;
+          }
+
           let messageText = '';
           let mediaId = '';
 
