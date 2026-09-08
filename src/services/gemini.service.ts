@@ -337,7 +337,13 @@ class GeminiService {
           },
           orderBy: { category: 'asc' },
         });
-        return items.map((item) => ({ ...item, image_url: null }));
+        return items.map((item) => ({ 
+          ...item, 
+          image_url: null,
+          last_meta_sync_status: null,
+          last_meta_sync_at: null,
+          last_meta_sync_error: null
+        }));
       }
       throw err;
     }

@@ -65,6 +65,9 @@ interface MenuItem {
   image_url?: string | null;
   is_available: boolean;
   restaurant_id?: string;
+  last_meta_sync_status?: 'SUCCESS' | 'FAILED' | null;
+  last_meta_sync_at?: string | null;
+  last_meta_sync_error?: string | null;
 }
 
 interface Order {
@@ -2905,17 +2908,40 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
 
                         {/* شريط الحالة والخيارات */}
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '14px' }}>
-                          <span style={{
-                            padding: '4px 10px',
-                            borderRadius: '12px',
-                            fontSize: '0.75rem',
-                            fontWeight: '700',
-                            backgroundColor: item.is_available ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                            color: item.is_available ? '#10B981' : '#EF4444',
-                            border: item.is_available ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)'
-                          }}>
-                            {item.is_available ? '● متوفر' : '✕ غير متوفر'}
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{
+                              padding: '4px 10px',
+                              borderRadius: '12px',
+                              fontSize: '0.75rem',
+                              fontWeight: '700',
+                              backgroundColor: item.is_available ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                              color: item.is_available ? '#10B981' : '#EF4444',
+                              border: item.is_available ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)'
+                            }}>
+                              {item.is_available ? '● متوفر' : '✕ غير متوفر'}
+                            </span>
+                            {item.last_meta_sync_status === 'FAILED' && (
+                              <span 
+                                title={`فشلت مزامنة الصنف مع Meta: ${item.last_meta_sync_error || 'خطأ غير معروف'}`}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  padding: '4px 8px',
+                                  borderRadius: '12px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: '700',
+                                  backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                                  color: '#EF4444',
+                                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                                  cursor: 'help'
+                                }}
+                              >
+                                <AlertTriangle size={12} color="#EF4444" />
+                                <span>فشل المزامنة</span>
+                              </span>
+                            )}
+                          </div>
 
                           <div style={{ display: 'flex', gap: '8px' }}>
                             <button 
@@ -2997,15 +3023,38 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                           <td style={styles.tableCell}>{item.category}</td>
                           <td style={styles.tableCell}><span style={{ fontWeight: '900', color: '#00D2FF' }}>{Number(item.price)} ج.م</span></td>
                           <td style={styles.tableCell}>
-                            <span style={{
-                              padding: '4px 8px',
-                              borderRadius: '12px',
-                              fontSize: '0.75rem',
-                              backgroundColor: item.is_available ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                              color: item.is_available ? '#10B981' : '#EF4444'
-                            }}>
-                              {item.is_available ? 'متوفر' : 'غير متوفر'}
-                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{
+                                padding: '4px 8px',
+                                borderRadius: '12px',
+                                fontSize: '0.75rem',
+                                backgroundColor: item.is_available ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                                color: item.is_available ? '#10B981' : '#EF4444'
+                              }}>
+                                {item.is_available ? 'متوفر' : 'غير متوفر'}
+                              </span>
+                              {item.last_meta_sync_status === 'FAILED' && (
+                                <span 
+                                  title={`فشلت مزامنة الصنف مع Meta: ${item.last_meta_sync_error || 'خطأ غير معروف'}`}
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    padding: '2px 6px',
+                                    borderRadius: '10px',
+                                    fontSize: '0.7rem',
+                                    fontWeight: '700',
+                                    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                                    color: '#EF4444',
+                                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                                    cursor: 'help'
+                                  }}
+                                >
+                                  <AlertTriangle size={12} color="#EF4444" />
+                                  <span>فشل المزامنة</span>
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td style={styles.tableCell}>
                             <div style={{ display: 'flex', gap: '8px' }}>

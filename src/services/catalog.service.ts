@@ -79,9 +79,32 @@ export async function syncMenuItemToMetaCatalog(restaurantId: string, item: any)
     );
 
     console.log(`[CatalogService] Successfully synced item "${item.name}" (ID: ${item.id}) to Meta Catalog ${catalogId}:`, response.data?.handles || response.status);
+    
+    // تحديث حالة المزامنة في قاعدة البيانات إلى SUCCESS
+    await prisma.menuItem.update({
+      where: { id: item.id },
+      data: {
+        last_meta_sync_status: 'SUCCESS',
+        last_meta_sync_at: new Date(),
+        last_meta_sync_error: null
+      }
+    }).catch(e => console.error(`[CatalogService] Failed updating SUCCESS status in DB for item ${item.id}:`, e));
+
     return true;
   } catch (err: any) {
+    const errorMsg = err.response?.data?.error?.message || err.message || 'فشل الاتصال بـ Meta Catalog API';
     console.error(`[CatalogService] Failed to sync item ${item.id} to Meta Catalog:`, err.response?.data || err.message);
+    
+    // تحديث حالة المزامنة في قاعدة البيانات إلى FAILED مع حفظ رسالة الخطأ
+    await prisma.menuItem.update({
+      where: { id: item.id },
+      data: {
+        last_meta_sync_status: 'FAILED',
+        last_meta_sync_at: new Date(),
+        last_meta_sync_error: errorMsg
+      }
+    }).catch(e => console.error(`[CatalogService] Failed updating FAILED status in DB for item ${item.id}:`, e));
+
     return false;
   }
 }
@@ -190,13 +213,36 @@ export async function syncFullMenuToMetaCatalog(restaurantId: string, menuItems?
     );
 
     console.log(`[CatalogService] Full menu batch sync completed for catalog ${catalogId}. Synced ${itemsToSync.length} items.`);
+
+    const itemIds = itemsToSync.map(i => i.id);
+    await prisma.menuItem.updateMany({
+      where: { id: { in: itemIds } },
+      data: {
+        last_meta_sync_status: 'SUCCESS',
+        last_meta_sync_at: new Date(),
+        last_meta_sync_error: null
+      }
+    }).catch(e => console.error('[CatalogService] Failed updating batch SUCCESS status in DB:', e));
+
     return { success: true, syncedCount: itemsToSync.length };
   } catch (err: any) {
+    const errorMsg = err.response?.data?.error?.message || err.message || 'فشل الاتصال بـ Meta Catalog API';
     console.error(`[CatalogService] Full menu batch sync failed for catalog ${catalogId}:`, err.response?.data || err.message);
+    
+    const itemIds = itemsToSync.map(i => i.id);
+    await prisma.menuItem.updateMany({
+      where: { id: { in: itemIds } },
+      data: {
+        last_meta_sync_status: 'FAILED',
+        last_meta_sync_at: new Date(),
+        last_meta_sync_error: errorMsg
+      }
+    }).catch(e => console.error('[CatalogService] Failed updating batch FAILED status in DB:', e));
+
     return { 
       success: false, 
       syncedCount: 0, 
-      error: err.response?.data?.error?.message || err.message || 'فشل الاتصال بـ Meta Catalog API' 
+      error: errorMsg 
     };
   }
 }

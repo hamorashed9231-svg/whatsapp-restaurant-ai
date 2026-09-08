@@ -44,8 +44,11 @@ model MenuItem {
   description   String?
   price         Decimal    @db.Decimal(10, 2)
   category      String     // التصنيف (مثال: وجبات رئيسية، مقبلات، مشروبات)
-  image_url     String?    // رابط صورة الصنف
-  is_available  Boolean    @default(true)
+  image_url             String?    // رابط صورة الصنف
+  is_available          Boolean    @default(true)
+  last_meta_sync_status String?    // حالة آخر مزامنة مع كتالوج Meta: SUCCESS أو FAILED
+  last_meta_sync_at     DateTime?  // تاريخ وقت آخر مزامنة مع Meta
+  last_meta_sync_error  String?    // تفاصيل الخطأ في حال فشل المزامنة
 
   // العلاقات
   restaurant    Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)

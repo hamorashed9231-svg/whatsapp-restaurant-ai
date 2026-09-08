@@ -231,6 +231,11 @@ export const addMenuItem = async (req: Request, res: Response): Promise<void> =>
       }
     });
 
+    // مزامنة الصنف الجديد تلقائياً مع كتالوج Meta الواتساب دون تعطيل الرد (Fire-and-Forget)
+    syncMenuItemToMetaCatalog(targetRestId, dbItem).catch(err => {
+      console.error('[AddMenuItem] Automatic catalog sync error:', err);
+    });
+
     res.status(201).json({
       status: 'success',
       item: dbItem,
@@ -263,6 +268,12 @@ export const updateMenuItem = async (req: Request, res: Response): Promise<void>
       where: { id: itemId },
       data: updatedFields
     });
+
+    // مزامنة التعديلات أو تغيير التوفر تلقائياً مع كتالوج Meta (Fire-and-Forget)
+    syncMenuItemToMetaCatalog(updated.restaurant_id, updated).catch(err => {
+      console.error('[UpdateMenuItem] Automatic catalog sync error:', err);
+    });
+
     res.status(200).json({
       status: 'success',
       item: updated,
@@ -281,6 +292,13 @@ export const deleteMenuItem = async (req: Request, res: Response): Promise<void>
   const { itemId } = req.params;
 
   try {
+    const itemToDelete = await prisma.menuItem.findUnique({ where: { id: itemId } });
+    if (itemToDelete) {
+      deleteMenuItemFromMetaCatalog(itemToDelete.restaurant_id, itemId).catch(err => {
+        console.error('[DeleteMenuItem] Automatic catalog delete error:', err);
+      });
+    }
+
     await prisma.menuItem.delete({
       where: { id: itemId }
     });
