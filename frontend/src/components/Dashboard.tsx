@@ -2229,6 +2229,8 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
     const imagesToSend = [...chatImageUrls];
     const replyTargetId = replyToMessage?.wamid || replyToMessage?.id || undefined;
     setChatInput('');
+    const chatInputElem = document.getElementById('chat-input-field') as HTMLTextAreaElement | null;
+    if (chatInputElem) chatInputElem.style.height = 'auto';
     setChatImageUrls([]);
     setReplyToMessage(null);
     if (chatFileInputRef.current) chatFileInputRef.current.value = '';
@@ -5499,16 +5501,34 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                   🎙️
                                 </button>
 
-                                <input
+                                <textarea
                                   id="chat-input-field"
-                                  type="text"
+                                  rows={1}
                                   value={chatInput}
-                                  onChange={e => setChatInput(e.target.value)}
+                                  onChange={e => {
+                                    setChatInput(e.target.value);
+                                    e.target.style.height = 'auto';
+                                    e.target.style.height = `${Math.min(e.target.scrollHeight, 130)}px`;
+                                  }}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                      e.preventDefault();
+                                      if (chatInput.trim() || chatImageUrls.length > 0) {
+                                        handleSendManualMessage(e);
+                                      }
+                                    }
+                                  }}
                                   onPaste={handlePasteInChat}
                                   placeholder={selectedConvWindowOpen ? t[lang].typeMessagePlaceholder : 'إرسال الرسائل العادية معطل - يرجى اختيار قالب رسمي'}
                                   disabled={!selectedConvWindowOpen}
                                   style={{
                                     ...styles.chatPaneInput,
+                                    borderRadius: '18px',
+                                    resize: 'none',
+                                    overflowY: 'auto',
+                                    maxHeight: '130px',
+                                    lineHeight: '1.4',
+                                    padding: '10px 14px',
                                     backgroundColor: !selectedConvWindowOpen ? (darkMode ? '#1E293B' : '#F1F5F9') : styles.chatPaneInput.backgroundColor,
                                     cursor: !selectedConvWindowOpen ? 'not-allowed' : 'text'
                                   }}
