@@ -1320,15 +1320,22 @@ const Dashboard: React.FC<DashboardProps> = ({
     };
 
     try {
-      const dataToExport = menuItems.map((item, index) => ({
-        'م': index + 1,
-        'اسم الصنف': safeText(item.name),
-        'الوصف': safeText(item.description),
-        'السعر (ج.م)': Number(item.price),
-        'التصنيف': safeText(item.category),
-        'حالة التوفر': item.is_available ? 'متوفر' : 'غير متوفر',
-        'رابط الصورة': safeText(item.image_url)
-      }));
+      const DEFAULT_IMAGE = 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=600&q=80';
+      const dataToExport = menuItems.map((item, index) => {
+        const imgUrl = (item.image_url && item.image_url.startsWith('http')) ? item.image_url : DEFAULT_IMAGE;
+        const priceNum = Number(item.price || 0);
+        return {
+          id: String(item.id || `item_${index + 1}`),
+          title: safeText(item.name),
+          description: safeText(item.description) || safeText(item.name),
+          price: `${priceNum} EGP`,
+          availability: item.is_available ? 'in stock' : 'out of stock',
+          condition: 'new',
+          image_link: imgUrl,
+          link: imgUrl,
+          brand: restaurant?.name || 'مطعم'
+        };
+      });
 
       const worksheet = XLSX.utils.json_to_sheet(dataToExport);
 
