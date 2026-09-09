@@ -799,7 +799,9 @@ export const importMenu = async (req: Request, res: Response): Promise<void> => 
         }
       }
 
-      itemsToCreate.push({
+      const customId = row['id'] || row['ID'] || row['Id'] || row['retailer_id'] || row['Retailer ID'] || row['معرف الصنف'];
+
+      const itemData: any = {
         restaurant_id: id,
         name: String(name).trim(),
         description: description ? String(description).trim() : null,
@@ -807,7 +809,13 @@ export const importMenu = async (req: Request, res: Response): Promise<void> => 
         category: String(category).trim(),
         image_url: imageUrl ? String(imageUrl).trim() : null,
         is_available: is_available
-      });
+      };
+
+      if (customId) {
+        itemData.id = String(customId).trim();
+      }
+
+      itemsToCreate.push(itemData);
     }
 
     if (itemsToCreate.length === 0) {

@@ -146,20 +146,18 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
             const textNote = orderObj?.text || message.interactive?.nfm_reply?.response_json?.text || '';
             const items = orderObj?.product_items || [];
 
-            const retailerIds = items.map((it: any) => it.product_retailer_id).filter(Boolean);
-            let itemsMap: Record<string, { name: string; price?: number }> = {};
-            if (retailerIds.length > 0) {
-              try {
-                const foundItems = await prisma.menuItem.findMany({
-                  where: { id: { in: retailerIds } },
-                  select: { id: true, name: true, price: true }
-                });
-                for (const fi of foundItems) {
-                  itemsMap[fi.id] = { name: fi.name, price: Number(fi.price) };
-                }
-              } catch (e) {
-                console.warn('[Webhook Order] Could not fetch menuItem details:', e);
+            let itemsMap: Record<string, { name: string; price?: number; id?: string }> = {};
+            try {
+              const allItems = await prisma.menuItem.findMany({
+                select: { id: true, name: true, price: true }
+              });
+              for (const fi of allItems) {
+                const itemData = { name: fi.name, price: Number(fi.price), id: fi.id };
+                itemsMap[fi.id] = itemData;
+                itemsMap[fi.id.toLowerCase().trim()] = itemData;
               }
+            } catch (e) {
+              console.warn('[Webhook Order] Could not fetch menuItem details:', e);
             }
 
             let formattedItems: string[] = [];
@@ -167,9 +165,24 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
 
             for (const it of items) {
               const qty = Number(it.quantity || 1);
-              const retailerId = it.product_retailer_id;
-              const dbItem = itemsMap[retailerId];
-              const itemName = dbItem?.name || retailerId || 'منتج الكتالوج';
+              const retailerId = String(it.product_retailer_id || '').trim();
+              
+              let dbItem: { name: string; price?: number; id?: string } | undefined = itemsMap[retailerId] || itemsMap[retailerId.toLowerCase()];
+              if (!dbItem && retailerId.startsWith('item_')) {
+                const numStr = retailerId.replace('item_', '').replace(/^0+/, '');
+                dbItem = Object.values(itemsMap).find((val: any) => val.id && (val.id === numStr || val.id.includes(numStr)));
+              }
+
+              let itemName = dbItem?.name;
+              if (!itemName) {
+                if (retailerId.startsWith('item_')) {
+                  const cleanNum = retailerId.replace('item_', '').replace(/^0+/, '');
+                  itemName = `صنف (#${cleanNum || retailerId})`;
+                } else {
+                  itemName = retailerId || 'صنف من الكتالوج';
+                }
+              }
+
               const rawPrice = it.item_price ? Number(it.item_price) : (dbItem?.price || 0);
               const currency = it.currency || 'EGP';
 
