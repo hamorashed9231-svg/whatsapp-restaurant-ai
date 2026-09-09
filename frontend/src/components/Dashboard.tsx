@@ -436,7 +436,7 @@ class ChatErrorBoundary extends React.Component<
 
 const getSafePhone = (c?: any): string => {
   if (!c) return 'مستخدم غير معروف';
-  if (c.customer_name && String(c.customer_name).trim()) {
+  if (c.customer_name && String(c.customer_name).trim() && String(c.customer_name).trim() !== 'unknown_user') {
     return String(c.customer_name).trim();
   }
   const phoneStr = String(c.customer_phone || c.customerPhone || '').trim();
