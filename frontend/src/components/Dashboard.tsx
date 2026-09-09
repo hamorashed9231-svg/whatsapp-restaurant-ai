@@ -444,15 +444,20 @@ const formatDisplayPhone = (rawPhone: string): string => {
 
 const getSafePhone = (c?: any): string => {
   if (!c) return 'مستخدم غير معروف';
-  // 1. أولاً: عرض اسم بروفايل العميل على واتساب إذا كان متاحاً
-  if (c.customer_name && String(c.customer_name).trim() && String(c.customer_name).trim() !== 'unknown_user') {
-    return String(c.customer_name).trim();
+  const rawPhone = String(c.customer_phone || c.customerPhone || '').trim();
+  const digits = rawPhone.replace(/[^\d]/g, '');
+
+  // 1. العميل الذي يملك رقم هاتف: يُعرض رقم هاتفه المنسق فقط (بدون اسمه)
+  if (digits.length >= 7 && rawPhone !== 'unknown_user') {
+    return formatDisplayPhone(rawPhone);
   }
-  // 2. ثانيًا: التراجع لرقم الهاتف المنسق إذا لم يتوفر اسم البروفايل
-  const phoneStr = String(c.customer_phone || c.customerPhone || '').trim();
-  if (phoneStr && phoneStr !== 'unknown_user') {
-    return formatDisplayPhone(phoneStr);
+
+  // 2. العميل الذي لا يملك رقم هاتف وله اسم يوزر: يُعرض اسم اليوزر مسبوقاً بـ @
+  const username = String(c.customer_name || rawPhone || '').trim();
+  if (username && username !== 'unknown_user') {
+    return username.startsWith('@') ? username : `@${username}`;
   }
+
   return 'مستخدم غير معروف';
 };
 
