@@ -3992,24 +3992,30 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                           const isSelected = selectedConversation?.id === conv.id;
                           const timeFormatted = safeFormatTime(conv.updated_at || conv.created_at);
 
-                           return (
-                             <div
-                               key={conv.id || Math.random()}
-                               onClick={() => handleSelectConversation(conv)}
-                               style={{
-                                 padding: '12px 14px',
-                                 marginBottom: '4px',
-                                 borderRadius: '10px',
-                                 cursor: 'pointer',
-                                 transition: 'all 0.15s ease-in-out',
-                                 backgroundColor: isSelected
-                                   ? (darkMode ? '#2A3942' : '#EFF6FF')
-                                   : (darkMode ? '#111B21' : '#FFFFFF'),
-                                 borderRight: isSelected ? '4px solid #0066FF' : '4px solid transparent',
-                                 borderBottom: darkMode ? '1px solid #182229' : '1px solid #F1F5F9',
-                                 boxShadow: isSelected ? '0 2px 6px rgba(0,0,0,0.06)' : 'none'
-                               }}
-                             >
+                          const assignedBorderColor = conv.assigned_to ? getStaffColor(conv.assigned_to, darkMode) : null;
+
+                          return (
+                            <div
+                              key={conv.id || Math.random()}
+                              onClick={() => handleSelectConversation(conv)}
+                              style={{
+                                padding: '12px 14px',
+                                marginBottom: '4px',
+                                borderRadius: '10px',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease-in-out',
+                                backgroundColor: isSelected
+                                  ? (darkMode ? '#2A3942' : '#EFF6FF')
+                                  : (darkMode ? '#111B21' : '#FFFFFF'),
+                                border: assignedBorderColor
+                                  ? `2px solid ${assignedBorderColor}`
+                                  : (darkMode ? '1px solid #182229' : '1px solid #F1F5F9'),
+                                borderRight: isSelected
+                                  ? '4px solid #0066FF'
+                                  : (assignedBorderColor ? `2px solid ${assignedBorderColor}` : (darkMode ? '1px solid #182229' : '1px solid #F1F5F9')),
+                                boxShadow: isSelected ? '0 2px 6px rgba(0,0,0,0.06)' : 'none'
+                              }}
+                            >
                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
                                    <div style={{
