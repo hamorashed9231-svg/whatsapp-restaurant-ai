@@ -34,6 +34,7 @@ model Restaurant {
   reservations            Reservation[]
   users                   User[]
   branches                Branch[]
+  customers               Customer[]
 
   @@map("restaurants") // رسم خريطة لاسم الجدول ليكون بصيغة الجمع
 }
@@ -191,3 +192,45 @@ model MediaAsset {
   @@index([media_id])
   @@map("media_assets")
 }
+
+// نموذج السجل الدائم للعميل (Customer Loyalty Profile)
+model Customer {
+  id                        String                   @id @default(uuid())
+  restaurant_id             String
+  customer_phone            String
+  total_conversations_count Int                      @default(1)
+  first_seen_at             DateTime                 @default(now())
+  last_seen_at              DateTime                 @default(now())
+  created_at                DateTime                 @default(now())
+  updated_at                DateTime                 @updatedAt
+
+  // العلاقات
+  restaurant                Restaurant               @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+  conversation_logs         CustomerConversationLog[]
+
+  // المفتاح المركب للعزل التام بين المطاعم والأدلة
+  @@unique([restaurant_id, customer_phone])
+  @@index([restaurant_id])
+  @@index([customer_phone])
+  @@index([created_at])
+  @@map("customers")
+}
+
+// نموذج سجل تواريخ المحادثات القديمة (Conversation Timeline Log)
+model CustomerConversationLog {
+  id              String   @id @default(uuid())
+  customer_id     String
+  conversation_id String   // معرف المحادثة الأصلي (للتتبع فقط)
+  started_at      DateTime
+  closed_at       DateTime
+  is_purged       Boolean  @default(false) // هل تم تطهير الرسائل والوسائط
+  created_at      DateTime @default(now())
+
+  // العلاقات
+  customer        Customer @relation(fields: [customer_id], references: [id], onDelete: Cascade)
+
+  @@index([customer_id])
+  @@index([started_at])
+  @@map("customer_conversation_logs")
+}
+

@@ -47,7 +47,10 @@ import {
   updateBranchEndpoint,
   deleteBranchEndpoint,
   getBranchPricesEndpoint,
-  setBranchPriceEndpoint
+  setBranchPriceEndpoint,
+  getCustomersEndpoint,
+  getCustomerTimelineEndpoint,
+  getCustomerStatsEndpoint
 } from '../controllers/api.controller';
 import { upload } from '../middlewares/upload.middleware';
 import { purgeClosedConversations } from '../controllers/purge.controller';
@@ -87,6 +90,11 @@ router.put('/branches/:branchId', authMiddleware, updateBranchEndpoint);
 router.delete('/branches/:branchId', authMiddleware, deleteBranchEndpoint);
 router.get('/restaurants/:id/branch-prices', authMiddleware, getBranchPricesEndpoint);
 router.post('/menu/:itemId/branch-prices', authMiddleware, setBranchPriceEndpoint);
+
+// سجل العملاء وبرنامج الولاء والإحصائيات اليومية
+router.get('/restaurants/:id/customers', authMiddleware, getCustomersEndpoint);
+router.get('/restaurants/:id/customers/:customerId', authMiddleware, getCustomerTimelineEndpoint);
+router.get('/restaurants/:id/customer-stats', authMiddleware, getCustomerStatsEndpoint);
 
 // قائمة الطعام (المنيو) والتصنيفات ومزامنة الكتالوج
 router.get('/restaurants/:id/menu', authMiddleware, getMenu);

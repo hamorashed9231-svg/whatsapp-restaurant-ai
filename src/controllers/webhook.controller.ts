@@ -400,7 +400,17 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
     const isWasClosed = (conversation.status === 'CLOSED');
     const isWasArchived = Boolean(conversation.is_archived);
     const shouldReopen = isWasClosed || isWasArchived;
+    const isBrandNewConv = !conversation || conversation.messages_json?.length === 0;
+    const isNewOrReopenedConv = isBrandNewConv || shouldReopen;
     const newStatus = shouldReopen ? 'UNANSWERED' : (conversation.status || 'UNANSWERED');
+
+    // ⚡ تحديث/إنشاء سجل العميل دائمًا برقم العميل والمطعم لحظياً
+    try {
+      const { upsertCustomerOnMessage } = await import('../services/customer.service');
+      await upsertCustomerOnMessage(restaurant.id, customerPhone, isNewOrReopenedConv);
+    } catch (custErr: any) {
+      console.warn('[DirectProcess Customer Upsert Warning]:', custErr.message || custErr);
+    }
 
     try {
       await prisma.conversation.update({

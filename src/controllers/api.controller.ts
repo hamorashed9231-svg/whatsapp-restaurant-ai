@@ -1055,6 +1055,19 @@ export const deleteConversation = async (req: Request, res: Response): Promise<v
   memoryConversations = memoryConversations.filter(c => c.id !== id && c.customer_phone !== id);
 
   try {
+    const targetConv = await prisma.conversation.findFirst({
+      where: { OR: [{ id }, { customer_phone: id }] }
+    }).catch(() => null);
+
+    if (targetConv) {
+      try {
+        const { ensureConversationLoggedBeforeDelete } = await import('../services/customer.service');
+        await ensureConversationLoggedBeforeDelete(targetConv, true);
+      } catch (e: any) {
+        console.warn('[Delete Conversation Log Warning]:', e.message);
+      }
+    }
+
     await prisma.message.deleteMany({ where: { OR: [{ conversation_id: id }] } }).catch(() => {});
     await prisma.conversation.deleteMany({ where: { OR: [{ id }, { customer_phone: id }] } }).catch(() => {});
   } catch (e: any) {
@@ -1114,6 +1127,16 @@ export const updateConversationStatus = async (req: AuthenticatedRequest, res: R
           updated_at: new Date()
         }
       });
+
+      if (status === 'CLOSED') {
+        try {
+          const { logConversationOnClose } = await import('../services/customer.service');
+          await logConversationOnClose(targetConv.id);
+        } catch (closeLogErr: any) {
+          console.warn('[Update Status Close Log Warning]:', closeLogErr.message || closeLogErr);
+        }
+      }
+
       res.status(200).json({ status: 'success', message: 'تم تحديث حالة المحادثة بنجاح!', conversation: updated });
       return;
     }
@@ -2300,6 +2323,115 @@ export const unblockConversation = async (req: AuthenticatedRequest, res: Respon
     res.status(500).json({ status: 'error', message: 'حدث خطأ في الخادم أثناء إلغاء الحظر.' });
   }
 };
+
+/**
+ * 26. جلب قائمة سجل العملاء والولاء للمطعم مع دعم البحث بـ customer_phone والصفحات
+ */
+export const getCustomersEndpoint = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const { id } = req.params; // restaurant_id
+  const search = req.query.search ? String(req.query.search).trim() : '';
+  const page = parseInt(req.query.page as string || '1', 10);
+  const limit = parseInt(req.query.limit as string || '50', 10);
+  const skip = (page - 1) * limit;
+
+  try {
+    const rest = await getOrCreateDefaultRestaurant(id);
+    const targetRestId = rest ? rest.id : id;
+
+    const whereCondition: any = {
+      restaurant_id: targetRestId
+    };
+
+    if (search) {
+      whereCondition.customer_phone = { contains: search };
+    }
+
+    const [total, customers] = await Promise.all([
+      prisma.customer.count({ where: whereCondition }),
+      prisma.customer.findMany({
+        where: whereCondition,
+        orderBy: { last_seen_at: 'desc' },
+        skip,
+        take: limit,
+        include: {
+          _count: {
+            select: { conversation_logs: true }
+          }
+        }
+      })
+    ]);
+
+    res.status(200).json({
+      status: 'success',
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      customers
+    });
+  } catch (err: any) {
+    console.error('[Get Customers Error]:', err.message || err);
+    res.status(500).json({ status: 'error', message: 'حدث خطأ أثناء جلب قائمة العملاء.' });
+  }
+};
+
+/**
+ * 27. جلب تفاصيل عميل محدد مع الـ Timeline الكامل لمحادثاته
+ */
+export const getCustomerTimelineEndpoint = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const { id, customerId } = req.params; // restaurant_id, customer_id
+  try {
+    const customer = await prisma.customer.findFirst({
+      where: {
+        id: customerId,
+        restaurant_id: id
+      },
+      include: {
+        conversation_logs: {
+          orderBy: { started_at: 'desc' }
+        }
+      }
+    });
+
+    if (!customer) {
+      res.status(404).json({ status: 'error', message: 'لم يتم العثور على العميل.' });
+      return;
+    }
+
+    res.status(200).json({
+      status: 'success',
+      customer
+    });
+  } catch (err: any) {
+    console.error('[Get Customer Timeline Error]:', err.message || err);
+    res.status(500).json({ status: 'error', message: 'حدث خطأ أثناء جلب Timeline العميل.' });
+  }
+};
+
+/**
+ * 28. جلب إحصائيات العملاء اليومية (جدد مقابل قدامى رجعوا)
+ */
+export const getCustomerStatsEndpoint = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const { id } = req.params; // restaurant_id
+  const dateStr = req.query.date as string | undefined;
+
+  try {
+    const rest = await getOrCreateDefaultRestaurant(id);
+    const targetRestId = rest ? rest.id : id;
+
+    const { getDailyCustomerStats } = await import('../services/customer.service');
+    const result = await getDailyCustomerStats(targetRestId, dateStr);
+
+    res.status(200).json({
+      status: 'success',
+      ...result
+    });
+  } catch (err: any) {
+    console.error('[Get Customer Stats Error]:', err.message || err);
+    res.status(500).json({ status: 'error', message: 'حدث خطأ أثناء جلب إحصائيات العملاء اليومية.' });
+  }
+};
+
 
 
 

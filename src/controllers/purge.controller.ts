@@ -194,6 +194,14 @@ export async function purgeClosedConversations(req: Request, res: Response): Pro
         // Actual Execution Mode - Safe Cascade Deletion Order
         let itemSuccess = true;
 
+        // 0. Fallback Guard: Ensure permanent Customer & CustomerConversationLog exist & set is_purged = true FIRST
+        try {
+          const { ensureConversationLoggedBeforeDelete } = await import('../services/customer.service');
+          await ensureConversationLoggedBeforeDelete(conv, true);
+        } catch (guardErr: any) {
+          console.error(`[PurgeJob Fallback Guard Error] Failed to log customer info for conv ${conv.id}:`, guardErr.message || guardErr);
+        }
+
         // 1. Delete Media Blobs from Vercel Blob Storage
         for (const url of blob_urls) {
           try {
