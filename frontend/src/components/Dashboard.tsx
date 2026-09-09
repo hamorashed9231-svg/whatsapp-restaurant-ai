@@ -688,6 +688,14 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isMessagesLoading, setIsMessagesLoading] = useState<boolean>(false);
 
+  // Multi-select & Bulk actions state variables
+  const [isSelectionMode, setIsSelectionMode] = useState<boolean>(false);
+  const [selectedConvIds, setSelectedConvIds] = useState<Set<string>>(new Set());
+  const [showBulkArchiveModal, setShowBulkArchiveModal] = useState<boolean>(false);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState<boolean>(false);
+  const [bulkConfirmText, setBulkConfirmText] = useState<string>('');
+  const [bulkActionLoading, setBulkActionLoading] = useState<boolean>(false);
+
   const deduplicateMessages = (msgs: ChatMessage[]): ChatMessage[] => {
     if (!Array.isArray(msgs)) return [];
     const result: ChatMessage[] = [];
@@ -2100,6 +2108,90 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
     } catch (err: any) {
       console.error('Error deleting conversation:', err);
       alert('حدث خطأ أثناء محاولة الحذف.');
+    }
+  };
+
+  // تبديل اختيار محادثة واحدة في التحديد المتعدد
+  const toggleSelectConversation = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedConvIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  // تحديد أو إلغاء تحديد المحادثات المفلترة كاملاً
+  const handleToggleSelectAllFiltered = (filteredList: Conversation[]) => {
+    const validIds = filteredList.map(c => c.id).filter(Boolean);
+    if (selectedConvIds.size >= validIds.length && validIds.every(id => selectedConvIds.has(id))) {
+      setSelectedConvIds(new Set());
+    } else {
+      setSelectedConvIds(new Set(validIds));
+    }
+  };
+
+  // أرشفة جماعية للمحادثات المحددة
+  const handleExecuteBulkArchive = async (targetArchived = true) => {
+    if (selectedConvIds.size === 0) return;
+    const idsArray = Array.from(selectedConvIds);
+    setBulkActionLoading(true);
+
+    // تحديث تفاؤلي فوري في الشاشة
+    setConversations(prev => prev.map(c => idsArray.includes(c.id) ? { ...c, is_archived: targetArchived } : c));
+    if (selectedConversation && idsArray.includes(selectedConversation.id)) {
+      setSelectedConversation(prev => prev ? { ...prev, is_archived: targetArchived } : null);
+    }
+
+    try {
+      const res = await api.post('/conversations/bulk-archive', { ids: idsArray, is_archived: targetArchived });
+      alert(res.data?.message || 'تم تحديث أرشفة المحادثات المحددة بنجاح!');
+      setSelectedConvIds(new Set());
+      setIsSelectionMode(false);
+      setShowBulkArchiveModal(false);
+    } catch (err: any) {
+      console.error('Error executing bulk archive:', err);
+      alert(err.response?.data?.message || 'حدث خطأ أثناء تنفيذ الأرشفة الجماعية.');
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };
+
+  // حذف جماعي نهائي للمحادثات المحددة مع حماية الخيار الحازم للكميات الكبيرة
+  const handleExecuteBulkDelete = async () => {
+    if (selectedConvIds.size === 0) return;
+    if (selectedConvIds.size > 20 && bulkConfirmText.trim() !== 'تأكيد') {
+      alert('يرجى كتابة كلمة "تأكيد" بشكل صحيح لتأكيد الحذف الكلي الحساس.');
+      return;
+    }
+
+    const idsArray = Array.from(selectedConvIds);
+    setBulkActionLoading(true);
+
+    // تحديث تفاؤلي فوري في الواجهة
+    setConversations(prev => prev.filter(c => !idsArray.includes(c.id)));
+    if (selectedConversation && idsArray.includes(selectedConversation.id)) {
+      isUserInitiatedSelectionRef.current = true;
+      setSelectedConversation(null);
+      setTimeout(() => { isUserInitiatedSelectionRef.current = false; }, 150);
+    }
+
+    try {
+      const res = await api.post('/conversations/bulk-delete', { ids: idsArray });
+      alert(res.data?.message || 'تم حذف المحادثات المحددة بنجاح!');
+      setSelectedConvIds(new Set());
+      setIsSelectionMode(false);
+      setShowBulkDeleteModal(false);
+      setBulkConfirmText('');
+    } catch (err: any) {
+      console.error('Error executing bulk delete:', err);
+      alert(err.response?.data?.message || 'حدث خطأ أثناء تنفيذ الحذف الجماعي.');
+    } finally {
+      setBulkActionLoading(false);
     }
   };
 
@@ -4163,7 +4255,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                         style={{
                           flex: 1,
                           padding: '7px 4px',
-                          fontSize: '0.78rem',
+                          fontSize: '0.75rem',
                           fontWeight: 'bold',
                           border: 'none',
                           borderRadius: '8px',
@@ -4182,7 +4274,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                         style={{
                           flex: 1,
                           padding: '7px 4px',
-                          fontSize: '0.78rem',
+                          fontSize: '0.75rem',
                           fontWeight: 'bold',
                           border: 'none',
                           borderRadius: '8px',
@@ -4195,8 +4287,62 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                       >
                         📦 الأرشيف ({conversations.filter(c => Boolean(c.is_archived)).length})
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextMode = !isSelectionMode;
+                          setIsSelectionMode(nextMode);
+                          if (!nextMode) setSelectedConvIds(new Set());
+                        }}
+                        style={{
+                          padding: '7px 8px',
+                          fontSize: '0.75rem',
+                          fontWeight: 'bold',
+                          border: 'none',
+                          borderRadius: '8px',
+                          backgroundColor: isSelectionMode ? '#3B82F6' : 'transparent',
+                          color: isSelectionMode ? '#FFFFFF' : (darkMode ? '#8696A0' : '#64748B'),
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease-in-out',
+                          boxShadow: isSelectionMode ? '0 1px 4px rgba(0,0,0,0.12)' : 'none'
+                        }}
+                        title="تحديد متعدد للإجراءات الجماعية"
+                      >
+                        {isSelectionMode ? 'إلغاء ✕' : '☑️ تحديد'}
+                      </button>
                     </div>
                   </div>
+                  
+                  {isSelectionMode && (
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '6px 12px',
+                      backgroundColor: darkMode ? '#1E293B' : '#EFF6FF',
+                      borderBottom: '1px solid #0066FF',
+                      fontSize: '0.78rem',
+                      fontWeight: 'bold'
+                    }}>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleSelectAllFiltered(conversations.filter(c => Boolean(c)).filter(c => viewArchived ? Boolean(c.is_archived) : !c.is_archived))}
+                        style={{
+                          border: 'none',
+                          backgroundColor: 'transparent',
+                          color: '#0066FF',
+                          cursor: 'pointer',
+                          fontWeight: 'bold',
+                          fontSize: '0.78rem'
+                        }}
+                      >
+                        {selectedConvIds.size > 0 ? '⏹️ إلغاء تحديد الكل' : '☑️ تحديد الكل'}
+                      </button>
+                      <span style={{ color: darkMode ? '#CBD5E1' : '#475569' }}>
+                        تم تحديد: {selectedConvIds.size}
+                      </span>
+                    </div>
+                  )}
                   
                   {/* شريط الأزرار التفاعلية الأنيق لفلترة الفئات والحالات مع التمرير الأفقي والمرونة */}
                   <div style={{
@@ -4442,7 +4588,8 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                     }
 
                     return (
-                      <div style={{ overflowY: 'auto', flex: 1, padding: '6px', minHeight: 0 }}>
+                      <React.Fragment>
+                        <div style={{ overflowY: 'auto', flex: 1, padding: '6px', minHeight: 0 }}>
                         {filteredConvs.map(conv => {
                           if (!conv) return null;
                           const phoneStr = getSafePhone(conv);
@@ -4456,33 +4603,62 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
 
                           const custAvatar = getCustomerAvatarInfo(conv.customer_name, phoneStr);
 
+                          const isChecked = selectedConvIds.has(conv.id);
+
                           return (
                             <div
                               key={conv.id || Math.random()}
-                              onClick={() => handleSelectConversation(conv)}
+                              onClick={(e) => {
+                                if (isSelectionMode) {
+                                  toggleSelectConversation(conv.id, e);
+                                } else {
+                                  handleSelectConversation(conv);
+                                }
+                              }}
                               style={{
                                 padding: '12px 14px',
                                 marginBottom: '4px',
                                 borderRadius: '10px',
                                 cursor: 'pointer',
                                 transition: 'all 0.15s ease-in-out',
-                                backgroundColor: isSelected
+                                backgroundColor: isChecked
+                                  ? (darkMode ? '#1E293B' : '#DBEAFE')
+                                  : isSelected
                                   ? (darkMode ? '#2A3942' : '#EFF6FF')
                                   : (darkMode ? '#111B21' : '#FFFFFF'),
-                                border: assignedBorderColor
+                                border: isChecked
+                                  ? '2px solid #0066FF'
+                                  : assignedBorderColor
                                   ? `2px solid ${assignedBorderColor}`
                                   : (darkMode ? '1px solid #182229' : '1px solid #F1F5F9'),
-                                borderRight: isSelected
+                                borderRight: isSelected || isChecked
                                   ? '4px solid #0066FF'
                                   : (assignedBorderColor ? `2px solid ${assignedBorderColor}` : (darkMode ? '1px solid #182229' : '1px solid #F1F5F9')),
-                                borderBottom: assignedBorderColor
+                                borderBottom: isChecked
+                                  ? '2px solid #0066FF'
+                                  : assignedBorderColor
                                   ? `2px solid ${assignedBorderColor}`
                                   : (darkMode ? '1px solid #182229' : '1px solid #F1F5F9'),
-                                boxShadow: isSelected ? '0 2px 6px rgba(0,0,0,0.06)' : 'none'
+                                boxShadow: isSelected || isChecked ? '0 2px 6px rgba(0,0,0,0.06)' : 'none'
                               }}
                             >
                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
+                                   {isSelectionMode && (
+                                     <input
+                                       type="checkbox"
+                                       checked={isChecked}
+                                       onChange={(e) => toggleSelectConversation(conv.id, e as any)}
+                                       onClick={(e) => e.stopPropagation()}
+                                       style={{
+                                         width: '18px',
+                                         height: '18px',
+                                         accentColor: '#0066FF',
+                                         cursor: 'pointer',
+                                         flexShrink: 0
+                                       }}
+                                     />
+                                   )}
                                    <div style={{
                                      width: '38px',
                                      height: '38px',
@@ -4583,8 +4759,79 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                            );
                         })}
                       </div>
-                    );
-                  })()}
+
+                      {isSelectionMode && selectedConvIds.size > 0 && (
+                        <div style={{
+                          padding: '12px 14px',
+                          backgroundColor: darkMode ? '#1E293B' : '#FFFFFF',
+                          borderTop: '2px solid #0066FF',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '8px',
+                          boxShadow: '0 -4px 14px rgba(0,0,0,0.15)',
+                          flexShrink: 0
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', fontWeight: 'bold', color: darkMode ? '#E2E8F0' : '#0F1E36' }}>
+                            <span>⚡ تم تحديد ({selectedConvIds.size}) محادثة</span>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedConvIds(new Set())}
+                              style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}
+                            >
+                              مسح التحديد ✕
+                            </button>
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button
+                              type="button"
+                              onClick={() => setShowBulkArchiveModal(true)}
+                              style={{
+                                flex: 1,
+                                padding: '8px 10px',
+                                borderRadius: '8px',
+                                border: 'none',
+                                backgroundColor: '#0066FF',
+                                color: '#FFFFFF',
+                                fontWeight: 'bold',
+                                fontSize: '0.8rem',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '4px'
+                              }}
+                            >
+                              📦 أرشفة ({selectedConvIds.size})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBulkConfirmText('');
+                                setShowBulkDeleteModal(true);
+                              }}
+                              style={{
+                                flex: 1,
+                                padding: '8px 10px',
+                                borderRadius: '8px',
+                                border: 'none',
+                                backgroundColor: '#EF4444',
+                                color: '#FFFFFF',
+                                fontWeight: 'bold',
+                                fontSize: '0.8rem',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '4px'
+                              }}
+                            >
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </React.Fragment>
+                  );
+                })()}
                 </div>
 
                 {/* واجهة الرسائل (يمين) مع حماية ErrorBoundary */}
@@ -7210,6 +7457,184 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                 boxShadow: '0 16px 48px rgba(0, 0, 0, 0.7)'
               }}
             />
+          </div>
+        </div>
+      )}
+
+      {/* مودال الأرشفة الجماعية */}
+      {showBulkArchiveModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.6)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '16px'
+        }}>
+          <div style={{
+            backgroundColor: darkMode ? '#1E293B' : '#FFFFFF',
+            color: darkMode ? '#FFFFFF' : '#0F1E36',
+            borderRadius: '16px',
+            padding: '24px',
+            maxWidth: '440px',
+            width: '100%',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
+            textAlign: 'right'
+          }}>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px', color: '#0066FF' }}>
+              <span>📦</span>
+              <span>تأكيد الأرشفة الجماعية</span>
+            </h3>
+            <p style={{ fontSize: '0.88rem', color: darkMode ? '#CBD5E1' : '#64748B', lineHeight: '1.6', marginBottom: '20px' }}>
+              هل أنت متأكد من رغبتك في أرشفة <strong>({selectedConvIds.size})</strong> محادثات مسجلة؟ يمكنك إلغاء الأرشفة في أي وقت من قسم الأرشيف.
+            </p>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setShowBulkArchiveModal(false)}
+                disabled={bulkActionLoading}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  border: '1px solid #CBD5E1',
+                  backgroundColor: 'transparent',
+                  color: darkMode ? '#CBD5E1' : '#475569',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  fontSize: '0.85rem'
+                }}
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={() => handleExecuteBulkArchive(true)}
+                disabled={bulkActionLoading}
+                style={{
+                  padding: '8px 20px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  backgroundColor: '#0066FF',
+                  color: '#FFFFFF',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  fontSize: '0.85rem'
+                }}
+              >
+                {bulkActionLoading ? 'جاري الأرشفة...' : 'نعم، أرشفة المحدد'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* مودال الحذف الجماعي النهائي مع حماية الكميات الكبيرة */}
+      {showBulkDeleteModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.65)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '16px'
+        }}>
+          <div style={{
+            backgroundColor: darkMode ? '#1E293B' : '#FFFFFF',
+            color: darkMode ? '#FFFFFF' : '#0F1E36',
+            borderRadius: '16px',
+            padding: '24px',
+            maxWidth: '460px',
+            width: '100%',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.4)',
+            textAlign: 'right',
+            border: '1px solid rgba(239, 68, 68, 0.3)'
+          }}>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px', color: '#EF4444' }}>
+              <span>⚠️</span>
+              <span>تأكيد الحذف الجماعي النهائي</span>
+            </h3>
+            <p style={{ fontSize: '0.88rem', color: darkMode ? '#CBD5E1' : '#64748B', lineHeight: '1.6', marginBottom: '16px' }}>
+              هل أنت متأكد من رغبتك في حذف <strong>({selectedConvIds.size})</strong> محادثات نهائياً؟
+              <br />
+              <span style={{ color: '#EF4444', fontWeight: 'bold', fontSize: '0.8rem', display: 'block', marginTop: '4px' }}>
+                🚨 هذه العملية ستقوم بإزالة الرسائل والسجلات تماماً ولا يمكن التراجع عنها.
+              </span>
+            </p>
+
+            {selectedConvIds.size > 20 && (
+              <div style={{ marginBottom: '18px', backgroundColor: darkMode ? 'rgba(239, 68, 68, 0.1)' : '#FEF2F2', padding: '12px', borderRadius: '10px', border: '1px solid #FCA5A5' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#DC2626', display: 'block', marginBottom: '6px' }}>
+                  حماية الكميات الكبيرة: اكتب كلمة "تأكيد" أدناه للمتابعة:
+                </label>
+                <input
+                  type="text"
+                  value={bulkConfirmText}
+                  onChange={(e) => setBulkConfirmText(e.target.value)}
+                  placeholder="اكتب كلمة تأكيد..."
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    border: '1px solid #EF4444',
+                    outline: 'none',
+                    fontSize: '0.85rem',
+                    backgroundColor: darkMode ? '#0F172A' : '#FFFFFF',
+                    color: darkMode ? '#FFFFFF' : '#0F1E36'
+                  }}
+                />
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowBulkDeleteModal(false);
+                  setBulkConfirmText('');
+                }}
+                disabled={bulkActionLoading}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  border: '1px solid #CBD5E1',
+                  backgroundColor: 'transparent',
+                  color: darkMode ? '#CBD5E1' : '#475569',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  fontSize: '0.85rem'
+                }}
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteBulkDelete}
+                disabled={bulkActionLoading || (selectedConvIds.size > 20 && bulkConfirmText.trim() !== 'تأكيد')}
+                style={{
+                  padding: '8px 20px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  backgroundColor: (selectedConvIds.size > 20 && bulkConfirmText.trim() !== 'تأكيد') ? '#94A3B8' : '#EF4444',
+                  color: '#FFFFFF',
+                  cursor: (selectedConvIds.size > 20 && bulkConfirmText.trim() !== 'تأكيد') ? 'not-allowed' : 'pointer',
+                  fontWeight: 'bold',
+                  fontSize: '0.85rem',
+                  boxShadow: '0 2px 8px rgba(239, 68, 68, 0.3)'
+                }}
+              >
+                {bulkActionLoading ? 'جاري الحذف...' : `نعم، حذف (${selectedConvIds.size}) محادثة`}
+              </button>
+            </div>
           </div>
         </div>
       )}

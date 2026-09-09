@@ -17,6 +17,8 @@ import {
   updateConversationStatus,
   archiveConversation,
   deleteConversation,
+  bulkArchiveConversations,
+  bulkDeleteConversations,
   blockConversation,
   unblockConversation,
   sendManualMessage,
@@ -123,6 +125,8 @@ router.put('/conversations/:id/category', authMiddleware, updateConversationCate
 router.put('/conversations/:id/status', authMiddleware, updateConversationStatus);
 router.put('/conversations/:id/archive', authMiddleware, archiveConversation);
 router.delete('/conversations/:id', authMiddleware, deleteConversation);
+router.post('/conversations/bulk-archive', authMiddleware, bulkArchiveConversations);
+router.post('/conversations/bulk-delete', authMiddleware, bulkDeleteConversations);
 router.post('/conversations/:id/block', authMiddleware, blockConversation);
 router.post('/conversations/:id/unblock', authMiddleware, unblockConversation);
 router.post('/conversations/:id/messages', authMiddleware, sendManualMessage);

@@ -10,7 +10,7 @@ import { checkSessionWindow } from '../utils/sessionWindow';
 import { normalizePhone } from '../utils/phone';
 import { syncMenuItemToMetaCatalog, deleteMenuItemFromMetaCatalog, syncFullMenuToMetaCatalog, syncAllBranchesCatalogs } from '../services/catalog.service';
 import { redisClient } from '../services/redis.service';
-import { put } from '@vercel/blob';
+import { put, del } from '@vercel/blob';
 import { triggerNewMessage, authorizePusherChannel } from '../services/pusher.service';
 
 /**
@@ -1083,6 +1083,245 @@ export const deleteConversation = async (req: Request, res: Response): Promise<v
   }
 
   res.status(200).json({ status: 'success', message: 'تم حذف المحادثة بنجاح!' });
+};
+
+/**
+ * أرشفة أو إلغاء أرشفة مجموعة من المحادثات دفعة واحدة (Bulk Archive)
+ */
+export const bulkArchiveConversations = async (req: Request, res: Response): Promise<void> => {
+  const { ids, is_archived } = req.body;
+  const targetArchived = is_archived !== undefined ? Boolean(is_archived) : true;
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    res.status(400).json({ status: 'error', message: 'يرجى تحديد المحادثات المراد أرشفتها.' });
+    return;
+  }
+
+  const results: { id: string; status: 'SUCCESS' | 'FAILED'; error?: string }[] = [];
+
+  for (const id of ids) {
+    try {
+      // 1. تحديث الذاكرة الحية
+      const memIdx = memoryConversations.findIndex(c => c.id === id || c.customer_phone === id);
+      if (memIdx !== -1) {
+        memoryConversations[memIdx].is_archived = targetArchived;
+        memoryConversations[memIdx].updated_at = new Date().toISOString();
+      }
+
+      // 2. تحديث قاعدة البيانات
+      let targetConv = await prisma.conversation.findUnique({ where: { id } }).catch(() => null);
+      if (!targetConv) {
+        targetConv = await prisma.conversation.findFirst({
+          where: { OR: [{ id }, { customer_phone: id }] }
+        }).catch(() => null);
+      }
+
+      if (targetConv) {
+        await prisma.conversation.update({
+          where: { id: targetConv.id },
+          data: { is_archived: targetArchived, updated_at: new Date() }
+        });
+      }
+
+      results.push({ id, status: 'SUCCESS' });
+    } catch (err: any) {
+      console.error(`[Bulk Archive Error] Item ${id}:`, err.message);
+      results.push({ id, status: 'FAILED', error: err.message || 'فشل تحديث الأرشفة' });
+    }
+  }
+
+  const succeededCount = results.filter(r => r.status === 'SUCCESS').length;
+  const failedCount = results.filter(r => r.status === 'FAILED').length;
+
+  res.status(200).json({
+    status: 'success',
+    message: `تم ${targetArchived ? 'أرشفة' : 'إلغاء أرشفة'} ${succeededCount} محادثة بنجاح${failedCount > 0 ? ` (وفشل ${failedCount})` : ''}.`,
+    summary: { total: ids.length, succeeded: succeededCount, failed: failedCount },
+    results
+  });
+};
+
+/**
+ * حذف مجموعة من المحادثات نهائياً دفعة واحدة (Bulk Delete) مع حماية المعالجة المعزولة (Isolated Try/Catch per item & blob)
+ * وشاملة حذف وسائط Vercel Blob والطلبات والحجوزات والرسائل والمحادثة بالتسلسل الآمن.
+ */
+export const bulkDeleteConversations = async (req: Request, res: Response): Promise<void> => {
+  const { ids } = req.body;
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    res.status(400).json({ status: 'error', message: 'يرجى تحديد المحادثات المراد حذفها.' });
+    return;
+  }
+
+  const results: {
+    id: string;
+    status: 'SUCCESS' | 'FAILED';
+    deletedBlobsCount?: number;
+    deletedOrdersCount?: number;
+    deletedReservationsCount?: number;
+    error?: string;
+  }[] = [];
+
+  for (const id of ids) {
+    let deletedBlobsCount = 0;
+    let deletedOrdersCount = 0;
+    let deletedReservationsCount = 0;
+
+    try {
+      // 1. البحث عن المحادثة المستهدفة ورسائلها لجمع كافة البيانات والارتباطات
+      const targetConv = await prisma.conversation.findFirst({
+        where: { OR: [{ id }, { customer_phone: id }] },
+        include: { messages: true }
+      }).catch(() => null);
+
+      if (targetConv) {
+        // 2. توثيق بيانات العميل والمحادثة في سجل دائم قبل الحذف (Customer & CustomerConversationLog)
+        try {
+          const { ensureConversationLoggedBeforeDelete } = await import('../services/customer.service');
+          await ensureConversationLoggedBeforeDelete(targetConv, true);
+        } catch (e: any) {
+          console.warn(`[Bulk Delete Log Warning] Item ${id}:`, e.message);
+        }
+
+        // 3. جمع روابط وسائط Vercel Blob ومعرفات MediaAsset المرتبطة بالرسائل
+        const messages = targetConv.messages || [];
+        const blobUrls: string[] = [];
+        const mediaIds: string[] = [];
+
+        for (const msg of messages) {
+          if (msg.media_id) mediaIds.push(msg.media_id);
+          for (const url of [msg.image_url, msg.audio_url, msg.document_url]) {
+            if (url && (url.includes('blob.vercel-storage.com') || url.startsWith('http'))) {
+              blobUrls.push(url);
+            }
+          }
+        }
+
+        if (mediaIds.length > 0) {
+          try {
+            const mediaAssets = await prisma.mediaAsset.findMany({
+              where: { media_id: { in: mediaIds } }
+            });
+            for (const asset of mediaAssets) {
+              if (asset.permanent_url && asset.permanent_url.includes('blob.vercel-storage.com')) {
+                if (!blobUrls.includes(asset.permanent_url)) {
+                  blobUrls.push(asset.permanent_url);
+                }
+              }
+            }
+          } catch (e: any) {
+            console.warn(`[Bulk Delete MediaAsset Fetch Warning] Item ${id}:`, e.message);
+          }
+        }
+
+        // 4. حذف ملفات الوسائط من Vercel Blob (معزولة بـ Try/Catch منفصل لكل ملف)
+        for (const url of blobUrls) {
+          try {
+            await del(url);
+            deletedBlobsCount++;
+          } catch (e: any) {
+            console.warn(`[Bulk Delete Vercel Blob Warning] Item ${id}, Blob ${url}:`, e.message || e);
+          }
+        }
+
+        // 5. حذف سجلات MediaAsset
+        if (mediaIds.length > 0) {
+          try {
+            await prisma.mediaAsset.deleteMany({
+              where: { media_id: { in: mediaIds } }
+            });
+          } catch (e: any) {
+            console.error(`[Bulk Delete MediaAsset Error] Item ${id}:`, e.message || e);
+          }
+        }
+
+        // 6. حذف الطلبات المرتبطة بالعميل والمطعم (Orders)
+        try {
+          const orders = await prisma.order.findMany({
+            where: {
+              restaurant_id: targetConv.restaurant_id,
+              customer_phone: targetConv.customer_phone
+            }
+          });
+          if (orders.length > 0) {
+            const orderIds = orders.map((o: any) => o.id);
+            const delRes = await prisma.order.deleteMany({
+              where: { id: { in: orderIds } }
+            });
+            deletedOrdersCount = delRes.count;
+          }
+        } catch (e: any) {
+          console.error(`[Bulk Delete Orders Error] Item ${id}:`, e.message || e);
+        }
+
+        // 7. حذف الحجوزات المرتبطة بالعميل والمطعم (Reservations)
+        try {
+          const reservations = await prisma.reservation.findMany({
+            where: {
+              restaurant_id: targetConv.restaurant_id,
+              customer_phone: targetConv.customer_phone
+            }
+          });
+          if (reservations.length > 0) {
+            const reservationIds = reservations.map((r: any) => r.id);
+            const delRes = await prisma.reservation.deleteMany({
+              where: { id: { in: reservationIds } }
+            });
+            deletedReservationsCount = delRes.count;
+          }
+        } catch (e: any) {
+          console.error(`[Bulk Delete Reservations Error] Item ${id}:`, e.message || e);
+        }
+
+        // 8. حذف الرسائل المرتبطة بالمحادثة
+        try {
+          await prisma.message.deleteMany({
+            where: { OR: [{ conversation_id: id }, { conversation_id: targetConv.id }] }
+          });
+        } catch (e: any) {
+          console.error(`[Bulk Delete Messages Error] Item ${id}:`, e.message || e);
+        }
+
+        // 9. حذف صف المحادثة نفسه
+        try {
+          await prisma.conversation.deleteMany({
+            where: { OR: [{ id }, { customer_phone: id }] }
+          });
+        } catch (e: any) {
+          console.error(`[Bulk Delete Conversation Row Error] Item ${id}:`, e.message || e);
+        }
+
+        // 10. تحديث الذاكرة الحية (memoryConversations)
+        memoryConversations = memoryConversations.filter(c => c.id !== id && c.customer_phone !== id && c.id !== targetConv.id && c.customer_phone !== targetConv.customer_phone);
+      } else {
+        // في حالة عدم العثور على سجل بالداتابيز، ينفذ الحذف المباشر بالـ ID كإجراء احتياطي
+        await prisma.message.deleteMany({ where: { conversation_id: id } }).catch(() => {});
+        await prisma.conversation.deleteMany({ where: { id } }).catch(() => {});
+        memoryConversations = memoryConversations.filter(c => c.id !== id && c.customer_phone !== id);
+      }
+
+      results.push({
+        id,
+        status: 'SUCCESS',
+        deletedBlobsCount,
+        deletedOrdersCount,
+        deletedReservationsCount
+      });
+    } catch (err: any) {
+      console.error(`[Bulk Delete Error] Item ${id}:`, err.message);
+      results.push({ id, status: 'FAILED', error: err.message || 'فشل الحذف' });
+    }
+  }
+
+  const succeededCount = results.filter(r => r.status === 'SUCCESS').length;
+  const failedCount = results.filter(r => r.status === 'FAILED').length;
+
+  res.status(200).json({
+    status: 'success',
+    message: `تم حذف ${succeededCount} محادثة بنجاح من أصل ${ids.length}${failedCount > 0 ? ` (وفشل ${failedCount})` : ''}.`,
+    summary: { total: ids.length, succeeded: succeededCount, failed: failedCount },
+    results
+  });
 };
 
 /**
