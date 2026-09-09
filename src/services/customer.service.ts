@@ -6,7 +6,8 @@ import { prisma } from './prisma.service';
 export async function upsertCustomerOnMessage(
   restaurantId: string,
   customerPhone: string,
-  isNewOrReopenedConv: boolean
+  isNewOrReopenedConv: boolean,
+  customerName?: string | null
 ) {
   try {
     const existing = await prisma.customer.findUnique({
@@ -25,6 +26,7 @@ export async function upsertCustomerOnMessage(
         data: {
           restaurant_id: restaurantId,
           customer_phone: customerPhone,
+          customer_name: customerName || null,
           total_conversations_count: 1,
           first_seen_at: now,
           last_seen_at: now
@@ -32,22 +34,18 @@ export async function upsertCustomerOnMessage(
       });
     }
 
+    const updateData: any = { last_seen_at: now };
     if (isNewOrReopenedConv) {
-      return await prisma.customer.update({
-        where: { id: existing.id },
-        data: {
-          total_conversations_count: { increment: 1 },
-          last_seen_at: now
-        }
-      });
-    } else {
-      return await prisma.customer.update({
-        where: { id: existing.id },
-        data: {
-          last_seen_at: now
-        }
-      });
+      updateData.total_conversations_count = { increment: 1 };
     }
+    if (customerName && !existing.customer_name) {
+      updateData.customer_name = customerName;
+    }
+
+    return await prisma.customer.update({
+      where: { id: existing.id },
+      data: updateData
+    });
   } catch (error: any) {
     console.error('[CustomerService] Error upserting customer on message:', error.message || error);
     return null;

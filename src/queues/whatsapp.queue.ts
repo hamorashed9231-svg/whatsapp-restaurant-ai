@@ -4,6 +4,7 @@ import { redisConnectionOptions } from '../services/redis.service';
 export interface WhatsAppMessageJob {
   whatsappNumberId: string;
   customerPhone: string;
+  customerName?: string | null;
   messageText: string;
   mediaId?: string;
   messageType?: string;

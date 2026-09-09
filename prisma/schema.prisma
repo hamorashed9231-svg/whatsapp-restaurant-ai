@@ -101,6 +101,7 @@ model Conversation {
   id             String     @id @default(uuid())
   restaurant_id  String
   customer_phone String     // رقم هاتف الزبون
+  customer_name  String?    // اسم الزبون المجلوب من واتساب
   messages_json  Json       // سجل الرسائل بصيغة JSON (مصفوفة متوافقة)
   status         String     // حالة المحادثة: UNANSWERED (لم يتم الرد), IN_PROGRESS (جاري المتابعة), CLOSED (مغلقة)
   category       String     @default("INQUIRY") // تصنيف المحادثة (INQUIRY, ORDER, COMPLAINT)
@@ -198,6 +199,7 @@ model Customer {
   id                        String                   @id @default(uuid())
   restaurant_id             String
   customer_phone            String
+  customer_name             String?
   total_conversations_count Int                      @default(1)
   first_seen_at             DateTime                 @default(now())
   last_seen_at              DateTime                 @default(now())

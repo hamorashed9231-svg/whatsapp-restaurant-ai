@@ -11,9 +11,13 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
   WHATSAPP_QUEUE_NAME,
   async (job: Job<WhatsAppMessageJob>) => {
     try {
-      const { whatsappNumberId, customerPhone: rawCustomerPhone, messageText: defaultMessageText } = job.data;
-      const customerPhone = normalizePhone(rawCustomerPhone) || (rawCustomerPhone ? String(rawCustomerPhone).trim() : 'unknown_user');
-      console.log(`[BullMQ Worker] بدء معالجة المهمة #${job.id} للزبون [${customerPhone}] متجهة للمطعم [${whatsappNumberId}]`);
+      const { whatsappNumberId, customerPhone: rawCustomerPhone, customerName: rawCustomerName, messageText: defaultMessageText } = job.data;
+      const cleanNormPhone = normalizePhone(rawCustomerPhone);
+      let customerPhone = cleanNormPhone;
+      if (!cleanNormPhone || cleanNormPhone === 'unknown_user') {
+        customerPhone = (rawCustomerPhone && rawCustomerPhone !== 'unknown_user') ? String(rawCustomerPhone).trim() : `anon_user_${job.id || Date.now()}`;
+      }
+      console.log(`[BullMQ Worker] بدء معالجة المهمة #${job.id} للزبون [${customerPhone}] (${rawCustomerName || 'بدون اسم'}) متجهة للمطعم [${whatsappNumberId}]`);
 
       // 1. سحب كافة الرسائل المجمعة في القائمة المؤقتة المعزولة برقم المطعم والزبون من Redis
       const targetWhatsappNumberId = whatsappNumberId;
@@ -109,11 +113,18 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
           data: {
             restaurant_id: restaurant.id,
             customer_phone: customerPhone,
+            customer_name: rawCustomerName || null,
             messages_json: [],
             status: 'UNANSWERED',
           },
         });
-        console.log(`[BullMQ Worker] تم إنشاء سجل محادثة جديد للزبون [${customerPhone}] في مطعم [${restaurant.name}]`);
+        console.log(`[BullMQ Worker] تم إنشاء سجل محادثة جديد للزبون [${customerPhone}] (${rawCustomerName || 'بدون اسم'}) في مطعم [${restaurant.name}]`);
+      } else if (rawCustomerName && !conversation.customer_name) {
+        await prisma.conversation.update({
+          where: { id: conversation.id },
+          data: { customer_name: rawCustomerName }
+        }).catch(() => {});
+        conversation.customer_name = rawCustomerName;
       }
 
       // 5. بناء كائنات الرسائل المدعومة بالوسائط (مع استرجاع روابط الصور والتسجيلات من Meta API)

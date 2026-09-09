@@ -115,6 +115,7 @@ interface Reservation {
 interface Conversation {
   id: string;
   customer_phone: string;
+  customer_name?: string | null;
   status: string;
   category: 'INQUIRY' | 'ORDER' | 'COMPLAINT' | 'GROUP';
   is_group?: boolean;
@@ -434,8 +435,13 @@ class ChatErrorBoundary extends React.Component<
 }
 
 const getSafePhone = (c?: any): string => {
-  if (!c) return 'رقم غير متاح';
-  return String(c.customer_phone || c.customerPhone || 'رقم غير متاح');
+  if (!c) return 'مستخدم غير معروف';
+  if (c.customer_name && String(c.customer_name).trim()) {
+    return String(c.customer_name).trim();
+  }
+  const phoneStr = String(c.customer_phone || c.customerPhone || '').trim();
+  if (!phoneStr || phoneStr === 'unknown_user') return 'مستخدم غير معروف';
+  return phoneStr;
 };
 
 const isGroupConvCheck = (c?: any): boolean => {
@@ -4409,8 +4415,9 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          if (phoneStr && phoneStr !== 'رقم غير متاح') {
-                                            let textToCopy = phoneStr.trim();
+                                          const rawPhone = selectedConversation?.customer_phone || phoneStr;
+                                          if (rawPhone && rawPhone !== 'مستخدم غير معروف' && rawPhone !== 'رقم غير متاح') {
+                                            let textToCopy = rawPhone.trim();
                                             if (/^[0-9]+$/.test(textToCopy) && textToCopy.startsWith('20') && textToCopy.length === 12) {
                                               textToCopy = '0' + textToCopy.slice(2);
                                             }

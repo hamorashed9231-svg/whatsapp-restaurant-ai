@@ -92,9 +92,19 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
             }
           }
 
-          // 2. استخراج رقم هاتف الزبون وتوحيد صيغته ومحتوى الرسالة والوسائط
+          // 2. استخراج بيانات الزبون والمعرف الفريد والاسم من Meta Payload
+          const contacts = value?.contacts || [];
+          const matchingContact = contacts.find((c: any) => c.wa_id === message.from);
+          const profileName = matchingContact?.profile?.name?.trim() || null;
+          const waId = matchingContact?.wa_id || null;
+
           const rawCustomerPhone = message.from;
-          const customerPhone = normalizePhone(rawCustomerPhone) || (rawCustomerPhone ? String(rawCustomerPhone).trim() : 'unknown_user');
+          const cleanFromPhone = normalizePhone(rawCustomerPhone || waId);
+          let customerPhone = cleanFromPhone;
+          if (!cleanFromPhone || cleanFromPhone === 'unknown_user') {
+            const fallbackWaId = waId || rawCustomerPhone;
+            customerPhone = fallbackWaId ? `wa_user_${fallbackWaId}` : `anon_user_${message.id || Date.now()}`;
+          }
 
           // 🛑 فحص حظر الزبون محلياً والمقيد برقم الواتساب المخصص للمطعم الحالي منعاً للتداخل بين المطاعم
           const existingConvBlockCheck = await prisma.conversation.findFirst({
@@ -192,7 +202,7 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
 
           if (isServerless) {
             // 🛑 الانتظار الحتمي في Vercel لمنع التجميد والاستئناف المكرر لـ Serverless Function
-            await processDirectly(whatsappNumberId, customerPhone, messageText, mediaId, message);
+            await processDirectly(whatsappNumberId, customerPhone, messageText, mediaId, message, profileName);
           } else {
             let queuedInRedis = false;
             try {
@@ -200,6 +210,7 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
               const payload = JSON.stringify({
                 whatsappNumberId,
                 customerPhone,
+                customerName: profileName,
                 messageText,
                 mediaId,
                 messageType: message.type,
@@ -215,6 +226,7 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
                 {
                   whatsappNumberId,
                   customerPhone,
+                  customerName: profileName,
                   messageText: messageText.trim(),
                   mediaId,
                   messageType: message.type,
@@ -228,7 +240,7 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
             }
 
             if (!queuedInRedis) {
-              await processDirectly(whatsappNumberId, customerPhone, messageText, mediaId, message);
+              await processDirectly(whatsappNumberId, customerPhone, messageText, mediaId, message, profileName);
             }
           }
 
@@ -247,7 +259,7 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
 /**
  * معالجة الرسالة مباشرة لبيئات Serverless (مثل Vercel) مع منع تداخل الشاتات تماماً
  */
-async function processDirectly(whatsappNumberId: string, rawCustomerPhone: string, messageText: string, mediaId?: string, rawMessage?: any) {
+async function processDirectly(whatsappNumberId: string, rawCustomerPhone: string, messageText: string, mediaId?: string, rawMessage?: any, profileName?: string | null) {
   try {
     const { prisma } = await import('../services/prisma.service');
     const { geminiService } = await import('../services/gemini.service');
@@ -255,7 +267,10 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
     const { normalizePhone: norm } = await import('../utils/phone');
     const { memoryConversations } = await import('./api.controller');
 
-    const customerPhone = norm(rawCustomerPhone);
+    let customerPhone = norm(rawCustomerPhone);
+    if (!customerPhone || customerPhone === 'unknown_user') {
+      customerPhone = (rawCustomerPhone && rawCustomerPhone !== 'unknown_user') ? String(rawCustomerPhone).trim() : `anon_user_${Date.now()}`;
+    }
 
     // 1. تحديد المطعم المرتبط برقم الواتساب، مع الدعم التلقائي للمطعم النشط والتحديث التلقائي للمعرف الحقيقي
     let restaurant: any = null;
@@ -319,6 +334,7 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
             id: convId,
             restaurant_id: restaurant.id,
             customer_phone: customerPhone,
+            customer_name: profileName || null,
             messages_json: [],
             status: 'UNANSWERED',
           },
@@ -330,12 +346,21 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
           id: convId,
           restaurant_id: restaurant.id,
           customer_phone: customerPhone,
+          customer_name: profileName || null,
           messages_json: [],
           status: 'UNANSWERED',
           created_at: new Date(),
           updated_at: new Date()
         };
       }
+    } else if (profileName && !conversation.customer_name) {
+      try {
+        await prisma.conversation.update({
+          where: { id: conversation.id },
+          data: { customer_name: profileName }
+        }).catch(() => {});
+        conversation.customer_name = profileName;
+      } catch (e) {}
     }
 
     // 3. حفظ رسالة العميل في DB وفي الذاكرة الاحتياطية
@@ -407,7 +432,7 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
     // ⚡ تحديث/إنشاء سجل العميل دائمًا برقم العميل والمطعم لحظياً
     try {
       const { upsertCustomerOnMessage } = await import('../services/customer.service');
-      await upsertCustomerOnMessage(restaurant.id, customerPhone, isNewOrReopenedConv);
+      await upsertCustomerOnMessage(restaurant.id, customerPhone, isNewOrReopenedConv, profileName || conversation.customer_name);
     } catch (custErr: any) {
       console.warn('[DirectProcess Customer Upsert Warning]:', custErr.message || custErr);
     }
@@ -446,6 +471,9 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
       memoryConversations[memIdx].messages_json = currentMsgs;
       memoryConversations[memIdx].status = newStatus;
       memoryConversations[memIdx].is_archived = false;
+      if (profileName && !memoryConversations[memIdx].customer_name) {
+        memoryConversations[memIdx].customer_name = profileName;
+      }
       if (shouldReopen) memoryConversations[memIdx].closed_by = null;
       memoryConversations[memIdx].updated_at = new Date().toISOString();
     } else {
@@ -453,6 +481,7 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
         id: conversation.id,
         restaurant_id: restaurant.id,
         customer_phone: customerPhone,
+        customer_name: profileName || conversation.customer_name || null,
         messages_json: currentMsgs,
         status: newStatus,
         category: 'INQUIRY',
