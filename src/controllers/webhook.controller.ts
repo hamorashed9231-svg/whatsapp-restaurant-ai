@@ -141,6 +141,53 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
           } else if (message.type === 'sticker') {
             messageText = '[ملصق 🎨]';
             mediaId = message.sticker?.id || '';
+          } else if (message.type === 'order' || message.order || (message.type === 'interactive' && (message.interactive?.order || message.interactive?.type === 'order' || message.interactive?.nfm_reply))) {
+            const orderObj = message.order || message.interactive?.order || message.interactive?.nfm_reply;
+            const textNote = orderObj?.text || message.interactive?.nfm_reply?.response_json?.text || '';
+            const items = orderObj?.product_items || [];
+
+            const retailerIds = items.map((it: any) => it.product_retailer_id).filter(Boolean);
+            let itemsMap: Record<string, { name: string; price?: number }> = {};
+            if (retailerIds.length > 0) {
+              try {
+                const foundItems = await prisma.menuItem.findMany({
+                  where: { id: { in: retailerIds } },
+                  select: { id: true, name: true, price: true }
+                });
+                for (const fi of foundItems) {
+                  itemsMap[fi.id] = { name: fi.name, price: Number(fi.price) };
+                }
+              } catch (e) {
+                console.warn('[Webhook Order] Could not fetch menuItem details:', e);
+              }
+            }
+
+            let formattedItems: string[] = [];
+            let grandTotal = 0;
+
+            for (const it of items) {
+              const qty = Number(it.quantity || 1);
+              const retailerId = it.product_retailer_id;
+              const dbItem = itemsMap[retailerId];
+              const itemName = dbItem?.name || retailerId || 'منتج الكتالوج';
+              const rawPrice = it.item_price ? Number(it.item_price) : (dbItem?.price || 0);
+              const currency = it.currency || 'EGP';
+
+              if (rawPrice > 0) {
+                const itemTotal = rawPrice * qty;
+                grandTotal += itemTotal;
+                formattedItems.push(`• ${qty}x ${itemName} (${rawPrice} ${currency})`);
+              } else {
+                formattedItems.push(`• ${qty}x ${itemName}`);
+              }
+            }
+
+            let summaryHeader = `🛒 [طلب سلة المنتجات من الكتالوج]:`;
+            let itemsListStr = formattedItems.length > 0 ? formattedItems.join('\n') : 'تفاصيل المنتجات غير متوفرة';
+            let noteStr = textNote ? `\n\n📝 ملاحظة العميل: ${textNote}` : '';
+            let totalStr = grandTotal > 0 ? `\n\n💰 الإجمالي: ${grandTotal} EGP` : '';
+
+            messageText = `${summaryHeader}\n${itemsListStr}${totalStr}${noteStr}`;
           } else if (message.type === 'interactive') {
             const interactive = message.interactive;
             if (interactive.type === 'button_reply') {
