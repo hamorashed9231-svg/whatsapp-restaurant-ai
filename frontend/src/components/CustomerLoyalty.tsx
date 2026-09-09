@@ -35,6 +35,7 @@ interface CustomerItem {
   id: string;
   restaurant_id: string;
   customer_phone: string;
+  customer_name?: string | null;
   total_conversations_count: number;
   first_seen_at: string;
   last_seen_at: string;
@@ -183,6 +184,15 @@ export const CustomerLoyalty: React.FC<CustomerLoyaltyProps> = ({
     }
   };
 
+  const formatDisplayPhone = (rawPhone: string): string => {
+    if (!rawPhone || rawPhone === 'unknown_user') return 'عميل بدون رقم';
+    const clean = rawPhone.replace(/[^\d]/g, '');
+    if (clean.startsWith('20') && clean.length === 12) {
+      return '0' + clean.substring(2);
+    }
+    return rawPhone.startsWith('+') ? rawPhone : (clean ? `+${clean}` : rawPhone);
+  };
+
   const bgCard = darkMode ? '#1E293B' : '#FFFFFF';
   const textPrimary = darkMode ? '#F8FAFC' : '#0F172A';
   const textSecondary = darkMode ? '#94A3B8' : '#64748B';
@@ -279,7 +289,7 @@ export const CustomerLoyalty: React.FC<CustomerLoyaltyProps> = ({
           <Search size={20} color={textSecondary} />
           <input
             type="text"
-            placeholder="ابحث برقم الهاتف (مثال: 01000000000)..."
+            placeholder="ابحث برقم الهاتف أو اسم العميل..."
             value={search}
             onChange={handleSearchChange}
             style={{
@@ -307,7 +317,7 @@ export const CustomerLoyalty: React.FC<CustomerLoyaltyProps> = ({
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right' }}>
           <thead>
             <tr style={{ backgroundColor: darkMode ? '#0F172A' : '#F8FAFC', borderBottom: `1px solid ${borderColor}`, color: textSecondary, fontSize: '0.85rem' }}>
-              <th style={{ padding: '14px 16px' }}>رقم هاتف العميل</th>
+              <th style={{ padding: '14px 16px' }}>بيانات العميل (الهاتف والاسم)</th>
               <th style={{ padding: '14px 16px' }}>عدد المحادثات والتفاعلات</th>
               <th style={{ padding: '14px 16px' }}>أول تواصل</th>
               <th style={{ padding: '14px 16px' }}>آخر تواصل</th>
@@ -330,8 +340,15 @@ export const CustomerLoyalty: React.FC<CustomerLoyaltyProps> = ({
             ) : (
               customers.map((c) => (
                 <tr key={c.id} style={{ borderBottom: `1px solid ${borderColor}`, fontSize: '0.9rem' }}>
-                  <td style={{ padding: '14px 16px', fontWeight: 'bold', color: '#0066FF', direction: 'ltr', textAlign: 'right' }}>
-                    {c.customer_phone}
+                  <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                    <div style={{ fontWeight: 'bold', color: '#0066FF', fontSize: '0.95rem', direction: 'ltr', display: 'inline-block' }}>
+                      {formatDisplayPhone(c.customer_phone)}
+                    </div>
+                    {c.customer_name && c.customer_name.trim() && c.customer_name !== 'unknown_user' && (
+                      <div style={{ fontSize: '0.78rem', color: textSecondary, marginTop: '2px', fontWeight: '600' }}>
+                        👤 {c.customer_name}
+                      </div>
+                    )}
                   </td>
                   <td style={{ padding: '14px 16px' }}>
                     <span style={{ backgroundColor: 'rgba(0, 102, 255, 0.1)', color: '#0066FF', padding: '4px 12px', borderRadius: '20px', fontWeight: 'bold', fontSize: '0.85rem' }}>
@@ -399,9 +416,14 @@ export const CustomerLoyalty: React.FC<CustomerLoyaltyProps> = ({
             {/* الهيدر */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: `1px solid ${borderColor}`, paddingBottom: '14px' }}>
               <div>
-                <h3 style={{ fontSize: '1.15rem', fontWeight: 'bold', color: textPrimary, direction: 'ltr', textAlign: 'right' }}>
-                  {selectedCustomer.customer_phone}
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 'bold', color: '#0066FF', direction: 'ltr', textAlign: 'right' }}>
+                  {formatDisplayPhone(selectedCustomer.customer_phone)}
                 </h3>
+                {selectedCustomer.customer_name && selectedCustomer.customer_name.trim() && selectedCustomer.customer_name !== 'unknown_user' && (
+                  <div style={{ fontSize: '0.88rem', color: textPrimary, fontWeight: 'bold', marginTop: '2px' }}>
+                    👤 {selectedCustomer.customer_name}
+                  </div>
+                )}
                 <span style={{ fontSize: '0.8rem', color: textSecondary }}>
                   سجل التفاعلات والـ Timeline الكامل
                 </span>
