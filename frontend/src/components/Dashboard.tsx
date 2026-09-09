@@ -1746,8 +1746,8 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
   /**
    * Returns a consistent per-user color from STAFF_COLOR_PALETTE based on username hash.
    */
-  const getStaffColor = (username: string | null | undefined, isDark: boolean): string => {
-    if (!username || !username.trim()) {
+  const getStaffColor = (username: any, isDark: boolean): string => {
+    if (!username || typeof username !== 'string' || !username.trim()) {
       return isDark ? '#94A3B8' : '#64748B';
     }
     const cleanName = username.trim().toLowerCase();
@@ -1757,7 +1757,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
     }
     const index = Math.abs(hash) % STAFF_COLOR_PALETTE.length;
     const colorObj = STAFF_COLOR_PALETTE[index];
-    return isDark ? colorObj.dark : colorObj.light;
+    return colorObj ? (isDark ? colorObj.dark : colorObj.light) : (isDark ? '#94A3B8' : '#64748B');
   };
 
   /**
@@ -3992,7 +3992,8 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                           const isSelected = selectedConversation?.id === conv.id;
                           const timeFormatted = safeFormatTime(conv.updated_at || conv.created_at);
 
-                          const assignedBorderColor = conv.assigned_to ? getStaffColor(conv.assigned_to, darkMode) : null;
+                          const hasAssigned = Boolean(conv?.assigned_to && typeof conv.assigned_to === 'string' && conv.assigned_to.trim());
+                          const assignedBorderColor = hasAssigned ? getStaffColor(conv.assigned_to, darkMode) : null;
 
                           return (
                             <div
@@ -4013,6 +4014,9 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                 borderRight: isSelected
                                   ? '4px solid #0066FF'
                                   : (assignedBorderColor ? `2px solid ${assignedBorderColor}` : (darkMode ? '1px solid #182229' : '1px solid #F1F5F9')),
+                                borderBottom: assignedBorderColor
+                                  ? `2px solid ${assignedBorderColor}`
+                                  : (darkMode ? '1px solid #182229' : '1px solid #F1F5F9'),
                                 boxShadow: isSelected ? '0 2px 6px rgba(0,0,0,0.06)' : 'none'
                               }}
                             >
