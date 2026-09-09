@@ -434,14 +434,24 @@ class ChatErrorBoundary extends React.Component<
   }
 }
 
+const formatDisplayPhone = (rawPhone: string): string => {
+  const clean = rawPhone.replace(/[^\d]/g, '');
+  if (clean.startsWith('20') && clean.length === 12) {
+    return '0' + clean.substring(2);
+  }
+  return rawPhone.startsWith('+') ? rawPhone : (clean ? `+${clean}` : rawPhone);
+};
+
 const getSafePhone = (c?: any): string => {
   if (!c) return 'مستخدم غير معروف';
+  const phoneStr = String(c.customer_phone || c.customerPhone || '').trim();
+  if (phoneStr && phoneStr !== 'unknown_user') {
+    return formatDisplayPhone(phoneStr);
+  }
   if (c.customer_name && String(c.customer_name).trim() && String(c.customer_name).trim() !== 'unknown_user') {
     return String(c.customer_name).trim();
   }
-  const phoneStr = String(c.customer_phone || c.customerPhone || '').trim();
-  if (!phoneStr || phoneStr === 'unknown_user') return 'مستخدم غير معروف';
-  return phoneStr;
+  return 'مستخدم غير معروف';
 };
 
 const isGroupConvCheck = (c?: any): boolean => {
