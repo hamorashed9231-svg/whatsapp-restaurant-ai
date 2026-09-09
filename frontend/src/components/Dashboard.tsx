@@ -546,7 +546,25 @@ const Dashboard: React.FC<DashboardProps> = ({
       return getMsgTime(a) - getMsgTime(b);
     });
   };
-  const [chatInput, setChatInput] = useState<string>('');
+
+  // 📝 مسودات النصوص المعزولة لكل محادثة (Per-Conversation Drafts Map)
+  const [draftsMap, setDraftsMap] = useState<Record<string, string>>({});
+
+  const chatInput = (selectedConversation?.id && draftsMap[selectedConversation.id]) || '';
+
+  const setChatInput = (valueOrFn: string | ((prev: string) => string)) => {
+    const convId = selectedConversation?.id;
+    if (!convId) return;
+
+    setDraftsMap(prev => {
+      const currentVal = prev[convId] || '';
+      const newVal = typeof valueOrFn === 'function' ? (valueOrFn as (p: string) => string)(currentVal) : valueOrFn;
+      return {
+        ...prev,
+        [convId]: newVal
+      };
+    });
+  };
   const [chatImageUrls, setChatImageUrls] = useState<string[]>([]);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [savedReplies, setSavedReplies] = useState<QuickReplyItem[]>(() => getStoredQuickReplies(restaurantId));
