@@ -7,7 +7,10 @@ const DEFAULT_PRODUCT_IMAGE = 'https://images.unsplash.com/photo-1555396273-367e
 /**
  * جلب بيانات المطعم مع التحقق من وجود catalog_id و whatsapp_access_token
  */
-async function getRestaurantCatalogCredentials(restaurantId: string) {
+/**
+ * جلب بيانات المطعم أو الفرع مع التحقق من وجود catalog_id و whatsapp_access_token
+ */
+async function getRestaurantCatalogCredentials(restaurantId: string, branchId?: string) {
   try {
     const restaurant = await prisma.restaurant.findUnique({
       where: { id: restaurantId }
@@ -15,16 +18,28 @@ async function getRestaurantCatalogCredentials(restaurantId: string) {
 
     if (!restaurant) return null;
 
-    const catalogId = (restaurant as any).catalog_id || process.env.META_CATALOG_ID;
+    let branch = null;
+    if (branchId) {
+      branch = await prisma.branch.findUnique({
+        where: { id: branchId }
+      });
+    }
+
+    const catalogId = branch?.catalog_id || (restaurant as any).catalog_id || process.env.META_CATALOG_ID;
     const token = restaurant.whatsapp_access_token || process.env.WHATSAPP_ACCESS_TOKEN;
 
     if (!catalogId || !token) {
       return null;
     }
 
-    return { catalogId, token, restaurantName: restaurant.name };
+    return { 
+      catalogId, 
+      token, 
+      restaurantName: restaurant.name,
+      branchName: branch?.name 
+    };
   } catch (err) {
-    console.error('[CatalogService] Error fetching restaurant catalog credentials:', err);
+    console.error('[CatalogService] Error fetching restaurant/branch catalog credentials:', err);
     return null;
   }
 }
@@ -32,14 +47,36 @@ async function getRestaurantCatalogCredentials(restaurantId: string) {
 /**
  * مزامنة صنف واحد مع كتالوج Meta Commerce Catalog تلقائياً (إضافة / تعديل)
  */
-export async function syncMenuItemToMetaCatalog(restaurantId: string, item: any): Promise<boolean> {
-  const creds = await getRestaurantCatalogCredentials(restaurantId);
+export async function syncMenuItemToMetaCatalog(restaurantId: string, item: any, branchId?: string): Promise<boolean> {
+  const creds = await getRestaurantCatalogCredentials(restaurantId, branchId);
   if (!creds) {
-    console.log(`[CatalogService] Meta Catalog ID or Token missing for restaurant ${restaurantId}. Sync skipped.`);
+    console.log(`[CatalogService] Meta Catalog ID or Token missing for restaurant ${restaurantId} (Branch: ${branchId || 'main'}). Sync skipped.`);
     return false;
   }
 
   const { catalogId, token, restaurantName } = creds;
+
+  let finalPrice = Number(item.price || 0);
+  let isAvailable = item.is_available !== false;
+
+  if (branchId) {
+    try {
+      const branchPrice = await prisma.branchMenuItemPrice.findUnique({
+        where: {
+          branch_id_menu_item_id: {
+            branch_id: branchId,
+            menu_item_id: item.id
+          }
+        }
+      });
+      if (branchPrice) {
+        finalPrice = Number(branchPrice.price);
+        isAvailable = branchPrice.is_available;
+      }
+    } catch (e) {
+      console.warn(`[CatalogService] Could not fetch branch price for item ${item.id} branch ${branchId}, fallback to default.`);
+    }
+  }
 
   const imageUrl = (item.image_url && item.image_url.startsWith('http')) 
     ? item.image_url 
@@ -54,9 +91,9 @@ export async function syncMenuItemToMetaCatalog(restaurantId: string, item: any)
         data: {
           name: item.name,
           description: item.description || item.name,
-          availability: item.is_available !== false ? 'in stock' : 'out of stock',
+          availability: isAvailable ? 'in stock' : 'out of stock',
           condition: 'new',
-          price: `${Number(item.price || 0)} EGP`,
+          price: `${finalPrice} EGP`,
           currency: 'EGP',
           image_url: imageUrl,
           url: imageUrl,
@@ -112,8 +149,8 @@ export async function syncMenuItemToMetaCatalog(restaurantId: string, item: any)
 /**
  * حذف صنف من كتالوج Meta Commerce Catalog
  */
-export async function deleteMenuItemFromMetaCatalog(restaurantId: string, itemId: string): Promise<boolean> {
-  const creds = await getRestaurantCatalogCredentials(restaurantId);
+export async function deleteMenuItemFromMetaCatalog(restaurantId: string, itemId: string, branchId?: string): Promise<boolean> {
+  const creds = await getRestaurantCatalogCredentials(restaurantId, branchId);
   if (!creds) return false;
 
   const { catalogId, token } = creds;
@@ -150,8 +187,8 @@ export async function deleteMenuItemFromMetaCatalog(restaurantId: string, itemId
 /**
  * مزامنة قائمة الطعام الكاملة (المنيو) مع كتالوج Meta Commerce Catalog دفعة واحدة
  */
-export async function syncFullMenuToMetaCatalog(restaurantId: string, menuItems?: any[]): Promise<{ success: boolean; syncedCount: number; error?: string }> {
-  const creds = await getRestaurantCatalogCredentials(restaurantId);
+export async function syncFullMenuToMetaCatalog(restaurantId: string, branchId?: string, menuItems?: any[]): Promise<{ success: boolean; syncedCount: number; error?: string }> {
+  const creds = await getRestaurantCatalogCredentials(restaurantId, branchId);
   if (!creds) {
     return { success: false, syncedCount: 0, error: 'لم يتم إدخال معرف الكتالوج (Catalog ID) أو التوكن الخاص بـ Meta في الإعدادات.' };
   }
@@ -173,10 +210,31 @@ export async function syncFullMenuToMetaCatalog(restaurantId: string, menuItems?
     return { success: true, syncedCount: 0 };
   }
 
+  let branchPricesMap: Record<string, { price: number; is_available: boolean }> = {};
+  if (branchId) {
+    try {
+      const bPrices = await prisma.branchMenuItemPrice.findMany({
+        where: { branch_id: branchId }
+      });
+      bPrices.forEach(bp => {
+        branchPricesMap[bp.menu_item_id] = {
+          price: Number(bp.price),
+          is_available: bp.is_available
+        };
+      });
+    } catch (e) {
+      console.warn(`[CatalogService] Could not fetch branch prices map for branch ${branchId}`);
+    }
+  }
+
   const requests = itemsToSync.map(item => {
     const imageUrl = (item.image_url && item.image_url.startsWith('http')) 
       ? item.image_url 
       : DEFAULT_PRODUCT_IMAGE;
+
+    const branchOverride = branchPricesMap[item.id];
+    const finalPrice = branchOverride ? branchOverride.price : Number(item.price || 0);
+    const isAvailable = branchOverride ? branchOverride.is_available : (item.is_available !== false);
 
     return {
       method: 'UPDATE',
@@ -184,9 +242,9 @@ export async function syncFullMenuToMetaCatalog(restaurantId: string, menuItems?
       data: {
         name: item.name,
         description: item.description || item.name,
-        availability: item.is_available !== false ? 'in stock' : 'out of stock',
+        availability: isAvailable ? 'in stock' : 'out of stock',
         condition: 'new',
-        price: `${Number(item.price || 0)} EGP`,
+        price: `${finalPrice} EGP`,
         currency: 'EGP',
         image_url: imageUrl,
         url: imageUrl,
@@ -245,4 +303,25 @@ export async function syncFullMenuToMetaCatalog(restaurantId: string, menuItems?
       error: errorMsg 
     };
   }
+}
+
+/**
+ * مزامنة جميع الفروع المفعلة الخاصة بالمطعم مع كتالوجاتها على Meta
+ */
+export async function syncAllBranchesCatalogs(restaurantId: string): Promise<{ branchId: string; branchName: string; success: boolean; syncedCount: number }[]> {
+  const branches = await prisma.branch.findMany({
+    where: { restaurant_id: restaurantId, is_active: true }
+  });
+
+  const results = [];
+  for (const branch of branches) {
+    const res = await syncFullMenuToMetaCatalog(restaurantId, branch.id);
+    results.push({
+      branchId: branch.id,
+      branchName: branch.name,
+      success: res.success,
+      syncedCount: res.syncedCount
+    });
+  }
+  return results;
 }

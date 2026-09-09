@@ -8,7 +8,7 @@ import { whatsappService } from '../services/whatsapp.service';
 import { hashPassword, comparePassword } from '../utils/auth';
 import { checkSessionWindow } from '../utils/sessionWindow';
 import { normalizePhone } from '../utils/phone';
-import { syncMenuItemToMetaCatalog, deleteMenuItemFromMetaCatalog, syncFullMenuToMetaCatalog } from '../services/catalog.service';
+import { syncMenuItemToMetaCatalog, deleteMenuItemFromMetaCatalog, syncFullMenuToMetaCatalog, syncAllBranchesCatalogs } from '../services/catalog.service';
 import { redisClient } from '../services/redis.service';
 import { put } from '@vercel/blob';
 import { triggerNewMessage, authorizePusherChannel } from '../services/pusher.service';
@@ -1537,12 +1537,19 @@ export const updateRestaurantSettings = async (req: Request, res: Response): Pro
 };
 
 /**
- * مزامنة المنيو كاملاً مع كتالوج Meta Commerce Catalog يدوياً
+ * مزامنة المنيو كاملاً مع كتالوج Meta Commerce Catalog يدوياً (يدعم تحديد الفرع)
  */
 export const syncCatalogEndpoint = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params; // restaurant_id
+  const branchId = (req.body?.branchId || req.query?.branchId) as string | undefined;
   try {
-    const result = await syncFullMenuToMetaCatalog(id);
+    if (branchId === 'all') {
+      const allResults = await syncAllBranchesCatalogs(id);
+      res.status(200).json({ status: 'success', message: `تمت مزامنة كتالوجات جميع الفروع بنجاح!`, data: allResults });
+      return;
+    }
+
+    const result = await syncFullMenuToMetaCatalog(id, branchId);
     if (!result.success) {
       res.status(400).json({ status: 'error', message: result.error || 'فشلت مزامنة الكتالوج مع Meta Commerce API.' });
       return;
@@ -1558,6 +1565,7 @@ export const syncCatalogEndpoint = async (req: Request, res: Response): Promise<
  */
 export const sendCatalogMessageEndpoint = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { id } = req.params; // conversation_id
+  const { branchId } = req.body || {};
   const currentUsername = req.user?.username || 'موظف الخدمة';
   try {
     let conv: any = null;
@@ -1577,17 +1585,32 @@ export const sendCatalogMessageEndpoint = async (req: AuthenticatedRequest, res:
       return;
     }
 
+    let branchName = '';
+    let targetPhoneNumberId = conv.restaurant?.whatsapp_number_id;
+
+    if (branchId) {
+      const branch = await prisma.branch.findUnique({ where: { id: branchId } }).catch(() => null);
+      if (branch) {
+        branchName = branch.name;
+        if (branch.whatsapp_number_id) {
+          targetPhoneNumberId = branch.whatsapp_number_id;
+        }
+      }
+    }
+
     await whatsappService.sendNativeCatalogMessage(
       conv.customer_phone,
       'تفضل بتصفح قائمة طعام المطعم واختيار الوجبة مباشرة 🛍️',
       undefined,
-      conv.restaurant?.whatsapp_number_id,
+      targetPhoneNumberId,
       conv.restaurant?.whatsapp_access_token || undefined
     );
 
     const catalogMsgObj = {
       role: 'assistant',
-      content: '[🛍️ تم إرسال كتالوج الواتساب الرسمي المباشر للعميل]',
+      content: branchName 
+        ? `[🛍️ تم إرسال كتالوج الواتساب الرسمي المباشر للعميل (${branchName})]`
+        : '[🛍️ تم إرسال كتالوج الواتساب الرسمي المباشر للعميل]',
       sender_name: currentUsername,
       timestamp: new Date().toISOString()
     };
@@ -1614,6 +1637,201 @@ export const sendCatalogMessageEndpoint = async (req: AuthenticatedRequest, res:
   } catch (err: any) {
     console.error('Error sending catalog message:', err);
     res.status(500).json({ status: 'error', message: err.message || 'فشل إرسال الكتالوج عبر الواتساب.' });
+  }
+};
+
+/**
+ * 22. جلب جميع فروع المطعم
+ */
+export const getBranchesEndpoint = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params; // restaurant_id
+  try {
+    const defaultRest = await getOrCreateDefaultRestaurant(id);
+    const targetRestId = defaultRest ? defaultRest.id : id;
+
+    const branches = await prisma.branch.findMany({
+      where: { restaurant_id: targetRestId },
+      orderBy: { created_at: 'asc' }
+    });
+
+    res.status(200).json({ status: 'success', data: branches });
+  } catch (err: any) {
+    res.status(500).json({ status: 'error', message: err.message || 'فشل جلب فروع المطعم.' });
+  }
+};
+
+/**
+ * 23. إضافة فرع جديد للمطعم
+ */
+export const createBranchEndpoint = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params; // restaurant_id
+  const { name, address, phone_number, catalog_id, whatsapp_number_id, is_default, is_active } = req.body;
+
+  if (!name || !String(name).trim()) {
+    res.status(400).json({ status: 'error', message: 'اسم الفرع مطلوب.' });
+    return;
+  }
+
+  try {
+    const defaultRest = await getOrCreateDefaultRestaurant(id);
+    const targetRestId = defaultRest ? defaultRest.id : id;
+
+    if (is_default) {
+      await prisma.branch.updateMany({
+        where: { restaurant_id: targetRestId },
+        data: { is_default: false }
+      }).catch(() => {});
+    }
+
+    const newBranch = await prisma.branch.create({
+      data: {
+        restaurant_id: targetRestId,
+        name: String(name).trim(),
+        address: address ? String(address).trim() : null,
+        phone_number: phone_number ? String(phone_number).trim() : null,
+        catalog_id: catalog_id ? String(catalog_id).trim() : null,
+        whatsapp_number_id: whatsapp_number_id ? String(whatsapp_number_id).trim() : null,
+        is_default: !!is_default,
+        is_active: is_active !== false
+      }
+    });
+
+    res.status(201).json({ status: 'success', message: 'تم إضافة الفرع بنجاح!', data: newBranch });
+  } catch (err: any) {
+    res.status(500).json({ status: 'error', message: err.message || 'فشل إنشاء الفرع.' });
+  }
+};
+
+/**
+ * 24. تعديل بيانات فرع قائم
+ */
+export const updateBranchEndpoint = async (req: Request, res: Response): Promise<void> => {
+  const { branchId } = req.params;
+  const { name, address, phone_number, catalog_id, whatsapp_number_id, is_default, is_active } = req.body;
+
+  try {
+    const existing = await prisma.branch.findUnique({ where: { id: branchId } });
+    if (!existing) {
+      res.status(404).json({ status: 'error', message: 'الفرع غير موجود.' });
+      return;
+    }
+
+    if (is_default) {
+      await prisma.branch.updateMany({
+        where: { restaurant_id: existing.restaurant_id },
+        data: { is_default: false }
+      }).catch(() => {});
+    }
+
+    const updated = await prisma.branch.update({
+      where: { id: branchId },
+      data: {
+        ...(name !== undefined ? { name: String(name).trim() } : {}),
+        ...(address !== undefined ? { address: address ? String(address).trim() : null } : {}),
+        ...(phone_number !== undefined ? { phone_number: phone_number ? String(phone_number).trim() : null } : {}),
+        ...(catalog_id !== undefined ? { catalog_id: catalog_id ? String(catalog_id).trim() : null } : {}),
+        ...(whatsapp_number_id !== undefined ? { whatsapp_number_id: whatsapp_number_id ? String(whatsapp_number_id).trim() : null } : {}),
+        ...(is_default !== undefined ? { is_default: !!is_default } : {}),
+        ...(is_active !== undefined ? { is_active: !!is_active } : {})
+      }
+    });
+
+    res.status(200).json({ status: 'success', message: 'تم تحديث بيانات الفرع بنجاح!', data: updated });
+  } catch (err: any) {
+    res.status(500).json({ status: 'error', message: err.message || 'فشل تعديل الفرع.' });
+  }
+};
+
+/**
+ * 25. حذف فرع
+ */
+export const deleteBranchEndpoint = async (req: Request, res: Response): Promise<void> => {
+  const { branchId } = req.params;
+  try {
+    await prisma.branch.delete({ where: { id: branchId } });
+    res.status(200).json({ status: 'success', message: 'تم حذف الفرع بنجاح!' });
+  } catch (err: any) {
+    res.status(500).json({ status: 'error', message: err.message || 'فشل حذف الفرع.' });
+  }
+};
+
+/**
+ * 26. جلب جميع أسعار الفروع الخاصة بأصناف المطعم
+ */
+export const getBranchPricesEndpoint = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params; // restaurant_id
+  try {
+    const defaultRest = await getOrCreateDefaultRestaurant(id);
+    const targetRestId = defaultRest ? defaultRest.id : id;
+
+    const prices = await prisma.branchMenuItemPrice.findMany({
+      where: {
+        branch: { restaurant_id: targetRestId }
+      },
+      include: {
+        branch: true,
+        menu_item: true
+      }
+    });
+
+    res.status(200).json({ status: 'success', data: prices });
+  } catch (err: any) {
+    res.status(500).json({ status: 'error', message: err.message || 'فشل جلب أسعار الفروع.' });
+  }
+};
+
+/**
+ * 27. إضافة أو تحديث سعر صنف لفرع معين
+ */
+export const setBranchPriceEndpoint = async (req: Request, res: Response): Promise<void> => {
+  const { itemId } = req.params;
+  const { branchId, price, is_available } = req.body;
+
+  if (!branchId || price === undefined || price === null) {
+    res.status(400).json({ status: 'error', message: 'معرف الفرع والسعر مطلوبان.' });
+    return;
+  }
+
+  try {
+    const menuItem = await prisma.menuItem.findUnique({ where: { id: itemId } });
+    if (!menuItem) {
+      res.status(404).json({ status: 'error', message: 'الصنف غير موجود.' });
+      return;
+    }
+
+    const numericPrice = parseFloat(price);
+    if (isNaN(numericPrice) || numericPrice < 0) {
+      res.status(400).json({ status: 'error', message: 'السعر غير صالح.' });
+      return;
+    }
+
+    const record = await prisma.branchMenuItemPrice.upsert({
+      where: {
+        branch_id_menu_item_id: {
+          branch_id: branchId,
+          menu_item_id: itemId
+        }
+      },
+      create: {
+        branch_id: branchId,
+        menu_item_id: itemId,
+        price: numericPrice,
+        is_available: is_available !== false
+      },
+      update: {
+        price: numericPrice,
+        is_available: is_available !== false
+      }
+    });
+
+    // مزامنة تلقائية خلفية للكتالوج المخصص لهذا الفرع
+    syncMenuItemToMetaCatalog(menuItem.restaurant_id, menuItem, branchId).catch(err => {
+      console.error(`[BranchPrice] Auto sync catalog error for branch ${branchId} item ${itemId}:`, err);
+    });
+
+    res.status(200).json({ status: 'success', message: 'تم تحديث سعر الفرع بنجاح!', data: record });
+  } catch (err: any) {
+    res.status(500).json({ status: 'error', message: err.message || 'فشل تحديث سعر الفرع.' });
   }
 };
 

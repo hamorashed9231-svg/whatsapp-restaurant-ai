@@ -33,6 +33,7 @@ model Restaurant {
   orders                  Order[]
   reservations            Reservation[]
   users                   User[]
+  branches                Branch[]
 
   @@map("restaurants") // رسم خريطة لاسم الجدول ليكون بصيغة الجمع
 }
@@ -52,9 +53,46 @@ model MenuItem {
   last_meta_sync_error  String?    // تفاصيل الخطأ في حال فشل المزامنة
 
   // العلاقات
-  restaurant    Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+  restaurant    Restaurant            @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+  branch_prices BranchMenuItemPrice[]
 
   @@map("menu_items")
+}
+
+// نموذج الفروع (Branch)
+model Branch {
+  id                 String   @id @default(uuid())
+  restaurant_id      String
+  name               String   // اسم الفرع (مثال: فرع المعادي)
+  address            String?  // عنوان الفرع التقريبي/التفصيلي
+  phone_number       String?  // رقم هاتف الفرع (اختياري)
+  catalog_id         String?  // معرف كتالوج Meta Commerce Manager المخصص لهذا الفرع
+  whatsapp_number_id String?  // معرف رقم الواتساب المخصص للفرع (اختياري)
+  is_default         Boolean  @default(false) // هل هذا هو الفرع الافتراضي للمطعم؟
+  is_active          Boolean  @default(true)
+  created_at         DateTime @default(now())
+
+  // العلاقات
+  restaurant    Restaurant            @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+  branch_prices BranchMenuItemPrice[]
+
+  @@map("branches")
+}
+
+// نموذج أسعار الأصناف المخصصة لكل فرع (BranchMenuItemPrice)
+model BranchMenuItemPrice {
+  id           String   @id @default(uuid())
+  branch_id    String
+  menu_item_id String
+  price        Decimal  @db.Decimal(10, 2) // السعر الخاص بهذا الفرع
+  is_available Boolean  @default(true)     // توافر الصنف في هذا الفرع بالذات
+
+  // العلاقات
+  branch    Branch   @relation(fields: [branch_id], references: [id], onDelete: Cascade)
+  menu_item MenuItem @relation(fields: [menu_item_id], references: [id], onDelete: Cascade)
+
+  @@unique([branch_id, menu_item_id]) // يمنع تكرار السعر لنفس الصنف في نفس الفرع
+  @@map("branch_menu_item_prices")
 }
 
 // نموذج سجل المحادثات (Conversation)

@@ -41,7 +41,13 @@ import {
   getQuickReplies,
   updateQuickReplies,
   getMediaProxy,
-  handlePusherAuth
+  handlePusherAuth,
+  getBranchesEndpoint,
+  createBranchEndpoint,
+  updateBranchEndpoint,
+  deleteBranchEndpoint,
+  getBranchPricesEndpoint,
+  setBranchPriceEndpoint
 } from '../controllers/api.controller';
 import { upload } from '../middlewares/upload.middleware';
 import { purgeClosedConversations } from '../controllers/purge.controller';
@@ -73,6 +79,14 @@ router.post('/pusher/auth', authMiddleware, handlePusherAuth);
 router.get('/restaurants/:id', authMiddleware, getRestaurant);
 router.put('/restaurants/:id', authMiddleware, updateRestaurantSettings);
 router.put('/restaurants/:id/settings', authMiddleware, updateRestaurantSettings);
+
+// إدارة الفروع وأسعار الفروع
+router.get('/restaurants/:id/branches', authMiddleware, getBranchesEndpoint);
+router.post('/restaurants/:id/branches', authMiddleware, createBranchEndpoint);
+router.put('/branches/:branchId', authMiddleware, updateBranchEndpoint);
+router.delete('/branches/:branchId', authMiddleware, deleteBranchEndpoint);
+router.get('/restaurants/:id/branch-prices', authMiddleware, getBranchPricesEndpoint);
+router.post('/menu/:itemId/branch-prices', authMiddleware, setBranchPriceEndpoint);
 
 // قائمة الطعام (المنيو) والتصنيفات ومزامنة الكتالوج
 router.get('/restaurants/:id/menu', authMiddleware, getMenu);
