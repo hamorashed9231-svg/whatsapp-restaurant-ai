@@ -394,7 +394,8 @@ class ChatErrorBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error, errorInfo: any) {
-    console.error('Chat Error Boundary Caught Error:', error, errorInfo);
+    console.error('[DIAGNOSTIC LOG 🚨] Chat Error Boundary Caught Error:', error, errorInfo);
+    console.trace('[DIAGNOSTIC TRACE 📍] ErrorBoundary Stack Trace:');
   }
 
   render() {
@@ -543,6 +544,73 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [unreadConvIds, setUnreadConvIds] = useState<Set<string>>(new Set());
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+
+  // 🛡️ [Catch-All Safety Net & Hard Safeguard Refs]
+  const isUserInitiatedSelectionRef = useRef<boolean>(false);
+  const soundEnabledRef = useRef<boolean>(soundEnabled);
+  const prevSelectedConvRef = useRef<Conversation | null>(null);
+
+  useEffect(() => {
+    soundEnabledRef.current = soundEnabled;
+  }, [soundEnabled]);
+
+  // 🛡️ [Catch-All Safety Net useEffect]: خط الدفاع الأخير والحاسم للرصد والإلغاء الفوري
+  useEffect(() => {
+    const prev = prevSelectedConvRef.current;
+    const isIdChanged = prev?.id !== selectedConversation?.id;
+
+    if (isIdChanged && prev !== null && selectedConversation !== null) {
+      if (!isUserInitiatedSelectionRef.current) {
+        console.warn(`[CATCH-ALL SAFETY NET 🛡️] تم منع وترجيع محاولة تلقائية غير مصرح بها لتغيير هوية المحادثة المفتوحة!`, {
+          timestamp: new Date().toISOString(),
+          attemptedNewId: selectedConversation.id,
+          revertedBackToId: prev.id
+        });
+        console.trace('[CATCH-ALL TRACE 📍] الكود المتسبب في المحاولة الملغاة:');
+
+        // ⏪ إلغاء التغيير وإعادة المحادثة السابقة الصحيحة فوراً
+        setSelectedConversation(prev);
+        return;
+      }
+    }
+
+    prevSelectedConvRef.current = selectedConversation;
+  }, [selectedConversation]);
+
+  /**
+   * 🛡️ دالة مساعدة سريعة كخط دفاع أول (First Line of Defense)
+   */
+  const setSelectedConversationSafe = (
+    updater: Conversation | null | ((prev: Conversation | null) => Conversation | null),
+    isExplicitUserAction = false
+  ) => {
+    if (isExplicitUserAction) {
+      isUserInitiatedSelectionRef.current = true;
+    }
+
+    setSelectedConversation(prev => {
+      const next = typeof updater === 'function' ? (updater as any)(prev) : updater;
+      const isIdChanging = prev?.id !== next?.id;
+
+      if (isIdChanging && prev !== null && next !== null && !isUserInitiatedSelectionRef.current) {
+        console.warn(`[FIRST-LINE SAFEGUARD 🛑] تم منع تغيير المحادثة من خط الدفاع الأول!`, {
+          timestamp: new Date().toISOString(),
+          currentActiveId: prev.id,
+          attemptedNewId: next.id
+        });
+        console.trace('[SAFEGUARD TRACE 📍] Trace:');
+        return prev;
+      }
+      return next;
+    });
+
+    if (isExplicitUserAction) {
+      setTimeout(() => {
+        isUserInitiatedSelectionRef.current = false;
+      }, 150);
+    }
+  };
+
   const [lang, setLang] = useState<Language>(() => (localStorage.getItem('rivix_lang') as Language) || 'ar');
   const [replyToMessage, setReplyToMessage] = useState<ChatMessage | null>(null);
 
@@ -1555,7 +1623,28 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
     selectedConversationIdRef.current = selectedConversation?.id || null;
   }, [selectedConversation?.id]);
 
-  // ✅ المزامنة اللحظية الفورية المشفرة والمحمية عبر Pusher Private Channels
+  // ✅ [الإصلاح 1]: مزامنة بيانات المحادثة المختارة بـ ID ثابت عند تحديث مصفوفة conversations
+  useEffect(() => {
+    if (!selectedConversation?.id) return;
+    const freshVersion = conversations.find(c => c.id === selectedConversation.id);
+    if (freshVersion) {
+      setSelectedConversation(prev => {
+        if (!prev || prev.id !== freshVersion.id) return prev;
+        if (
+          prev.status !== freshVersion.status ||
+          prev.updated_at !== freshVersion.updated_at ||
+          prev.assigned_to !== freshVersion.assigned_to ||
+          prev.is_archived !== freshVersion.is_archived ||
+          prev.category !== freshVersion.category
+        ) {
+          return { ...prev, ...freshVersion };
+        }
+        return prev;
+      });
+    }
+  }, [conversations]);
+
+  // ✅ [الإصلاح 2]: المزامنة اللحظية الفورية مع فصل soundEnabled عن deps لمنع disconnect/reconnect
   useEffect(() => {
     if (!restaurant?.id) return;
 
@@ -1621,11 +1710,11 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
             return deduplicateMessages([...prevFiltered, msgWithConvId]);
           });
 
-          if (data.messageObj.role === 'user' && soundEnabled) {
+          if (data.messageObj.role === 'user' && soundEnabledRef.current) {
             playNotificationSound();
           }
           setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-        } else if (data.messageObj?.role === 'user' && soundEnabled) {
+        } else if (data.messageObj?.role === 'user' && soundEnabledRef.current) {
           playNotificationSound();
           setUnreadConvIds(prev => new Set(prev).add(data.conversationId));
         }
@@ -1639,27 +1728,24 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
     } catch (err) {
       console.error('[Pusher Private Client Connection Error]:', err);
     }
-  }, [restaurant?.id, token, soundEnabled]);
+  }, [restaurant?.id, token]); // ✅ تم فصل soundEnabled لتجنب disconnect/reconnect
 
-  // تحديث الشات تلقائياً كـ Heartbeat احتياطي كل 30 ثانية
+  // ✅ [الإصلاح 3]: الدمج الذكي في الـ Heartbeat (Smart Merge) مع الحفاظ على مراجع العناصر المستقرة
   useEffect(() => {
     if (!restaurant) return;
     const interval = setInterval(async () => {
       try {
-        // ✅ جلب المحادثات فقط لتخفيف الضغط على الشبكة والسيرفر (المنيو يُجلب عند التحميل فقط)
         const resConvs = await api.get(`/restaurants/${restaurant.id}/conversations`);
-
         const freshConvs: Conversation[] = resConvs.data;
         if (Array.isArray(freshConvs)) {
-          let hasActiveConvChanged = false;
-          
           setConversations(prev => {
+            if (!prev || prev.length === 0) return freshConvs;
+
             let hasNewMessage = false;
             const newUnreads = new Set(unreadConvIds);
 
             freshConvs.forEach(fc => {
               const prevFc = prev.find(p => p.id === fc.id);
-              // ✅ تشغيل الإشعار الصوتي فقط للرسايل القادمة من العملاء (حالة UNANSWERED)
               const isCustomerMessage = (fc.status === 'UNANSWERED');
 
               if (prevFc && new Date(fc.updated_at).getTime() > new Date(prevFc.updated_at).getTime()) {
@@ -1667,23 +1753,34 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                   hasNewMessage = true;
                   newUnreads.add(fc.id);
                 }
-                if (fc.id === selectedConversationIdRef.current) {
-                  hasActiveConvChanged = true;
-                }
               } else if (!prevFc && prev.length > 0 && isCustomerMessage) {
                 hasNewMessage = true;
                 newUnreads.add(fc.id);
               }
             });
 
-            if (hasNewMessage && soundEnabled) {
+            if (hasNewMessage && soundEnabledRef.current) {
               playNotificationSound();
             }
             if (hasNewMessage) {
               setUnreadConvIds(newUnreads);
             }
 
-            return freshConvs;
+            // ✅ الدمج الذكي الذي يحافظ على مراجع الكائنات القديمة لو لم تتغير بياناتها
+            return freshConvs.map(fc => {
+              const existing = prev.find(p => p.id === fc.id);
+              if (
+                existing &&
+                existing.updated_at === fc.updated_at &&
+                existing.status === fc.status &&
+                existing.assigned_to === fc.assigned_to &&
+                existing.is_archived === fc.is_archived &&
+                existing.category === fc.category
+              ) {
+                return existing;
+              }
+              return fc;
+            });
           });
 
           const currentActiveId = selectedConversationIdRef.current;
@@ -1937,7 +2034,9 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
       await api.delete(`/conversations/${conversationId}`);
       setConversations(prev => prev.filter(c => c.id !== conversationId));
       if (selectedConversation?.id === conversationId) {
+        isUserInitiatedSelectionRef.current = true;
         setSelectedConversation(null);
+        setTimeout(() => { isUserInitiatedSelectionRef.current = false; }, 150);
       }
     } catch (err: any) {
       console.error('Error deleting conversation:', err);
@@ -2154,6 +2253,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
 
   // جلب رسائل محادثة معينة وإسنادها للموظف فوراً
   const handleSelectConversation = async (conversation: Conversation) => {
+    isUserInitiatedSelectionRef.current = true; // ✅ تفويض صريح من الموظف
     selectedConversationIdRef.current = conversation.id;
 
     // ✅ إسناد تفاؤلي فوري بـ 0 ملي ثانية للموظف الحالي عند فتح أي شات معلّق
@@ -2165,7 +2265,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
       updated_at: new Date().toISOString()
     };
 
-    setSelectedConversation(assignedConv);
+    setSelectedConversationSafe(assignedConv, true);
     setConversations(prev => prev.map(c => c.id === conversation.id ? assignedConv : c));
 
     if (conversation.status === 'UNANSWERED' || !conversation.assigned_to) {
@@ -4418,7 +4518,15 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                 </div>
 
                 {/* واجهة الرسائل (يمين) مع حماية ErrorBoundary */}
-                <ChatErrorBoundary onReset={() => { selectedConversationIdRef.current = null; setSelectedConversation(null); setChatMessages([]); }}>
+                <ChatErrorBoundary onReset={() => {
+                  console.error('[DIAGNOSTIC LOG 🚨] ChatErrorBoundary reset triggered by user!');
+                  console.trace('[DIAGNOSTIC TRACE 📍] Reset trace:');
+                  isUserInitiatedSelectionRef.current = true;
+                  selectedConversationIdRef.current = null;
+                  setSelectedConversation(null);
+                  setChatMessages([]);
+                  setTimeout(() => { isUserInitiatedSelectionRef.current = false; }, 150);
+                }}>
                   <div style={styles.chatPane}>
                     {selectedConversation ? (
                       <>
