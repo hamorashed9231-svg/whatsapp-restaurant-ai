@@ -54,9 +54,30 @@ interface Restaurant {
   whatsapp_access_token?: string | null;
   catalog_id?: string | null;
   logo_url?: string | null;
-  subscription_tier: string;
-  subscription_status: string;
-  subscription_expires_at: string;
+  subscription_tier?: string;
+  subscription_status?: string;
+  subscription_expires_at?: string;
+}
+
+interface Branch {
+  id: string;
+  restaurant_id: string;
+  name: string;
+  address: string | null;
+  phone_number: string | null;
+  catalog_id: string | null;
+  whatsapp_number_id: string | null;
+  is_default: boolean;
+  is_active: boolean;
+  created_at: string;
+}
+
+interface BranchMenuItemPrice {
+  id: string;
+  branch_id: string;
+  menu_item_id: string;
+  price: number;
+  is_available: boolean;
 }
 
 interface MenuItem {
@@ -442,9 +463,35 @@ const Dashboard: React.FC<DashboardProps> = ({
   onToggleTheme,
 }) => {
   const styles = getDashboardStyles(darkMode);
-  const [activeTab, setActiveTab] = useState<'overview' | 'menu' | 'orders' | 'reservations' | 'conversations' | 'settings' | 'users' | 'ai-assistant'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'menu' | 'orders' | 'reservations' | 'conversations' | 'settings' | 'users' | 'ai-assistant' | 'branches'>('overview');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
+
+  // حالات بيانات الفروع وأسعارها
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [selectedBranchId, setSelectedBranchId] = useState<string>('');
+  const [branchPrices, setBranchPrices] = useState<BranchMenuItemPrice[]>([]);
+
+  // حالات موديل وإصدار الفروع
+  const [showBranchManagerModal, setShowBranchManagerModal] = useState<boolean>(false);
+  const [branchForm, setBranchForm] = useState({
+    id: '',
+    name: '',
+    address: '',
+    phone_number: '',
+    catalog_id: '',
+    whatsapp_number_id: '',
+    is_default: false,
+    is_active: true
+  });
+  const [editingBranchId, setEditingBranchId] = useState<string | null>(null);
+  const [branchSaveLoading, setBranchSaveLoading] = useState<boolean>(false);
+
+  // حالات موديل تخصيص سعر الفرع للصنف
+  const [showBranchPricesModal, setShowBranchPricesModal] = useState<boolean>(false);
+  const [selectedPricingItem, setSelectedPricingItem] = useState<MenuItem | null>(null);
+  const [itemBranchPricesInput, setItemBranchPricesInput] = useState<Record<string, { price: string; is_available: boolean }>>({});
+  const [savingBranchPriceId, setSavingBranchPriceId] = useState<string | null>(null);
   
   // حالات تحميل البيانات العامة
   const [loading, setLoading] = useState(true);
@@ -1071,22 +1118,158 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
-  const handleSendCatalogToCustomer = async () => {
+  const fetchBranches = async (targetRestId?: string) => {
+    const rId = targetRestId || restaurant?.id || restaurantId;
+    if (!rId) return;
+    try {
+      const res = await api.get(`/restaurants/${rId}/branches`);
+      if (res.data?.data && Array.isArray(res.data.data)) {
+        const branchList: Branch[] = res.data.data;
+        setBranches(branchList);
+        const defaultB = branchList.find(b => b.is_default) || branchList[0];
+        if (defaultB && !selectedBranchId) {
+          setSelectedBranchId(defaultB.id);
+        }
+      }
+    } catch (e) {
+      console.error("فشل جلب الفروع:", e);
+    }
+  };
+
+  const fetchBranchPrices = async (targetRestId?: string) => {
+    const rId = targetRestId || restaurant?.id || restaurantId;
+    if (!rId) return;
+    try {
+      const res = await api.get(`/restaurants/${rId}/branch-prices`);
+      if (res.data?.data && Array.isArray(res.data.data)) {
+        setBranchPrices(res.data.data);
+      }
+    } catch (e) {
+      console.error("فشل جلب أسعار الفروع:", e);
+    }
+  };
+
+  const handleSaveBranch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!branchForm.name.trim()) {
+      alert('اسم الفرع مطلوب.');
+      return;
+    }
+    const rId = restaurant?.id || restaurantId;
+    setBranchSaveLoading(true);
+    try {
+      if (editingBranchId) {
+        const res = await api.put(`/branches/${editingBranchId}`, branchForm);
+        alert(res.data.message || 'تم تحديث الفرع بنجاح!');
+      } else {
+        const res = await api.post(`/restaurants/${rId}/branches`, branchForm);
+        alert(res.data.message || 'تم إضافة الفرع بنجاح!');
+      }
+      setEditingBranchId(null);
+      setBranchForm({
+        id: '',
+        name: '',
+        address: '',
+        phone_number: '',
+        catalog_id: '',
+        whatsapp_number_id: '',
+        is_default: false,
+        is_active: true
+      });
+      fetchBranches(rId);
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'فشل حفظ بيانات الفرع.');
+    } finally {
+      setBranchSaveLoading(false);
+    }
+  };
+
+  const handleDeleteBranch = async (branchId: string) => {
+    if (!window.confirm('هل أنت متأكد من مسح هذا الفرع نهائياً؟')) return;
+    try {
+      const res = await api.delete(`/branches/${branchId}`);
+      alert(res.data.message || 'تم حذف الفرع.');
+      fetchBranches();
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'فشل حذف الفرع.');
+    }
+  };
+
+  const handleOpenEditBranch = (branch: Branch) => {
+    setEditingBranchId(branch.id);
+    setBranchForm({
+      id: branch.id,
+      name: branch.name || '',
+      address: branch.address || '',
+      phone_number: branch.phone_number || '',
+      catalog_id: branch.catalog_id || '',
+      whatsapp_number_id: branch.whatsapp_number_id || '',
+      is_default: branch.is_default || false,
+      is_active: branch.is_active !== false
+    });
+  };
+
+  const handleOpenBranchPricesModal = (item: MenuItem) => {
+    setSelectedPricingItem(item);
+    const map: Record<string, { price: string; is_available: boolean }> = {};
+    branches.forEach(b => {
+      const existing = branchPrices.find(bp => bp.branch_id === b.id && bp.menu_item_id === item.id);
+      map[b.id] = {
+        price: existing ? String(existing.price) : String(item.price),
+        is_available: existing ? existing.is_available : (item.is_available !== false)
+      };
+    });
+    setItemBranchPricesInput(map);
+    setShowBranchPricesModal(true);
+  };
+
+  const handleSaveSingleBranchPrice = async (branchId: string) => {
+    if (!selectedPricingItem) return;
+    const input = itemBranchPricesInput[branchId];
+    if (!input || !input.price) {
+      alert('يرجى إدخال سعر صحيح.');
+      return;
+    }
+    setSavingBranchPriceId(branchId);
+    try {
+      const res = await api.post(`/menu/${selectedPricingItem.id}/branch-prices`, {
+        branchId,
+        price: parseFloat(input.price),
+        is_available: input.is_available
+      });
+      alert(res.data.message || 'تم حفظ سعر الفرع بنجاح!');
+      fetchBranchPrices();
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'فشل حفظ سعر الفرع.');
+    } finally {
+      setSavingBranchPriceId(null);
+    }
+  };
+
+  const handleSendCatalogToCustomer = async (branchIdOverride?: string) => {
     if (!selectedConversation) return;
+    const targetBranchId = branchIdOverride || selectedBranchId;
+    const targetBranch = branches.find(b => b.id === targetBranchId);
+    const branchName = targetBranch ? targetBranch.name : '';
+
     const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const newCatMsg: ChatMessage = {
       id: tempId,
       conversation_id: selectedConversation.id,
       conversationId: selectedConversation.id,
       role: 'assistant',
-      content: '[🛍️ تم إرسال كتالوج الواتساب الرسمي المباشر للعميل]',
+      content: branchName 
+        ? `[🛍️ تم إرسال كتالوج الواتساب الرسمي المباشر للعميل (${branchName})]`
+        : '[🛍️ تم إرسال كتالوج الواتساب الرسمي المباشر للعميل]',
       sender_name: currentUsername,
       timestamp: new Date().toISOString()
     };
     setChatMessages(prev => [...prev, newCatMsg]);
 
     try {
-      const res = await api.post(`/conversations/${selectedConversation.id}/send-catalog`);
+      const res = await api.post(`/conversations/${selectedConversation.id}/send-catalog`, {
+        branchId: targetBranchId || undefined
+      });
       if (res.data?.messageObj) {
         const confirmed = res.data.messageObj;
         setChatMessages(prev => deduplicateMessages(prev.map(m => m.id === tempId ? { ...m, ...confirmed } : m)));
@@ -1290,15 +1473,17 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
         // إزالة شاشة التحميل فوراً لفتح واجهة لوحة التحكم والدردشات مباشرة
         setLoading(false);
 
-        // جلب بقية البيانات الثانوية في الخلفية دون تعطيل الواجهة
+        // جلب بقية البيانات الثانوية والفروع في الخلفية دون تعطيل الواجهة
         Promise.all([
           api.get(`/restaurants/${actualRestId}/menu`).catch(() => ({ data: [] })),
           api.get(`/restaurants/${actualRestId}/orders`).catch(() => ({ data: [] })),
           api.get(`/restaurants/${actualRestId}/reservations`).catch(() => ({ data: [] })),
           api.get(`/restaurants/${actualRestId}/ai-instructions`).catch(() => ({ data: { instructions: '' } })),
           api.get(`/restaurants/${actualRestId}/categories`).catch(() => ({ data: [] })),
-          api.get(`/restaurants/${actualRestId}/quick-replies`).catch(() => ({ data: [] }))
-        ]).then(([resMenu, resOrders, resReserv, resAiInst, resCats, resQuick]) => {
+          api.get(`/restaurants/${actualRestId}/quick-replies`).catch(() => ({ data: [] })),
+          api.get(`/restaurants/${actualRestId}/branches`).catch(() => ({ data: { data: [] } })),
+          api.get(`/restaurants/${actualRestId}/branch-prices`).catch(() => ({ data: { data: [] } }))
+        ]).then(([resMenu, resOrders, resReserv, resAiInst, resCats, resQuick, resBranches, resBranchPrices]) => {
           setMenuItems(resMenu.data || []);
           setOrders(resOrders.data || []);
           setReservations(resReserv.data || []);
@@ -1309,6 +1494,17 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
           }
           if (Array.isArray(resQuick.data) && resQuick.data.length > 0) {
             setSavedReplies(resQuick.data);
+          }
+          if (resBranches.data?.data && Array.isArray(resBranches.data.data)) {
+            const branchList: Branch[] = resBranches.data.data;
+            setBranches(branchList);
+            const defaultB = branchList.find(b => b.is_default) || branchList[0];
+            if (defaultB) {
+              setSelectedBranchId(defaultB.id);
+            }
+          }
+          if (resBranchPrices.data?.data && Array.isArray(resBranchPrices.data.data)) {
+            setBranchPrices(resBranchPrices.data.data);
           }
         }).catch((e) => {
           console.error('خطأ في جلب بيانات الخلفية:', e);
@@ -2506,6 +2702,14 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
           </button>
 
           <button
+            onClick={() => changeTab('branches')}
+            style={{ ...styles.navItem, ...(activeTab === 'branches' ? styles.navItemActive : {}) }}
+          >
+            <Settings size={20} />
+            <span>إدارة الفروع 🏢</span>
+          </button>
+
+          <button
             onClick={() => changeTab('orders')}
             style={{ ...styles.navItem, ...(activeTab === 'orders' ? styles.navItemActive : {}) }}
           >
@@ -2717,7 +2921,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                     
                     <div style={{ fontSize: '0.9rem', color: '#8E9FB8' }}>تاريخ الانتهاء:</div>
                     <div style={{ fontSize: '1rem', fontWeight: 'bold', margin: '4px 0 24px 0' }}>
-                      {restaurant ? new Date(restaurant.subscription_expires_at).toLocaleDateString() : 'N/A'}
+                      {restaurant?.subscription_expires_at ? new Date(restaurant.subscription_expires_at).toLocaleDateString() : 'N/A'}
                     </div>
                     
                     <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '16px' }}>
@@ -2774,6 +2978,10 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                       عرض الجدول 📋
                     </button>
                   </div>
+
+                  <button onClick={() => setShowBranchManagerModal(true)} className="btn btn-secondary" style={{ backgroundColor: '#2563EB', color: '#FFFFFF', border: 'none' }} title="إدارة فروع المطعم وإضافة الكتالوجات المخصصة والعناوين">
+                    <span>🏢 إدارة الفروع ({branches.length})</span>
+                  </button>
 
                   <button onClick={handleSyncCatalog} disabled={catalogSyncLoading} className="btn btn-secondary" style={{ backgroundColor: '#8B5CF6', color: '#FFFFFF', border: 'none' }} title="مزامنة كافة عناصر المنيو مع كتالوج Meta Commerce Catalog الرسمي على واتساب">
                     <Sparkles size={18} />
@@ -2998,7 +3206,28 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                             )}
                           </div>
 
-                          <div style={{ display: 'flex', gap: '8px' }}>
+                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            {branches.length > 0 && (
+                              <button 
+                                onClick={() => handleOpenBranchPricesModal(item)} 
+                                style={{
+                                  border: 'none',
+                                  backgroundColor: 'rgba(139, 92, 246, 0.15)',
+                                  color: '#8B5CF6',
+                                  padding: '8px 12px',
+                                  borderRadius: '8px',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  fontSize: '0.8rem',
+                                  fontWeight: '700'
+                                }}
+                                title="تخصيص وتحديد أسعار الصنف لكل فرع"
+                              >
+                                <span>💲 أسعار الفروع</span>
+                              </button>
+                            )}
                             <button 
                               onClick={() => handleOpenEditModal(item)} 
                               style={{
@@ -4212,10 +4441,38 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                             </div>
                             
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              {/* اختيار الفرع الأقرب للعميل */}
+                              {branches.length > 0 && (
+                                <select
+                                  value={selectedBranchId}
+                                  onChange={e => setSelectedBranchId(e.target.value)}
+                                  style={{
+                                    border: '1px solid ' + (darkMode ? '#334155' : '#CBD5E1'),
+                                    backgroundColor: darkMode ? '#1E293B' : '#FFFFFF',
+                                    color: darkMode ? '#FFFFFF' : '#0F1E36',
+                                    padding: '5px 8px',
+                                    borderRadius: '6px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 'bold',
+                                    cursor: 'pointer',
+                                    maxWidth: '220px',
+                                    outline: 'none'
+                                  }}
+                                  title="اختر الفرع الأقرب لموقع العميل لإرسال الكتالوج الخاص به"
+                                >
+                                  <option value="">-- الفرع الرئيسي --</option>
+                                  {branches.map(b => (
+                                    <option key={b.id} value={b.id}>
+                                      {b.name}{b.address ? ` — (${b.address})` : ''}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+
                               {/* زر إرسال الكتالوج الرسمي المباشر للعميل */}
                               <button
                                 type="button"
-                                onClick={handleSendCatalogToCustomer}
+                                onClick={() => handleSendCatalogToCustomer(selectedBranchId)}
                                 style={{
                                   border: 'none',
                                   backgroundColor: '#8B5CF6',
@@ -6278,8 +6535,262 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
             </div>
           )}
 
+          {activeTab === 'branches' && (
+            <div className="animate-fade-in" style={styles.tabContent}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+                <div>
+                  <h3 style={styles.cardTitle}>إدارة فروع المطعم والكتالوجات (Branch Management)</h3>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '4px' }}>
+                    أضف فروع مطعمك، وحدد عنوان كل فرع ومعرّف الكتالوج المخصص له على Meta Commerce Manager.
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setEditingBranchId(null);
+                    setBranchForm({
+                      id: '',
+                      name: '',
+                      address: '',
+                      phone_number: '',
+                      catalog_id: '',
+                      whatsapp_number_id: '',
+                      is_default: branches.length === 0,
+                      is_active: true
+                    });
+                    setShowBranchManagerModal(true);
+                  }}
+                  className="btn btn-primary"
+                >
+                  <Plus size={18} />
+                  <span>إضافة فرع جديد</span>
+                </button>
+              </div>
+
+              {/* جدول/كروت الفروع */}
+              {branches.length === 0 ? (
+                <div className="glass-card" style={{ padding: '40px', textAlign: 'center' }}>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '1rem', fontWeight: 'bold' }}>لا توجد فروع مضافة حالياً. أضف أول فرع لمطعمك الآن!</p>
+                  <button
+                    onClick={() => {
+                      setEditingBranchId(null);
+                      setBranchForm({
+                        id: '',
+                        name: '',
+                        address: '',
+                        phone_number: '',
+                        catalog_id: '',
+                        whatsapp_number_id: '',
+                        is_default: true,
+                        is_active: true
+                      });
+                      setShowBranchManagerModal(true);
+                    }}
+                    className="btn btn-primary"
+                    style={{ marginTop: '16px' }}
+                  >
+                    ➕ إضافة فرع جديد
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
+                  {branches.map(b => (
+                    <div key={b.id} className="glass-card" style={{ padding: '20px', borderRadius: '14px', border: b.is_default ? '2px solid #0066FF' : '1px solid var(--border-color)', position: 'relative' }}>
+                      {b.is_default && (
+                        <span style={{ position: 'absolute', top: '12px', left: '12px', backgroundColor: '#0066FF', color: '#FFF', padding: '2px 8px', borderRadius: '10px', fontSize: '0.7rem', fontWeight: 'bold' }}>
+                          ★ الفرع الرئيسي
+                        </span>
+                      )}
+                      <h4 style={{ fontWeight: '800', fontSize: '1.1rem', marginBottom: '6px', color: 'var(--text-main)' }}>{b.name}</h4>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '10px' }}>
+                        📍 {b.address || 'لا يوجد عنوان مسجل'}
+                      </p>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '16px' }}>
+                        <div>📞 الهاتف: {b.phone_number || 'غير مخصص'}</div>
+                        <div>🛍️ Meta Catalog ID: <code style={{ color: '#8B5CF6' }}>{b.catalog_id || 'افتراضي'}</code></div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+                        <button
+                          onClick={() => {
+                            handleOpenEditBranch(b);
+                            setShowBranchManagerModal(true);
+                          }}
+                          className="btn btn-secondary"
+                          style={{ flex: 1, padding: '6px', fontSize: '0.8rem' }}
+                        >
+                          <Edit size={14} />
+                          <span>تعديل</span>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteBranch(b.id)}
+                          className="btn btn-secondary"
+                          style={{ backgroundColor: 'rgba(239,68,68,0.1)', color: '#EF4444', border: 'none', padding: '6px 12px', fontSize: '0.8rem' }}
+                        >
+                          <Trash size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
         </div>
       </main>
+
+      {/* مودال إدارة الفروع */}
+      {showBranchManagerModal && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div className="glass-card" style={{ width: '100%', maxWidth: '550px', padding: '28px', backgroundColor: darkMode ? '#1E293B' : '#FFFFFF', borderRadius: '16px', color: darkMode ? '#FFF' : '#0F1E36' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: '1.15rem', fontWeight: 'bold', margin: 0 }}>
+                {editingBranchId ? '✏️ تعديل بيانات الفرع' : '🏢 إضافة فرع جديد للمطعم'}
+              </h3>
+              <button onClick={() => setShowBranchManagerModal(false)} style={{ background: 'none', border: 'none', color: darkMode ? '#FFF' : '#000', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveBranch}>
+              <div style={{ marginBottom: '14px' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '6px' }}>اسم الفرع (مطلوب)</label>
+                <input
+                  type="text"
+                  required
+                  value={branchForm.name}
+                  onChange={e => setBranchForm({ ...branchForm, name: e.target.value })}
+                  placeholder="مثال: فرع المعادي"
+                  style={styles.formInput}
+                />
+              </div>
+
+              <div style={{ marginBottom: '14px' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '6px' }}>العنوان التفصيلي للفرع (يظهر في القائمة للموظف)</label>
+                <input
+                  type="text"
+                  value={branchForm.address}
+                  onChange={e => setBranchForm({ ...branchForm, address: e.target.value })}
+                  placeholder="مثال: 12 شارع النصر، المعادي، القاهرة"
+                  style={styles.formInput}
+                />
+              </div>
+
+              <div style={{ marginBottom: '14px' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '6px' }}>معرّف كتالوج Meta Commerce Manager لهذا الفرع (Catalog ID)</label>
+                <input
+                  type="text"
+                  value={branchForm.catalog_id}
+                  onChange={e => setBranchForm({ ...branchForm, catalog_id: e.target.value })}
+                  placeholder="مثال: 102938475612345"
+                  style={styles.formInput}
+                />
+              </div>
+
+              <div style={{ marginBottom: '14px' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '6px' }}>رقم هاتف الفرع (اختياري)</label>
+                <input
+                  type="text"
+                  value={branchForm.phone_number}
+                  onChange={e => setBranchForm({ ...branchForm, phone_number: e.target.value })}
+                  placeholder="مثال: +201012345678"
+                  style={styles.formInput}
+                />
+              </div>
+
+              <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input
+                  type="checkbox"
+                  id="is_default_check"
+                  checked={branchForm.is_default}
+                  onChange={e => setBranchForm({ ...branchForm, is_default: e.target.checked })}
+                />
+                <label htmlFor="is_default_check" style={{ fontSize: '0.85rem', cursor: 'pointer' }}>تعيين هذا الفرع كفرع رئيسي افتراضي للمطعم</label>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button type="submit" className="btn btn-primary" style={{ flex: 1, padding: '10px' }} disabled={branchSaveLoading}>
+                  {branchSaveLoading ? 'جاري الحفظ...' : (editingBranchId ? 'تحديث الفرع' : 'حفظ الفرع')}
+                </button>
+                <button type="button" onClick={() => setShowBranchManagerModal(false)} className="btn btn-secondary" style={{ padding: '10px' }}>
+                  إلغاء
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* مودال تخصيص أسعار الفرع لصنف المنيو */}
+      {showBranchPricesModal && selectedPricingItem && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div className="glass-card" style={{ width: '100%', maxWidth: '600px', padding: '28px', backgroundColor: darkMode ? '#1E293B' : '#FFFFFF', borderRadius: '16px', color: darkMode ? '#FFF' : '#0F1E36' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 'bold', margin: 0 }}>
+                  💲 أسعار الفروع لصنف: "{selectedPricingItem.name}"
+                </h3>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  السعر الأساسي الافتراضي: <strong>{selectedPricingItem.price} ج.م</strong>
+                </span>
+              </div>
+              <button onClick={() => setShowBranchPricesModal(false)} style={{ background: 'none', border: 'none', color: darkMode ? '#FFF' : '#000', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxHeight: '400px', overflowY: 'auto', margin: '16px 0', paddingRight: '4px' }}>
+              {branches.length === 0 ? (
+                <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>لا توجد فروع مسجلة بعد. أضف فرعاً أولاً لإدخال أسعار مخصصة.</p>
+              ) : branches.map(b => {
+                const val = itemBranchPricesInput[b.id] || { price: String(selectedPricingItem.price), is_available: true };
+                return (
+                  <div key={b.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '12px', borderRadius: '10px', backgroundColor: darkMode ? 'rgba(255,255,255,0.05)' : '#F8FAFC', border: '1px solid var(--border-color)' }}>
+                    <div>
+                      <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{b.name} {b.is_default ? '(رئيسي)' : ''}</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{b.address || 'بدون عنوان'}</div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <input
+                          type="number"
+                          step="0.5"
+                          value={val.price}
+                          onChange={e => {
+                            const newP = e.target.value;
+                            setItemBranchPricesInput(prev => ({
+                              ...prev,
+                              [b.id]: { ...prev[b.id], price: newP }
+                            }));
+                          }}
+                          style={{ width: '100px', padding: '6px 8px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '0.85rem', textAlign: 'center' }}
+                        />
+                        <span style={{ fontSize: '0.8rem' }}>ج.م</span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleSaveSingleBranchPrice(b.id)}
+                        disabled={savingBranchPriceId === b.id}
+                        className="btn btn-primary"
+                        style={{ padding: '6px 12px', fontSize: '0.78rem' }}
+                      >
+                        {savingBranchPriceId === b.id ? 'حفظ...' : 'حفظ السعر'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ textAlign: 'left', marginTop: '16px' }}>
+              <button type="button" onClick={() => setShowBranchPricesModal(false)} className="btn btn-secondary">
+                إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* مودال معاينة وتكبير الصورة المرفقة مع إمكانية التنزيل المباشر */}
       {previewImageUrl && (
