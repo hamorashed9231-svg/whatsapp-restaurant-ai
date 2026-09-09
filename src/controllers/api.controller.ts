@@ -482,7 +482,9 @@ export const getConversations = async (req: Request, res: Response): Promise<voi
       orderBy: { updated_at: 'desc' }
     });
 
-    const enriched = (conversations || []).map(c => {
+    const rawList = (conversations && conversations.length > 0) ? conversations : memoryConversations;
+
+    const enriched = (rawList || []).map(c => {
       let msgs: any[] = [];
       try {
         msgs = typeof c.messages_json === 'string' ? JSON.parse(c.messages_json) : (c.messages_json as any[]) || [];
@@ -511,7 +513,7 @@ export const getConversations = async (req: Request, res: Response): Promise<voi
     res.status(200).json(enriched);
   } catch (error: any) {
     console.error('Error fetching conversations:', error);
-    res.status(200).json([]);
+    res.status(200).json(memoryConversations);
   }
 };
 
