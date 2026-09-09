@@ -444,12 +444,14 @@ const formatDisplayPhone = (rawPhone: string): string => {
 
 const getSafePhone = (c?: any): string => {
   if (!c) return 'مستخدم غير معروف';
+  // 1. أولاً: عرض اسم بروفايل العميل على واتساب إذا كان متاحاً
+  if (c.customer_name && String(c.customer_name).trim() && String(c.customer_name).trim() !== 'unknown_user') {
+    return String(c.customer_name).trim();
+  }
+  // 2. ثانيًا: التراجع لرقم الهاتف المنسق إذا لم يتوفر اسم البروفايل
   const phoneStr = String(c.customer_phone || c.customerPhone || '').trim();
   if (phoneStr && phoneStr !== 'unknown_user') {
     return formatDisplayPhone(phoneStr);
-  }
-  if (c.customer_name && String(c.customer_name).trim() && String(c.customer_name).trim() !== 'unknown_user') {
-    return String(c.customer_name).trim();
   }
   return 'مستخدم غير معروف';
 };
