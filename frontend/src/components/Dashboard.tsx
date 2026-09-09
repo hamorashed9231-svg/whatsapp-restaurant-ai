@@ -34,6 +34,7 @@ import {
   FileText,
   CornerUpLeft
 } from 'lucide-react';
+import { CustomerLoyalty } from './CustomerLoyalty';
 
 interface DashboardProps {
   token: string | null;
@@ -463,7 +464,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   onToggleTheme,
 }) => {
   const styles = getDashboardStyles(darkMode);
-  const [activeTab, setActiveTab] = useState<'overview' | 'menu' | 'orders' | 'reservations' | 'conversations' | 'settings' | 'users' | 'ai-assistant' | 'branches'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'menu' | 'orders' | 'reservations' | 'conversations' | 'settings' | 'users' | 'ai-assistant' | 'branches' | 'customers'>('overview');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
 
@@ -2751,6 +2752,14 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
           </button>
 
           <button
+            onClick={() => changeTab('customers')}
+            style={{ ...styles.navItem, ...(activeTab === 'customers' ? styles.navItemActive : {}) }}
+          >
+            <Users size={20} />
+            <span>سجل العملاء والولاء</span>
+          </button>
+
+          <button
             onClick={() => changeTab('settings')}
             style={{ ...styles.navItem, ...(activeTab === 'settings' ? styles.navItemActive : {}) }}
           >
@@ -3852,7 +3861,14 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
             </div>
           )}
 
-          {/* 5. التبويب الخامس: مراقبة المحادثات (Conversations) */}
+          {/* 5. التبويب الخامس: سجل العملاء والولاء (Customer Loyalty Log) */}
+          {activeTab === 'customers' && (
+            <div className="animate-fade-in" style={styles.tabContent}>
+              <CustomerLoyalty token={token} restaurantId={restaurantId} darkMode={darkMode} />
+            </div>
+          )}
+
+          {/* 6. التبويب السادس: مراقبة المحادثات (Conversations) */}
           {activeTab === 'conversations' && (
             <div className="animate-fade-in" style={{ ...styles.tabContent, height: 'calc(100vh - 85px)', padding: 0 }}>
               <div style={styles.conversationsLayout}>
