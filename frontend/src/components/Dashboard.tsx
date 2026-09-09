@@ -478,6 +478,64 @@ const safeFormatTime = (ts?: any): string => {
   }
 };
 
+const CUSTOMER_AVATAR_PALETTE = ['#3B82F6', '#8B5CF6', '#EC4899', '#06B6D4', '#F59E0B', '#10B981', '#6366F1'];
+
+const getCustomerAvatarInfo = (name?: string | null, phone?: string | null) => {
+  const text = (name && name.trim()) || (phone && phone.trim()) || 'عميل';
+  let initials = '';
+  if (name && name.trim()) {
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      initials = (parts[0][0] + parts[1][0]).toUpperCase();
+    } else {
+      initials = parts[0].substring(0, 2).toUpperCase();
+    }
+  } else if (phone && phone.trim()) {
+    const digits = phone.replace(/[^\d]/g, '');
+    initials = digits.length >= 2 ? digits.slice(-2) : '👤';
+  } else {
+    initials = '👤';
+  }
+
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    hash = text.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const colorIndex = Math.abs(hash) % CUSTOMER_AVATAR_PALETTE.length;
+  return {
+    initials,
+    bgColor: CUSTOMER_AVATAR_PALETTE[colorIndex]
+  };
+};
+
+const getMsgDateStr = (ts?: any): string => {
+  if (!ts) return '';
+  try {
+    const d = new Date(ts);
+    return isNaN(d.getTime()) ? '' : d.toISOString().split('T')[0];
+  } catch (e) {
+    return '';
+  }
+};
+
+const formatDateSeparatorLabel = (dateStr: string): string => {
+  if (!dateStr) return '';
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const yesterdayDate = new Date();
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+    const yesterday = yesterdayDate.toISOString().split('T')[0];
+
+    if (dateStr === today) return 'اليوم';
+    if (dateStr === yesterday) return 'أمس';
+
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' });
+  } catch (e) {
+    return dateStr;
+  }
+};
+
 const Dashboard: React.FC<DashboardProps> = ({
   token,
   restaurantId,
@@ -628,6 +686,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   // Chat Pane state variables
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [isMessagesLoading, setIsMessagesLoading] = useState<boolean>(false);
 
   const deduplicateMessages = (msgs: ChatMessage[]): ChatMessage[] => {
     if (!Array.isArray(msgs)) return [];
@@ -2285,6 +2344,9 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
       conversationId: conversation.id
     }));
     setChatMessages(deduplicateMessages(existingMsgs));
+    if (existingMsgs.length === 0) {
+      setIsMessagesLoading(true);
+    }
 
     setUnreadConvIds(prev => {
       const next = new Set(prev);
@@ -2344,6 +2406,8 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
       }
     } catch (err) {
       console.error('فشل جلب رسائل المحادثة:', err);
+    } finally {
+      setIsMessagesLoading(false);
     }
   };
 
@@ -4390,6 +4454,8 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                           const hasAssigned = Boolean(conv?.assigned_to && typeof conv.assigned_to === 'string' && conv.assigned_to.trim());
                           const assignedBorderColor = hasAssigned ? getStaffColor(conv.assigned_to, darkMode) : null;
 
+                          const custAvatar = getCustomerAvatarInfo(conv.customer_name, phoneStr);
+
                           return (
                             <div
                               key={conv.id || Math.random()}
@@ -4421,13 +4487,17 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                      width: '38px',
                                      height: '38px',
                                      borderRadius: '50%',
-                                     backgroundColor: `${catDot.color}18`,
+                                     backgroundColor: custAvatar.bgColor,
+                                     color: '#FFFFFF',
                                      display: 'flex',
                                      alignItems: 'center',
                                      justifyContent: 'center',
-                                     flexShrink: 0
+                                     fontWeight: 'bold',
+                                     fontSize: '0.85rem',
+                                     flexShrink: 0,
+                                     boxShadow: '0 2px 5px rgba(0,0,0,0.12)'
                                    }}>
-                                     <MessageSquare size={16} color={catDot.color} />
+                                     {custAvatar.initials}
                                    </div>
 
                                    <div style={{ flex: 1, minWidth: 0 }}>
@@ -4530,7 +4600,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                   <div style={styles.chatPane}>
                     {selectedConversation ? (
                       <>
-                        {/* هيدر الدردشة المطور بأسلوب مدمج مع أيقونات تفاعلية ونسخ ذكي */}
+{/* هيدر الدردشة المطور بأسلوب مدمج مع أيقونات تفاعلية ونسخ ذكي */}
                         <div style={{ ...styles.chatPaneHeader, padding: '12px 16px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', flexWrap: 'wrap', gap: '10px' }}>
                             <div>
@@ -4538,12 +4608,31 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                 {(() => {
                                   const phoneStr = getSafePhone(selectedConversation);
                                   const isGroup = isGroupConvCheck(selectedConversation);
+                                  const headerAvatar = getCustomerAvatarInfo(selectedConversation.customer_name, phoneStr);
                                   return (
                                     <>
-                                      <span style={{ fontWeight: 'bold', fontSize: '0.95rem', color: darkMode ? '#FFFFFF' : '#0F1E36', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                                        <span>{isGroup ? '👥' : '📱'}</span>
-                                        <span>{phoneStr}</span>
-                                      </span>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <div style={{
+                                          width: '36px',
+                                          height: '36px',
+                                          borderRadius: '50%',
+                                          backgroundColor: headerAvatar.bgColor,
+                                          color: '#FFFFFF',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          fontWeight: 'bold',
+                                          fontSize: '0.85rem',
+                                          flexShrink: 0,
+                                          boxShadow: '0 2px 6px rgba(0,0,0,0.15)'
+                                        }}>
+                                          {headerAvatar.initials}
+                                        </div>
+                                        <span style={{ fontWeight: 'bold', fontSize: '0.95rem', color: darkMode ? '#FFFFFF' : '#0F1E36', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                          <span>{isGroup ? '👥' : ''}</span>
+                                          <span>{phoneStr}</span>
+                                        </span>
+                                      </div>
                                       <button
                                         type="button"
                                         onClick={() => {
@@ -4889,7 +4978,15 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                         )}
 
                         <div style={styles.chatPaneBody}>
-                          {!Array.isArray(chatMessages) || chatMessages.length === 0 ? (
+                          {isMessagesLoading && (!Array.isArray(chatMessages) || chatMessages.length === 0) ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '16px 8px' }}>
+                              <div className="skeleton-bubble" style={{ alignSelf: 'flex-start', width: '45%', height: '44px', borderRadius: '12px', backgroundColor: darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }} />
+                              <div className="skeleton-bubble" style={{ alignSelf: 'flex-end', width: '60%', height: '56px', borderRadius: '12px', backgroundColor: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }} />
+                              <div className="skeleton-bubble" style={{ alignSelf: 'flex-start', width: '35%', height: '40px', borderRadius: '12px', backgroundColor: darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }} />
+                              <div className="skeleton-bubble" style={{ alignSelf: 'flex-end', width: '52%', height: '48px', borderRadius: '12px', backgroundColor: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }} />
+                              <div className="skeleton-bubble" style={{ alignSelf: 'flex-start', width: '58%', height: '44px', borderRadius: '12px', backgroundColor: darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }} />
+                            </div>
+                          ) : !Array.isArray(chatMessages) || chatMessages.length === 0 ? (
                             <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: '#5E6E85' }}>
                               لا توجد رسائل مسجلة في المحادثة بعد.
                             </div>
@@ -4902,6 +4999,19 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                               const senderName = msg.sender_name || (msg as any).senderName || (msg as any).sender || '';
                               const timeStr = safeFormatTime(msg.timestamp || (msg as any).created_at);
 
+                              const currentDateStr = getMsgDateStr(msg.timestamp || (msg as any).created_at);
+                              const prevMsg = i > 0 ? chatMessages[i - 1] : null;
+                              const prevDateStr = prevMsg ? getMsgDateStr(prevMsg.timestamp || (prevMsg as any).created_at) : '';
+                              const showDateSeparator = Boolean(currentDateStr && currentDateStr !== prevDateStr);
+
+                              const prevMsgRole = prevMsg ? (prevMsg.role || ((prevMsg as any).isStaff || (prevMsg as any).sender === 'staff' ? 'assistant' : 'user')) : null;
+                              const prevSenderName = prevMsg ? (prevMsg.sender_name || (prevMsg as any).senderName || (prevMsg as any).sender || '') : '';
+                              const currentTs = new Date(msg.timestamp || (msg as any).created_at || 0).getTime();
+                              const prevTs = prevMsg ? new Date(prevMsg.timestamp || (prevMsg as any).created_at || 0).getTime() : 0;
+                              const timeDiffMs = currentTs - prevTs;
+
+                              const isSameSenderGroup = !showDateSeparator && Boolean(prevMsg) && (prevMsgRole === msgRole) && (prevSenderName === senderName) && (timeDiffMs >= 0 && timeDiffMs < 120000);
+
                               const mediaId = (msg as any).media_id || (msg as any).mediaId;
                               const isDocMsg = Boolean(msgContent && (msgContent.includes('[📄 مستند مرفق]') || (msg as any).document_url));
                               const displayImgUrl = !isDocMsg
@@ -4909,36 +5019,59 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                 : undefined;
 
                               return (
-                                <div
-                                  key={i}
-                                  style={{
-                                    ...styles.chatPaneMessageRow,
-                                    justifyContent: isUser ? 'flex-start' : 'flex-end',
-                                  }}
-                                >
+                                <React.Fragment key={msg.id || msg.wamid || i}>
+                                  {showDateSeparator && (
+                                    <div style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      margin: '14px auto 8px auto',
+                                      width: '100%'
+                                    }}>
+                                      <span style={{
+                                        fontSize: '0.72rem',
+                                        fontWeight: '600',
+                                        padding: '4px 14px',
+                                        borderRadius: '12px',
+                                        backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
+                                        color: darkMode ? '#94A3B8' : '#64748B',
+                                        boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                                      }}>
+                                        🗓️ {formatDateSeparatorLabel(currentDateStr)}
+                                      </span>
+                                    </div>
+                                  )}
                                   <div
-                                    data-msg-bubble="true"
-                                    onMouseEnter={() => setHoveredMessageIndex(i)}
-                                    onMouseLeave={() => setHoveredMessageIndex(null)}
-                                    onTouchStart={() => handleTouchStartMessage(i)}
-                                    onTouchEnd={handleTouchEndMessage}
-                                    onTouchMove={handleTouchEndMessage}
+                                    className="animate-message-slide-in"
                                     style={{
-                                      ...styles.chatPaneBubble,
-                                      backgroundColor: isUser ? (darkMode ? '#202C33' : '#FFFFFF') : (darkMode ? '#005C4B' : '#D9FDD3'),
-                                      color: isUser ? (darkMode ? '#E9EDEF' : '#111B21') : (darkMode ? '#E9EDEF' : '#111B21'),
-                                      border: isUser ? (darkMode ? '1px solid #2A3942' : '1px solid #E2E8F0') : (darkMode ? 'none' : '1px solid #C6F6D5'),
-                                      borderRadius: isUser ? '14px 14px 14px 2px' : '14px 14px 2px 14px',
-                                      boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-                                      position: 'relative',
-                                      minWidth: '200px'
+                                      ...styles.chatPaneMessageRow,
+                                      justifyContent: isUser ? 'flex-start' : 'flex-end',
+                                      marginTop: isSameSenderGroup ? '3px' : '10px',
                                     }}
                                   >
-                                    {senderName && !isUser && (
-                                      <div style={{ fontSize: '0.72rem', color: darkMode ? '#34D399' : '#059669', fontWeight: '700', marginBottom: '4px' }}>
-                                        {senderName}
-                                      </div>
-                                    )}
+                                    <div
+                                      data-msg-bubble="true"
+                                      onMouseEnter={() => setHoveredMessageIndex(i)}
+                                      onMouseLeave={() => setHoveredMessageIndex(null)}
+                                      onTouchStart={() => handleTouchStartMessage(i)}
+                                      onTouchEnd={handleTouchEndMessage}
+                                      onTouchMove={handleTouchEndMessage}
+                                      style={{
+                                        ...styles.chatPaneBubble,
+                                        backgroundColor: isUser ? (darkMode ? '#202C33' : '#FFFFFF') : (darkMode ? '#005C4B' : '#D9FDD3'),
+                                        color: isUser ? (darkMode ? '#E9EDEF' : '#111B21') : (darkMode ? '#E9EDEF' : '#111B21'),
+                                        border: isUser ? (darkMode ? '1px solid #2A3942' : '1px solid #E2E8F0') : (darkMode ? 'none' : '1px solid #C6F6D5'),
+                                        borderRadius: isUser ? '12px 12px 12px 2px' : '12px 12px 2px 12px',
+                                        boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                                        position: 'relative',
+                                        minWidth: '200px'
+                                      }}
+                                    >
+                                      {senderName && !isUser && !isSameSenderGroup && (
+                                        <div style={{ fontSize: '0.72rem', color: darkMode ? '#34D399' : '#059669', fontWeight: '700', marginBottom: '4px' }}>
+                                          {senderName}
+                                        </div>
+                                      )}
 
                                     {/* عرض الرسالة المقتبس الرد عليها (Quoted Reply Box) */}
                                     {msg.reply_to_id && (() => {
@@ -5197,9 +5330,10 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                      </div>
                                    </div>
                                  </div>
-                               );
-                             })
-                           )}
+                               </React.Fragment>
+                             );
+                           })
+                         )}
                            <div ref={chatEndRef} />
                          </div>
 
