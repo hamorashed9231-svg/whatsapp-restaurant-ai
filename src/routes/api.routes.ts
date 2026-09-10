@@ -52,7 +52,10 @@ import {
   setBranchPriceEndpoint,
   getCustomersEndpoint,
   getCustomerTimelineEndpoint,
-  getCustomerStatsEndpoint
+  getCustomerStatsEndpoint,
+  getActiveBroadcastCustomers,
+  sendBroadcastCampaign,
+  getBroadcastLogs
 } from '../controllers/api.controller';
 import { upload } from '../middlewares/upload.middleware';
 import { purgeClosedConversations } from '../controllers/purge.controller';
@@ -97,6 +100,11 @@ router.post('/menu/:itemId/branch-prices', authMiddleware, setBranchPriceEndpoin
 router.get('/restaurants/:id/customers', authMiddleware, getCustomersEndpoint);
 router.get('/restaurants/:id/customers/:customerId', authMiddleware, getCustomerTimelineEndpoint);
 router.get('/restaurants/:id/customer-stats', authMiddleware, getCustomerStatsEndpoint);
+
+// الحملات الجماعية (خاص بـ houda والمستخدمين المعتمدين)
+router.get('/broadcast/active-customers', authMiddleware, getActiveBroadcastCustomers);
+router.post('/broadcast/send', authMiddleware, sendBroadcastCampaign);
+router.get('/broadcast/logs', authMiddleware, getBroadcastLogs);
 
 // قائمة الطعام (المنيو) والتصنيفات ومزامنة الكتالوج
 router.get('/restaurants/:id/menu', authMiddleware, getMenu);

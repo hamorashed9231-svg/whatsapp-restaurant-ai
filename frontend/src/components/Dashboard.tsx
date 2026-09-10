@@ -546,9 +546,23 @@ const Dashboard: React.FC<DashboardProps> = ({
   onToggleTheme,
 }) => {
   const styles = getDashboardStyles(darkMode);
-  const [activeTab, setActiveTab] = useState<'overview' | 'menu' | 'orders' | 'reservations' | 'conversations' | 'settings' | 'users' | 'ai-assistant' | 'branches' | 'customers'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'menu' | 'orders' | 'reservations' | 'conversations' | 'settings' | 'users' | 'ai-assistant' | 'branches' | 'customers' | 'broadcast'>('overview');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
+
+  // حالات ميزة الحملات الجماعية (Broadcast Campaigns)
+  const [canAccessBroadcast, setCanAccessBroadcast] = useState<boolean>(false);
+  const [broadcastCustomers, setBroadcastCustomers] = useState<any[]>([]);
+  const [broadcastLoading, setBroadcastLoading] = useState<boolean>(false);
+  const [broadcastSearch, setBroadcastSearch] = useState<string>('');
+  const [selectedBroadcastPhones, setSelectedBroadcastPhones] = useState<Set<string>>(new Set());
+  const [broadcastMsgText, setBroadcastMsgText] = useState<string>('');
+  const [broadcastSending, setBroadcastSending] = useState<boolean>(false);
+  const [broadcastProgress, setBroadcastProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
+  const [broadcastResultModal, setBroadcastResultModal] = useState<any | null>(null);
+  const [broadcastLogs, setBroadcastLogs] = useState<any[]>([]);
+  const [broadcastLogsLoading, setBroadcastLogsLoading] = useState<boolean>(false);
+  const [selectedLogDetailsModal, setSelectedLogDetailsModal] = useState<any | null>(null);
 
   // حالات بيانات الفروع وأسعارها
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -1083,12 +1097,135 @@ const Dashboard: React.FC<DashboardProps> = ({
         const decoded = JSON.parse(jsonPayload);
         setUserRole(decoded.role || 'staff');
         setCurrentUsername(decoded.username || 'موظف الخدمة');
+        setCanAccessBroadcast(Boolean(decoded.can_access_broadcast || decoded.username === 'houda'));
       } catch (e) {
         setUserRole('staff');
         setCurrentUsername('موظف الخدمة');
+        setCanAccessBroadcast(false);
       }
     }
   }, [token]);
+
+  // دوال وتأثيرات ميزة الحملات الجماعية (Broadcast Campaigns)
+  const fetchBroadcastActiveCustomers = async () => {
+    setBroadcastLoading(true);
+    try {
+      const res = await axios.get(`${getApiUrl()}/broadcast/active-customers`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.data && res.data.customers) {
+        setBroadcastCustomers(res.data.customers);
+        const initialSet = new Set<string>(res.data.customers.slice(0, 50).map((c: any) => c.customer_phone));
+        setSelectedBroadcastPhones(initialSet);
+      }
+    } catch (e: any) {
+      console.error('خطأ جلب عملاء الحملة:', e);
+    } finally {
+      setBroadcastLoading(false);
+    }
+  };
+
+  const fetchBroadcastLogs = async () => {
+    setBroadcastLogsLoading(true);
+    try {
+      const res = await axios.get(`${getApiUrl()}/broadcast/logs`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.data && res.data.logs) {
+        setBroadcastLogs(res.data.logs);
+      }
+    } catch (e) {
+      console.error('خطأ جلب سجل الحملات:', e);
+    } finally {
+      setBroadcastLogsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'broadcast' && (currentUsername === 'houda' || canAccessBroadcast)) {
+      fetchBroadcastActiveCustomers();
+      fetchBroadcastLogs();
+    }
+  }, [activeTab, currentUsername, canAccessBroadcast]);
+
+  const filteredBroadcastCustomers = broadcastCustomers.filter(c => {
+    if (!broadcastSearch.trim()) return true;
+    const query = broadcastSearch.toLowerCase().trim();
+    const phone = (c.customer_phone || '').toLowerCase();
+    const name = (c.customer_name || '').toLowerCase();
+    return phone.includes(query) || name.includes(query);
+  });
+
+  const handleToggleSelectBroadcastCustomer = (phone: string) => {
+    setSelectedBroadcastPhones(prev => {
+      const next = new Set(prev);
+      if (next.has(phone)) {
+        next.delete(phone);
+      } else {
+        if (next.size >= 50) {
+          alert('الحد الأقصى للتحديد في الدفعة الواحدة هو 50 عميل لضمان الأمان والسرعة.');
+          return prev;
+        }
+        next.add(phone);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAllBroadcastCustomers = () => {
+    if (selectedBroadcastPhones.size > 0 && selectedBroadcastPhones.size === Math.min(filteredBroadcastCustomers.length, 50)) {
+      setSelectedBroadcastPhones(new Set());
+    } else {
+      const toSelect = filteredBroadcastCustomers.slice(0, 50).map(c => c.customer_phone);
+      setSelectedBroadcastPhones(new Set(toSelect));
+      if (filteredBroadcastCustomers.length > 50) {
+        alert('تم تحديد أول 50 عميل فقط للالتزام بحد الدفعة الأقصى.');
+      }
+    }
+  };
+
+  const handleSendBroadcastCampaign = async () => {
+    if (selectedBroadcastPhones.size === 0) {
+      alert('يرجى اختيار عميل واحد على الأقل من القائمة.');
+      return;
+    }
+    if (!broadcastMsgText.trim()) {
+      alert('يرجى كتابة نص الرسالة المراد إرسالها.');
+      return;
+    }
+    if (selectedBroadcastPhones.size > 50) {
+      alert('الحد الأقصى المسموح به للإرسال في الدفعة الواحدة هو 50 عميل.');
+      return;
+    }
+
+    if (!window.confirm(`هل أنت تأكد من إرسال هذه الرسالة الجماعية لعدد (${selectedBroadcastPhones.size}) عميل؟`)) {
+      return;
+    }
+
+    setBroadcastSending(true);
+    setBroadcastProgress({ current: 0, total: selectedBroadcastPhones.size });
+
+    try {
+      const phonesArray = Array.from(selectedBroadcastPhones);
+      const res = await axios.post(`${getApiUrl()}/broadcast/send`, {
+        customer_phones: phonesArray,
+        message_text: broadcastMsgText.trim()
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (res.data && res.data.summary) {
+        setBroadcastResultModal(res.data.summary);
+        setBroadcastMsgText('');
+        fetchBroadcastActiveCustomers();
+        fetchBroadcastLogs();
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'حدث خطأ أثناء تنفيذ الحملة الجماعية.');
+    } finally {
+      setBroadcastSending(false);
+    }
+  };
 
   // حالات مساعد الضبط الذكي والتعليمات المخصصة
   const [aiInstructions, setAiInstructions] = useState('');
@@ -3044,6 +3181,16 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
             <Users size={20} />
             <span>سجل العملاء والولاء</span>
           </button>
+
+          {(currentUsername === 'houda' || canAccessBroadcast) && (
+            <button
+              onClick={() => changeTab('broadcast')}
+              style={{ ...styles.navItem, ...(activeTab === 'broadcast' ? styles.navItemActive : {}) }}
+            >
+              <Send size={20} />
+              <span>الحملات الجماعية 📢</span>
+            </button>
+          )}
 
           <button
             onClick={() => changeTab('settings')}
@@ -7191,6 +7338,336 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
             </div>
           )}
 
+          {/* 7. التبويب السابع: الحملات الجماعية المباشرة (Broadcast Campaigns) */}
+          {activeTab === 'broadcast' && (currentUsername === 'houda' || canAccessBroadcast) && (
+            <div className="animate-fade-in" style={styles.tabContent}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '16px' }}>
+                <div>
+                  <h3 style={{ ...styles.cardTitle, display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span>📢 الحملات الجماعية المباشرة</span>
+                    <span style={{ fontSize: '0.75rem', backgroundColor: '#0066FF', color: '#FFFFFF', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
+                      خاص بـ {currentUsername}
+                    </span>
+                  </h3>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '4px' }}>
+                    إرسال رسائل جماعية للعملاء المتفاعلين خلال آخر 24 ساعة بكل أمان مع التحقق اللحظي قبل كل إرسال.
+                  </p>
+                </div>
+                <button
+                  onClick={fetchBroadcastActiveCustomers}
+                  disabled={broadcastLoading}
+                  className="btn btn-secondary"
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', fontSize: '0.85rem' }}
+                >
+                  <span>🔄 تحديث القائمة</span>
+                </button>
+              </div>
+
+              {/* بطاقات الإحصائيات السريعة */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+                <div className="glass-card" style={{ padding: '16px', borderRadius: '12px', borderRight: '4px solid #0066FF' }}>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>العملاء المتاحون (آخر 24 ساعة)</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-main)' }}>{broadcastCustomers.length} عميل</div>
+                </div>
+
+                <div className="glass-card" style={{ padding: '16px', borderRadius: '12px', borderRight: '4px solid #10B981' }}>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>المحددون للإرسال الحالية</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#10B981' }}>
+                    {selectedBroadcastPhones.size} / {Math.min(filteredBroadcastCustomers.length, 50)}
+                  </div>
+                </div>
+
+                <div className="glass-card" style={{ padding: '16px', borderRadius: '12px', borderRight: '4px solid #F59E0B' }}>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>آلية الإرسال والحماية</div>
+                  <div style={{ fontSize: '0.9rem', fontWeight: '600', color: '#F59E0B', marginTop: '4px' }}>
+                    تأخير 300ms + فحص لحظي للنافذة
+                  </div>
+                </div>
+              </div>
+
+              {/* الشاشة الرئيسية: اختيار العملاء + كاتب الرسالة */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', alignItems: 'start' }}>
+                
+                {/* العمود الأيمن: تصفية واختيار العملاء */}
+                <div className="glass-card" style={{ padding: '20px', borderRadius: '14px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+                    <h4 style={{ fontWeight: 'bold', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Users size={18} color="#0066FF" />
+                      <span>تحديد المستلمين ({filteredBroadcastCustomers.length})</span>
+                    </h4>
+                    
+                    <button
+                      type="button"
+                      onClick={handleSelectAllBroadcastCustomers}
+                      style={{
+                        backgroundColor: (selectedBroadcastPhones.size > 0 && selectedBroadcastPhones.size === Math.min(filteredBroadcastCustomers.length, 50)) ? '#EF4444' : '#0066FF',
+                        color: '#FFFFFF',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '6px 12px',
+                        fontSize: '0.8rem',
+                        fontWeight: 'bold',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {(selectedBroadcastPhones.size > 0 && selectedBroadcastPhones.size === Math.min(filteredBroadcastCustomers.length, 50)) ? 'إلغاء تحديد الكل' : 'تحديد الكل (حتى 50)'}
+                    </button>
+                  </div>
+
+                  {/* بحث في العملاء */}
+                  <input
+                    type="text"
+                    placeholder="ابحث بالاسم أو رقم الهاتف..."
+                    value={broadcastSearch}
+                    onChange={e => setBroadcastSearch(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-input)',
+                      color: 'var(--text-main)',
+                      fontSize: '0.85rem',
+                      marginBottom: '16px',
+                      outline: 'none'
+                    }}
+                  />
+
+                  {/* قائمة العملاء مع Checkbox */}
+                  <div style={{ maxHeight: '420px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '8px' }}>
+                    {broadcastLoading ? (
+                      <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                        <span className="spinner" style={{ width: 24, height: 24, margin: '0 auto 8px auto', display: 'block' }}></span>
+                        جاري تحميل العملاء النشطين...
+                      </div>
+                    ) : filteredBroadcastCustomers.length === 0 ? (
+                      <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                        لا يوجد عملاء نشطون تواصلوا خلال آخر 24 ساعة يطابقون البحث.
+                      </div>
+                    ) : (
+                      filteredBroadcastCustomers.map((c: any) => {
+                        const isSelected = selectedBroadcastPhones.has(c.customer_phone);
+                        return (
+                          <div
+                            key={c.id}
+                            onClick={() => handleToggleSelectBroadcastCustomer(c.customer_phone)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '10px 12px',
+                              borderRadius: '8px',
+                              marginBottom: '6px',
+                              backgroundColor: isSelected ? (darkMode ? 'rgba(0,102,255,0.15)' : 'rgba(0,102,255,0.06)') : 'transparent',
+                              border: isSelected ? '1px solid rgba(0,102,255,0.3)' : '1px solid transparent',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => {}}
+                                style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#0066FF' }}
+                              />
+                              <div>
+                                <div style={{ fontWeight: 'bold', fontSize: '0.9rem', color: 'var(--text-main)' }}>
+                                  {c.customer_name || 'عميل'}
+                                </div>
+                                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                  {formatDisplayPhone(c.customer_phone)}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div style={{ textAlign: 'left' }}>
+                              <span style={{
+                                fontSize: '0.75rem',
+                                backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                                color: '#10B981',
+                                padding: '2px 8px',
+                                borderRadius: '10px',
+                                fontWeight: 'bold'
+                              }}>
+                                ⏱️ متبقي {c.remainingHours} ساعة
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* العمود الأيسر: صياغة الرسالة وزر الإرسال */}
+                <div className="glass-card" style={{ padding: '20px', borderRadius: '14px' }}>
+                  <h4 style={{ fontWeight: 'bold', fontSize: '1rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Send size={18} color="#10B981" />
+                    <span>محرر نص الرسالة الجماعية</span>
+                  </h4>
+
+                  <div style={{ marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      onClick={() => setBroadcastMsgText(prev => prev + ' {name} ')}
+                      style={{
+                        backgroundColor: darkMode ? 'rgba(255,255,255,0.08)' : '#F1F5F9',
+                        border: '1px solid var(--border-color)',
+                        color: '#0066FF',
+                        borderRadius: '6px',
+                        padding: '4px 10px',
+                        fontSize: '0.75rem',
+                        fontWeight: 'bold',
+                        cursor: 'pointer'
+                      }}
+                      title="إدراج اسم العميل تلقائياً عند الإرسال"
+                    >
+                      ➕ إدراج متغيرة اسم العميل {"{name}"}
+                    </button>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      الحروف: {broadcastMsgText.length}
+                    </span>
+                  </div>
+
+                  <textarea
+                    rows={7}
+                    placeholder="اكتب نص الرسالة هنا... مثال: أهلاً بك يا {name}! يسعدنا إعلامك بعروضنا الجديدة لليوم 🍕"
+                    value={broadcastMsgText}
+                    onChange={e => setBroadcastMsgText(e.target.value)}
+                    disabled={broadcastSending}
+                    style={{
+                      width: '100%',
+                      padding: '14px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-input)',
+                      color: 'var(--text-main)',
+                      fontSize: '0.9rem',
+                      lineHeight: '1.6',
+                      resize: 'none',
+                      outline: 'none',
+                      marginBottom: '16px'
+                    }}
+                  />
+
+                  {/* معلومات تنبيه الأمان */}
+                  <div style={{ backgroundColor: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.2)', padding: '12px', borderRadius: '8px', marginBottom: '20px', fontSize: '0.8rem', color: '#D97706', lineHeight: '1.5' }}>
+                    ⚠️ <strong>تنبيه الأمان:</strong> سيتم الإرسال بالتتابع مع تأخير زمني (300ms) بين كل عميل، وسيتم إعادة فحص نافذة الـ 24 ساعة لحظياً لكل رقم لتجنب أي مشاكل مع Meta.
+                  </div>
+
+                  {/* زر الإرسال مع شريط التقدم */}
+                  {broadcastSending ? (
+                    <div style={{ textAlign: 'center', padding: '12px', backgroundColor: 'rgba(0,102,255,0.05)', borderRadius: '8px', border: '1px solid rgba(0,102,255,0.2)' }}>
+                      <div style={{ fontWeight: 'bold', color: '#0066FF', marginBottom: '8px', fontSize: '0.9rem' }}>
+                        جاري الإرسال الجماعي بالتتابع...
+                      </div>
+                      <div style={{ width: '100%', height: '8px', backgroundColor: '#E2E8F0', borderRadius: '4px', overflow: 'hidden', marginBottom: '8px' }}>
+                        <div style={{
+                          width: `${broadcastProgress.total > 0 ? (broadcastProgress.current / broadcastProgress.total) * 100 : 0}%`,
+                          height: '100%',
+                          backgroundColor: '#0066FF',
+                          transition: 'width 0.3s ease'
+                        }}></div>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleSendBroadcastCampaign}
+                      disabled={selectedBroadcastPhones.size === 0 || !broadcastMsgText.trim()}
+                      className="btn btn-primary"
+                      style={{
+                        width: '100%',
+                        padding: '14px',
+                        fontSize: '0.95rem',
+                        fontWeight: 'bold',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        backgroundColor: (selectedBroadcastPhones.size > 0 && broadcastMsgText.trim()) ? '#10B981' : '#94A3B8',
+                        borderColor: (selectedBroadcastPhones.size > 0 && broadcastMsgText.trim()) ? '#10B981' : '#94A3B8'
+                      }}
+                    >
+                      <Send size={18} />
+                      <span>إرسال للمحددين ({selectedBroadcastPhones.size} عميل)</span>
+                    </button>
+                  )}
+                </div>
+
+              </div>
+
+              {/* الجدول السفلي: سجل الحملات الجماعية السابقة */}
+              <div className="glass-card" style={{ padding: '24px', borderRadius: '14px', marginTop: '30px' }}>
+                <h4 style={{ fontWeight: 'bold', fontSize: '1.05rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <FileText size={20} color="#0066FF" />
+                  <span>سجل الحملات الجماعية السابقة (Audit Logs)</span>
+                </h4>
+
+                {broadcastLogsLoading ? (
+                  <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>جاري تحميل سجل الحملات...</div>
+                ) : broadcastLogs.length === 0 ? (
+                  <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                    لم يتم تنفيذ أي حملات جماعية سابقة بعد.
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'right' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid var(--border-color)', color: 'var(--text-muted)' }}>
+                          <th style={{ padding: '10px' }}>التاريخ والوقت</th>
+                          <th style={{ padding: '10px' }}>المستهدفين</th>
+                          <th style={{ padding: '10px' }}>✅ ناجح</th>
+                          <th style={{ padding: '10px' }}>⏭️ متخطي</th>
+                          <th style={{ padding: '10px' }}>❌ فشل</th>
+                          <th style={{ padding: '10px' }}>نص الرسالة</th>
+                          <th style={{ padding: '10px' }}>بواسطة</th>
+                          <th style={{ padding: '10px' }}>التفاصيل</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {broadcastLogs.map((log: any) => (
+                          <tr key={log.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                            <td style={{ padding: '12px 10px', whiteSpace: 'nowrap' }}>
+                              {new Date(log.created_at).toLocaleString('ar-EG')}
+                            </td>
+                            <td style={{ padding: '12px 10px', fontWeight: 'bold' }}>{log.total_target_count}</td>
+                            <td style={{ padding: '12px 10px', color: '#10B981', fontWeight: 'bold' }}>{log.sent_count}</td>
+                            <td style={{ padding: '12px 10px', color: '#F59E0B' }}>{log.skipped_count}</td>
+                            <td style={{ padding: '12px 10px', color: '#EF4444' }}>{log.failed_count}</td>
+                            <td style={{ padding: '12px 10px', maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {log.message_text}
+                            </td>
+                            <td style={{ padding: '12px 10px', fontWeight: 'bold', color: '#0066FF' }}>{log.sent_by_username}</td>
+                            <td style={{ padding: '12px 10px' }}>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedLogDetailsModal(log)}
+                                style={{
+                                  backgroundColor: 'rgba(0,102,255,0.1)',
+                                  color: '#0066FF',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  padding: '4px 10px',
+                                  fontSize: '0.75rem',
+                                  cursor: 'pointer',
+                                  fontWeight: 'bold'
+                                }}
+                              >
+                                عرض التقرير
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
         </div>
       </main>
 
@@ -7633,6 +8110,127 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                 }}
               >
                 {bulkActionLoading ? 'جاري الحذف...' : `نعم، حذف (${selectedConvIds.size}) محادثة`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* مودال نتيجة تقرير الحملة الجماعية الفوري */}
+      {broadcastResultModal && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div className="glass-card" style={{ width: '100%', maxWidth: '650px', padding: '28px', backgroundColor: darkMode ? '#1E293B' : '#FFFFFF', borderRadius: '16px', color: darkMode ? '#FFF' : '#0F1E36' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 'bold', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <CheckCircle size={22} color="#10B981" />
+                <span>تقرير ائتمان واكتمال الحملة الجماعية</span>
+              </h3>
+              <button onClick={() => setBroadcastResultModal(null)} style={{ background: 'none', border: 'none', color: darkMode ? '#FFF' : '#000', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+              <div style={{ padding: '12px', borderRadius: '8px', backgroundColor: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)', textAlign: 'center' }}>
+                <div style={{ fontSize: '0.8rem', color: '#10B981' }}>✅ تم الإرسال بنجاح</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#10B981' }}>{broadcastResultModal.sent_count}</div>
+              </div>
+
+              <div style={{ padding: '12px', borderRadius: '8px', backgroundColor: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.2)', textAlign: 'center' }}>
+                <div style={{ fontSize: '0.8rem', color: '#F59E0B' }}>⏭️ تم التخطي (تجاوز 24h)</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#F59E0B' }}>{broadcastResultModal.skipped_count}</div>
+              </div>
+
+              <div style={{ padding: '12px', borderRadius: '8px', backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', textAlign: 'center' }}>
+                <div style={{ fontSize: '0.8rem', color: '#EF4444' }}>❌ فشل إرسال</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#EF4444' }}>{broadcastResultModal.failed_count}</div>
+              </div>
+            </div>
+
+            <h4 style={{ fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '10px' }}>التفاصيل حسب رقم الهاتف:</h4>
+            <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '8px', fontSize: '0.85rem' }}>
+              {broadcastResultModal.details?.map((d: any, idx: number) => (
+                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', borderBottom: '1px solid var(--border-color)' }}>
+                  <div>
+                    <strong>{d.customer_name}</strong> ({formatDisplayPhone(d.customer_phone)})
+                  </div>
+                  <div>
+                    {d.status === 'SENT' && <span style={{ color: '#10B981', fontWeight: 'bold' }}>✅ تم الإرسال</span>}
+                    {d.status === 'SKIPPED' && <span style={{ color: '#F59E0B', fontWeight: 'bold' }}>⏭️ {d.reason || 'متخطي'}</span>}
+                    {d.status === 'FAILED' && <span style={{ color: '#EF4444', fontWeight: 'bold' }}>❌ {d.reason || 'فشل'}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ textAlign: 'left', marginTop: '20px' }}>
+              <button type="button" onClick={() => setBroadcastResultModal(null)} className="btn btn-primary">
+                تم ومتابعة
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* مودال تفاصيل سجل الحملة التاريخية */}
+      {selectedLogDetailsModal && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div className="glass-card" style={{ width: '100%', maxWidth: '650px', padding: '28px', backgroundColor: darkMode ? '#1E293B' : '#FFFFFF', borderRadius: '16px', color: darkMode ? '#FFF' : '#0F1E36' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 'bold', margin: 0 }}>
+                  📄 تفاصيل تقرير الحملة التاريخي
+                </h3>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  المسؤول: {selectedLogDetailsModal.sent_by_username} | التاريخ: {new Date(selectedLogDetailsModal.created_at).toLocaleString('ar-EG')}
+                </div>
+              </div>
+              <button onClick={() => setSelectedLogDetailsModal(null)} style={{ background: 'none', border: 'none', color: darkMode ? '#FFF' : '#000', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ marginBottom: '16px', backgroundColor: 'var(--bg-input)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>نص الرسالة المرسلة:</div>
+              <div style={{ fontSize: '0.88rem', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>{selectedLogDetailsModal.message_text}</div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+              <div style={{ padding: '10px', borderRadius: '8px', backgroundColor: 'rgba(16, 185, 129, 0.1)', textAlign: 'center' }}>
+                <div style={{ fontSize: '0.75rem', color: '#10B981' }}>✅ ناجح</div>
+                <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#10B981' }}>{selectedLogDetailsModal.sent_count}</div>
+              </div>
+              <div style={{ padding: '10px', borderRadius: '8px', backgroundColor: 'rgba(245, 158, 11, 0.1)', textAlign: 'center' }}>
+                <div style={{ fontSize: '0.75rem', color: '#F59E0B' }}>⏭️ متخطي</div>
+                <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#F59E0B' }}>{selectedLogDetailsModal.skipped_count}</div>
+              </div>
+              <div style={{ padding: '10px', borderRadius: '8px', backgroundColor: 'rgba(239, 68, 68, 0.1)', textAlign: 'center' }}>
+                <div style={{ fontSize: '0.75rem', color: '#EF4444' }}>❌ فشل</div>
+                <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#EF4444' }}>{selectedLogDetailsModal.failed_count}</div>
+              </div>
+            </div>
+
+            {selectedLogDetailsModal.details_json && Array.isArray(selectedLogDetailsModal.details_json) && (
+              <>
+                <h4 style={{ fontWeight: 'bold', fontSize: '0.85rem', marginBottom: '8px' }}>تفاصيل المستلمين:</h4>
+                <div style={{ maxHeight: '250px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '8px', fontSize: '0.82rem' }}>
+                  {selectedLogDetailsModal.details_json.map((d: any, idx: number) => (
+                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', borderBottom: '1px solid var(--border-color)' }}>
+                      <div>{d.customer_name} ({formatDisplayPhone(d.customer_phone)})</div>
+                      <div>
+                        {d.status === 'SENT' && <span style={{ color: '#10B981', fontWeight: 'bold' }}>✅ تم الإرسال</span>}
+                        {d.status === 'SKIPPED' && <span style={{ color: '#F59E0B', fontWeight: 'bold' }}>⏭️ {d.reason || 'متخطي'}</span>}
+                        {d.status === 'FAILED' && <span style={{ color: '#EF4444', fontWeight: 'bold' }}>❌ {d.reason || 'فشل'}</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            <div style={{ textAlign: 'left', marginTop: '16px' }}>
+              <button type="button" onClick={() => setSelectedLogDetailsModal(null)} className="btn btn-secondary">
+                إغلاق
               </button>
             </div>
           </div>

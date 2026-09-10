@@ -24,7 +24,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
   // حسابات المطاعم المجهزة مسبقاً للولوج المباشر السريع
   if (cleanUsername === 'houda' && cleanPassword === '20002000') {
     const token = jwt.sign(
-      { username: 'houda', role: 'admin', restaurantName: 'مطعم عم عيسى' },
+      { username: 'houda', role: 'admin', can_access_broadcast: true, restaurantName: 'مطعم عم عيسى' },
       JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -32,6 +32,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       status: 'success',
       token,
       role: 'admin',
+      can_access_broadcast: true,
       restaurantName: 'مطعم عم عيسى',
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       message: 'تم تسجيل الدخول بنجاح لمطعم عم عيسى!'
@@ -52,7 +53,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin_password_123';
       if (cleanPassword === ADMIN_PASSWORD || cleanPassword === 'admin') {
         const token = jwt.sign(
-          { username: 'admin', role: 'admin' },
+          { username: 'admin', role: 'admin', can_access_broadcast: false },
           JWT_SECRET,
           { expiresIn: '24h' }
         );
@@ -60,6 +61,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
           status: 'success',
           token,
           role: 'admin',
+          can_access_broadcast: false,
           expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
           message: 'تم تسجيل الدخول بنجاح!'
         });
@@ -71,9 +73,10 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       const defaultRest = await getOrCreateDefaultRestaurant(user.restaurant_id || undefined);
       const restId = user.restaurant_id || (defaultRest ? defaultRest.id : 'default');
       const restName = defaultRest ? defaultRest.name : 'مطعم عم عيسى';
+      const hasBroadcastAccess = Boolean((user as any).can_access_broadcast || user.username === 'houda');
 
       const token = jwt.sign(
-        { username: user.username, role: user.role, restaurant_id: restId, restaurantName: restName },
+        { username: user.username, role: user.role, can_access_broadcast: hasBroadcastAccess, restaurant_id: restId, restaurantName: restName },
         JWT_SECRET,
         { expiresIn: '24h' }
       );
@@ -82,6 +85,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         status: 'success',
         token,
         role: user.role,
+        can_access_broadcast: hasBroadcastAccess,
         restaurant_id: restId,
         restaurantName: restName,
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
@@ -2678,6 +2682,251 @@ export const getCustomerStatsEndpoint = async (req: AuthenticatedRequest, res: R
     res.status(500).json({ status: 'error', message: 'حدث خطأ أثناء جلب إحصائيات العملاء اليومية.' });
   }
 };
+
+/**
+ * 29. جلب العملاء النشطين خلال آخر 24 ساعة للحملات الجماعية (حاص بـ houda)
+ */
+export const getActiveBroadcastCustomers = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const username = req.user?.username;
+  const canAccess = req.user?.can_access_broadcast || username === 'houda';
+
+  if (!canAccess) {
+    res.status(403).json({
+      status: 'error',
+      error_code: 'FORBIDDEN',
+      message: 'غير مصرح لك بالوصول لميزة الحملات الجماعية.'
+    });
+    return;
+  }
+
+  try {
+    const rest = await getOrCreateDefaultRestaurant(req.user?.restaurant_id);
+    const restaurantId = rest ? rest.id : 'default';
+
+    // العملاء الذين تواصلوا خلال آخر 24 ساعة
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    const activeCustomers = await prisma.customer.findMany({
+      where: {
+        restaurant_id: restaurantId,
+        last_seen_at: {
+          gte: twentyFourHoursAgo
+        }
+      },
+      orderBy: {
+        last_seen_at: 'desc'
+      },
+      take: 200
+    });
+
+    const customersWithWindow = activeCustomers.map(c => {
+      const windowInfo = checkSessionWindow(c.last_seen_at);
+      return {
+        id: c.id,
+        customer_phone: c.customer_phone,
+        customer_name: c.customer_name || 'عميل',
+        last_seen_at: c.last_seen_at.toISOString(),
+        isWindowOpen: windowInfo.isWindowOpen,
+        remainingHours: windowInfo.remainingHours,
+        total_conversations_count: c.total_conversations_count
+      };
+    }).filter(c => c.isWindowOpen);
+
+    res.status(200).json({
+      status: 'success',
+      count: customersWithWindow.length,
+      customers: customersWithWindow
+    });
+  } catch (err: any) {
+    console.error('[Get Active Broadcast Customers Error]:', err.message || err);
+    res.status(500).json({ status: 'error', message: 'حدث خطأ أثناء جلب قائمة عملاء الحملات.' });
+  }
+};
+
+/**
+ * 30. إرسال حملة جماعية بحماية متتابعة وإعادة فحص لحظية
+ */
+export const sendBroadcastCampaign = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const username = req.user?.username;
+  const canAccess = req.user?.can_access_broadcast || username === 'houda';
+
+  if (!canAccess) {
+    res.status(403).json({
+      status: 'error',
+      error_code: 'FORBIDDEN',
+      message: 'غير مصرح لك بإجراء حملات إرسال جماعية.'
+    });
+    return;
+  }
+
+  const { customer_phones, message_text } = req.body || {};
+
+  if (!message_text || typeof message_text !== 'string' || !message_text.trim()) {
+    res.status(400).json({ status: 'error', message: 'يرجى إدخال نص الرسالة المراد إرسالها.' });
+    return;
+  }
+
+  if (!Array.isArray(customer_phones) || customer_phones.length === 0) {
+    res.status(400).json({ status: 'error', message: 'يرجى تحديد عميل واحد على الأقل.' });
+    return;
+  }
+
+  // فرض حد أقصى للدفعة الواحدة (50 عميل)
+  if (customer_phones.length > 50) {
+    res.status(400).json({ status: 'error', message: 'الحد الأقصى للإرسال الجماعي في الدفعة الواحدة هو 50 عميل فقط.' });
+    return;
+  }
+
+  try {
+    const rest = await getOrCreateDefaultRestaurant(req.user?.restaurant_id);
+    const restaurantId = rest ? rest.id : 'default';
+
+    const cleanMessage = message_text.trim();
+    let sentCount = 0;
+    let skippedCount = 0;
+    let failedCount = 0;
+    const details: any[] = [];
+
+    // التكرار المتتابع لحساب التأخير وإعادة الفحص اللحظي
+    for (const phone of customer_phones) {
+      const cleanPhone = String(phone).trim();
+      if (!cleanPhone) continue;
+
+      // 1. فحص العميل في قاعدة البيانات للتأكد من نافذة الـ 24 ساعة اللحظية
+      const customer = await prisma.customer.findUnique({
+        where: {
+          restaurant_id_customer_phone: {
+            restaurant_id: restaurantId,
+            customer_phone: cleanPhone
+          }
+        }
+      });
+
+      const lastSeen = customer?.last_seen_at;
+      const windowInfo = checkSessionWindow(lastSeen);
+
+      // إذا كانت النافذة منتهية لحظياً وقت الإرسال
+      if (!windowInfo.isWindowOpen) {
+        skippedCount++;
+        details.push({
+          customer_phone: cleanPhone,
+          customer_name: customer?.customer_name || 'عميل',
+          status: 'SKIPPED',
+          reason: 'انتهت نافذة 24 ساعة المسموحة من Meta للعميل',
+          timestamp: new Date().toISOString()
+        });
+        continue;
+      }
+
+      // 2. إعداد نص الرسالة وتخصيص الاسم إن وجد
+      const personalizedMsg = cleanMessage.replace(/\{name\}/g, customer?.customer_name || 'عزيزنا العميل');
+
+      // 3. الإرسال عبر واتساب
+      try {
+        await whatsappService.sendTextMessage(
+          cleanPhone,
+          personalizedMsg,
+          undefined,
+          rest?.whatsapp_number_id,
+          rest?.whatsapp_access_token || undefined
+        );
+
+        sentCount++;
+        details.push({
+          customer_phone: cleanPhone,
+          customer_name: customer?.customer_name || 'عميل',
+          status: 'SENT',
+          timestamp: new Date().toISOString()
+        });
+      } catch (sendErr: any) {
+        console.error(`[Broadcast Send Error] للرقم ${cleanPhone}:`, sendErr.message || sendErr);
+        failedCount++;
+        details.push({
+          customer_phone: cleanPhone,
+          customer_name: customer?.customer_name || 'عميل',
+          status: 'FAILED',
+          reason: sendErr.message || 'فشل الاتصال بـ Meta API',
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      // 4. تأخير 300ms بين كل إرسال
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+
+    // 5. حفظ سجل الحملة في قاعدة البيانات
+    const broadcastLog = await (prisma as any).broadcastLog.create({
+      data: {
+        restaurant_id: restaurantId,
+        sent_by_username: username || 'houda',
+        message_text: cleanMessage,
+        total_target_count: customer_phones.length,
+        sent_count: sentCount,
+        skipped_count: skippedCount,
+        failed_count: failedCount,
+        details_json: details
+      }
+    });
+
+    res.status(200).json({
+      status: 'success',
+      message: `تم إنهاء الحملة بنجاح! تم إرسال ${sentCount}، وتخطي ${skippedCount}، وفشل ${failedCount}.`,
+      summary: {
+        log_id: broadcastLog.id,
+        total_target_count: customer_phones.length,
+        sent_count: sentCount,
+        skipped_count: skippedCount,
+        failed_count: failedCount,
+        created_at: broadcastLog.created_at,
+        details
+      }
+    });
+  } catch (err: any) {
+    console.error('[Send Broadcast Campaign Error]:', err.message || err);
+    res.status(500).json({ status: 'error', message: 'حدث خطأ غير متوقع أثناء تنفيذ الحملة الجماعية.' });
+  }
+};
+
+/**
+ * 31. جلب سجل الحملات الجماعية السابقة
+ */
+export const getBroadcastLogs = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const username = req.user?.username;
+  const canAccess = req.user?.can_access_broadcast || username === 'houda';
+
+  if (!canAccess) {
+    res.status(403).json({
+      status: 'error',
+      error_code: 'FORBIDDEN',
+      message: 'غير مصرح لك بالوصول لسجل الحملات الجماعية.'
+    });
+    return;
+  }
+
+  try {
+    const rest = await getOrCreateDefaultRestaurant(req.user?.restaurant_id);
+    const restaurantId = rest ? rest.id : 'default';
+
+    const logs = await (prisma as any).broadcastLog.findMany({
+      where: {
+        restaurant_id: restaurantId
+      },
+      orderBy: {
+        created_at: 'desc'
+      },
+      take: 20
+    });
+
+    res.status(200).json({
+      status: 'success',
+      logs
+    });
+  } catch (err: any) {
+    console.error('[Get Broadcast Logs Error]:', err.message || err);
+    res.status(500).json({ status: 'error', message: 'حدث خطأ أثناء جلب سجل الحملات.' });
+  }
+};
+
 
 
 

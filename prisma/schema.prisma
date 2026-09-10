@@ -35,6 +35,7 @@ model Restaurant {
   users                   User[]
   branches                Branch[]
   customers               Customer[]
+  broadcast_logs          BroadcastLog[]
 
   @@map("restaurants") // رسم خريطة لاسم الجدول ليكون بصيغة الجمع
 }
@@ -171,13 +172,14 @@ model Reservation {
 
 // نموذج المستخدمين لإدارة الموظفين والمسؤولين
 model User {
-  id            String      @id @default(uuid())
-  username      String      @unique
-  password      String      // كلمة المرور مشفرة بـ SHA-256
-  role          String      // الدور: "admin" (مسؤول) أو "staff" (موظف)
-  restaurant_id String?
-  restaurant    Restaurant? @relation(fields: [restaurant_id], references: [id], onDelete: SetNull)
-  created_at    DateTime    @default(now())
+  id                    String      @id @default(uuid())
+  username              String      @unique
+  password              String      // كلمة المرور مشفرة بـ SHA-256
+  role                  String      // الدور: "admin" (مسؤول) أو "staff" (موظف)
+  can_access_broadcast Boolean     @default(false) // هل يملك صلاحية الوصول للحملات الجماعية
+  restaurant_id         String?
+  restaurant            Restaurant? @relation(fields: [restaurant_id], references: [id], onDelete: SetNull)
+  created_at            DateTime    @default(now())
 
   @@map("users")
 }
@@ -215,6 +217,7 @@ model Customer {
   @@index([restaurant_id])
   @@index([customer_phone])
   @@index([created_at])
+  @@index([restaurant_id, last_seen_at])
   @@map("customers")
 }
 
@@ -235,4 +238,25 @@ model CustomerConversationLog {
   @@index([started_at])
   @@map("customer_conversation_logs")
 }
+
+// نموذج سجل الحملات الجماعية (Broadcast Campaigns Log)
+model BroadcastLog {
+  id                 String   @id @default(uuid())
+  restaurant_id     String
+  sent_by_username  String
+  message_text      String   @db.Text
+  total_target_count Int
+  sent_count         Int
+  skipped_count      Int
+  failed_count       Int
+  details_json       Json
+  created_at         DateTime @default(now())
+
+  restaurant        Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+
+  @@index([restaurant_id])
+  @@index([created_at])
+  @@map("broadcast_logs")
+}
+
 
