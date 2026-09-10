@@ -557,6 +557,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [broadcastSearch, setBroadcastSearch] = useState<string>('');
   const [selectedBroadcastPhones, setSelectedBroadcastPhones] = useState<Set<string>>(new Set());
   const [broadcastMsgText, setBroadcastMsgText] = useState<string>('');
+  const [broadcastImageUrl, setBroadcastImageUrl] = useState<string>('');
   const [broadcastSending, setBroadcastSending] = useState<boolean>(false);
   const [broadcastProgress, setBroadcastProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
   const [broadcastResultModal, setBroadcastResultModal] = useState<any | null>(null);
@@ -1184,13 +1185,31 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
+  const handleBroadcastImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('يرجى اختيار صورة صالحة (PNG / JPG / WEBP).');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('حجم الصورة كبير جداً. الحد الأقصى المسموح به هو 5 ميجابايت.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      setBroadcastImageUrl(evt.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSendBroadcastCampaign = async () => {
     if (selectedBroadcastPhones.size === 0) {
       alert('يرجى اختيار عميل واحد على الأقل من القائمة.');
       return;
     }
-    if (!broadcastMsgText.trim()) {
-      alert('يرجى كتابة نص الرسالة المراد إرسالها.');
+    if (!broadcastMsgText.trim() && !broadcastImageUrl.trim()) {
+      alert('يرجى كتابة نص الرسالة أو إرفاق صورة للحملة.');
       return;
     }
     if (selectedBroadcastPhones.size > 50) {
@@ -1209,7 +1228,8 @@ const Dashboard: React.FC<DashboardProps> = ({
       const phonesArray = Array.from(selectedBroadcastPhones);
       const res = await axios.post(`${getApiUrl()}/broadcast/send`, {
         customer_phones: phonesArray,
-        message_text: broadcastMsgText.trim()
+        message_text: broadcastMsgText.trim(),
+        image_url: broadcastImageUrl.trim() || undefined
       }, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -1217,6 +1237,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       if (res.data && res.data.summary) {
         setBroadcastResultModal(res.data.summary);
         setBroadcastMsgText('');
+        setBroadcastImageUrl('');
         fetchBroadcastActiveCustomers();
         fetchBroadcastLogs();
       }
@@ -7504,8 +7525,73 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                 <div className="glass-card" style={{ padding: '20px', borderRadius: '14px' }}>
                   <h4 style={{ fontWeight: 'bold', fontSize: '1rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Send size={18} color="#10B981" />
-                    <span>محرر نص الرسالة الجماعية</span>
+                    <span>محرر نص ورسائل الحملة الجماعية</span>
                   </h4>
+
+                  {/* إرفاق صورة بالحملة */}
+                  <div style={{ marginBottom: '16px', border: '1px dashed var(--border-color)', borderRadius: '10px', padding: '12px', backgroundColor: 'var(--bg-input)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span>🖼️ إرفاق صورة مع الحملة (اختياري)</span>
+                      </span>
+                      {broadcastImageUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setBroadcastImageUrl('')}
+                          style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#EF4444', border: 'none', borderRadius: '6px', padding: '2px 8px', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 'bold' }}
+                        >
+                          ✕ إزالة الصورة
+                        </button>
+                      )}
+                    </div>
+
+                    {broadcastImageUrl ? (
+                      <div style={{ position: 'relative', width: '100%', maxHeight: '140px', overflow: 'hidden', borderRadius: '8px', border: '1px solid #10B981', textAlign: 'center', backgroundColor: '#000' }}>
+                        <img src={broadcastImageUrl} alt="معاينة صورة الحملة" style={{ maxHeight: '140px', objectFit: 'contain' }} />
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <label style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          backgroundColor: '#0066FF',
+                          color: '#FFFFFF',
+                          padding: '8px 14px',
+                          borderRadius: '6px',
+                          fontSize: '0.8rem',
+                          fontWeight: 'bold',
+                          cursor: 'pointer'
+                        }}>
+                          <Upload size={16} />
+                          <span>رفع صورة من الجهاز</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleBroadcastImageChange}
+                            style={{ display: 'none' }}
+                          />
+                        </label>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>أو ضع رابط صورة:</span>
+                        <input
+                          type="url"
+                          placeholder="https://..."
+                          value={broadcastImageUrl}
+                          onChange={e => setBroadcastImageUrl(e.target.value)}
+                          style={{
+                            flex: 1,
+                            minWidth: '160px',
+                            padding: '6px 10px',
+                            borderRadius: '6px',
+                            border: '1px solid var(--border-color)',
+                            backgroundColor: 'transparent',
+                            color: 'var(--text-main)',
+                            fontSize: '0.8rem'
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
 
                   <div style={{ marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <button
@@ -7531,7 +7617,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                   </div>
 
                   <textarea
-                    rows={7}
+                    rows={5}
                     placeholder="اكتب نص الرسالة هنا... مثال: أهلاً بك يا {name}! يسعدنا إعلامك بعروضنا الجديدة لليوم 🍕"
                     value={broadcastMsgText}
                     onChange={e => setBroadcastMsgText(e.target.value)}
@@ -7575,7 +7661,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                     <button
                       type="button"
                       onClick={handleSendBroadcastCampaign}
-                      disabled={selectedBroadcastPhones.size === 0 || !broadcastMsgText.trim()}
+                      disabled={selectedBroadcastPhones.size === 0 || (!broadcastMsgText.trim() && !broadcastImageUrl.trim())}
                       className="btn btn-primary"
                       style={{
                         width: '100%',
@@ -7586,8 +7672,8 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                         alignItems: 'center',
                         justifyContent: 'center',
                         gap: '8px',
-                        backgroundColor: (selectedBroadcastPhones.size > 0 && broadcastMsgText.trim()) ? '#10B981' : '#94A3B8',
-                        borderColor: (selectedBroadcastPhones.size > 0 && broadcastMsgText.trim()) ? '#10B981' : '#94A3B8'
+                        backgroundColor: (selectedBroadcastPhones.size > 0 && (broadcastMsgText.trim() || broadcastImageUrl.trim())) ? '#10B981' : '#94A3B8',
+                        borderColor: (selectedBroadcastPhones.size > 0 && (broadcastMsgText.trim() || broadcastImageUrl.trim())) ? '#10B981' : '#94A3B8'
                       }}
                     >
                       <Send size={18} />

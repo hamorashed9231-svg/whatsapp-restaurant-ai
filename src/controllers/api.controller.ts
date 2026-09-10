@@ -2759,10 +2759,13 @@ export const sendBroadcastCampaign = async (req: AuthenticatedRequest, res: Resp
     return;
   }
 
-  const { customer_phones, message_text } = req.body || {};
+  const { customer_phones, message_text, image_url } = req.body || {};
 
-  if (!message_text || typeof message_text !== 'string' || !message_text.trim()) {
-    res.status(400).json({ status: 'error', message: 'يرجى إدخال نص الرسالة المراد إرسالها.' });
+  const cleanMessage = String(message_text || '').trim();
+  const cleanImageUrl = String(image_url || '').trim();
+
+  if (!cleanMessage && !cleanImageUrl) {
+    res.status(400).json({ status: 'error', message: 'يرجى إدخال نص الرسالة أو إرفاق صورة للحملة.' });
     return;
   }
 
@@ -2781,7 +2784,6 @@ export const sendBroadcastCampaign = async (req: AuthenticatedRequest, res: Resp
     const rest = await getOrCreateDefaultRestaurant(req.user?.restaurant_id);
     const restaurantId = rest ? rest.id : 'default';
 
-    const cleanMessage = message_text.trim();
     let sentCount = 0;
     let skippedCount = 0;
     let failedCount = 0;
@@ -2819,17 +2821,27 @@ export const sendBroadcastCampaign = async (req: AuthenticatedRequest, res: Resp
       }
 
       // 2. إعداد نص الرسالة وتخصيص الاسم إن وجد
-      const personalizedMsg = cleanMessage.replace(/\{name\}/g, customer?.customer_name || 'عزيزنا العميل');
+      const personalizedMsg = cleanMessage ? cleanMessage.replace(/\{name\}/g, customer?.customer_name || 'عزيزنا العميل') : '';
 
-      // 3. الإرسال عبر واتساب
+      // 3. الإرسال عبر واتساب (صورة مع نص شرح، أو نص فقط)
       try {
-        await whatsappService.sendTextMessage(
-          cleanPhone,
-          personalizedMsg,
-          undefined,
-          rest?.whatsapp_number_id,
-          rest?.whatsapp_access_token || undefined
-        );
+        if (cleanImageUrl) {
+          await whatsappService.sendImageMessage(
+            cleanPhone,
+            cleanImageUrl,
+            personalizedMsg || undefined,
+            rest?.whatsapp_number_id,
+            rest?.whatsapp_access_token || undefined
+          );
+        } else {
+          await whatsappService.sendTextMessage(
+            cleanPhone,
+            personalizedMsg,
+            undefined,
+            rest?.whatsapp_number_id,
+            rest?.whatsapp_access_token || undefined
+          );
+        }
 
         sentCount++;
         details.push({
@@ -2855,11 +2867,13 @@ export const sendBroadcastCampaign = async (req: AuthenticatedRequest, res: Resp
     }
 
     // 5. حفظ سجل الحملة في قاعدة البيانات
+    const logMessageText = cleanImageUrl ? `[📷 صورة مرفقة] ${cleanMessage}` : cleanMessage;
+
     const broadcastLog = await (prisma as any).broadcastLog.create({
       data: {
         restaurant_id: restaurantId,
         sent_by_username: username || 'houda',
-        message_text: cleanMessage,
+        message_text: logMessageText,
         total_target_count: customer_phones.length,
         sent_count: sentCount,
         skipped_count: skippedCount,
