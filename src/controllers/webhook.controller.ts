@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { whatsappQueue } from '../queues/whatsapp.queue';
 import { redisClient } from '../services/redis.service';
 import { prisma } from '../services/prisma.service';
-import { normalizePhone } from '../utils/phone';
+import { normalizePhone, resolveCustomerIdentifier } from '../utils/phone';
 import { triggerNewMessage } from '../services/pusher.service';
 
 /**
@@ -99,12 +99,7 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
           const waId = matchingContact?.wa_id || null;
 
           const rawCustomerPhone = message.from;
-          const cleanFromPhone = normalizePhone(rawCustomerPhone || waId);
-          let customerPhone = cleanFromPhone;
-          if (!cleanFromPhone || cleanFromPhone === 'unknown_user') {
-            const fallbackWaId = waId || rawCustomerPhone;
-            customerPhone = fallbackWaId ? `wa_user_${fallbackWaId}` : `anon_user_${message.id || Date.now()}`;
-          }
+          const customerPhone = resolveCustomerIdentifier(rawCustomerPhone, waId, message.id);
 
           // 🛑 فحص حظر الزبون محلياً والمقيد برقم الواتساب المخصص للمطعم الحالي منعاً للتداخل بين المطاعم
           const existingConvBlockCheck = await prisma.conversation.findFirst({
@@ -324,13 +319,10 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
     const { prisma } = await import('../services/prisma.service');
     const { geminiService } = await import('../services/gemini.service');
     const { whatsappService } = await import('../services/whatsapp.service');
-    const { normalizePhone: norm } = await import('../utils/phone');
+    const { resolveCustomerIdentifier } = await import('../utils/phone');
     const { memoryConversations } = await import('./api.controller');
 
-    let customerPhone = norm(rawCustomerPhone);
-    if (!customerPhone || customerPhone === 'unknown_user') {
-      customerPhone = (rawCustomerPhone && rawCustomerPhone !== 'unknown_user') ? String(rawCustomerPhone).trim() : `anon_user_${Date.now()}`;
-    }
+    const customerPhone = resolveCustomerIdentifier(rawCustomerPhone, null, rawMessage?.id);
 
     // 1. تحديد المطعم المرتبط برقم الواتساب، مع الدعم التلقائي للمطعم النشط والتحديث التلقائي للمعرف الحقيقي
     let restaurant: any = null;

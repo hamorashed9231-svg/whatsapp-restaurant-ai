@@ -5,18 +5,14 @@ import { prisma } from '../services/prisma.service';
 import { geminiService } from '../services/gemini.service';
 import { whatsappService } from '../services/whatsapp.service';
 import { ChatMessage } from '../models/types';
-import { normalizePhone } from '../utils/phone';
+import { resolveCustomerIdentifier } from '../utils/phone';
 
 export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
   WHATSAPP_QUEUE_NAME,
   async (job: Job<WhatsAppMessageJob>) => {
     try {
       const { whatsappNumberId, customerPhone: rawCustomerPhone, customerName: rawCustomerName, messageText: defaultMessageText } = job.data;
-      const cleanNormPhone = normalizePhone(rawCustomerPhone);
-      let customerPhone = cleanNormPhone;
-      if (!cleanNormPhone || cleanNormPhone === 'unknown_user') {
-        customerPhone = (rawCustomerPhone && rawCustomerPhone !== 'unknown_user') ? String(rawCustomerPhone).trim() : `anon_user_${job.id || Date.now()}`;
-      }
+      const customerPhone = resolveCustomerIdentifier(rawCustomerPhone, null, job.id);
       console.log(`[BullMQ Worker] بدء معالجة المهمة #${job.id} للزبون [${customerPhone}] (${rawCustomerName || 'بدون اسم'}) متجهة للمطعم [${whatsappNumberId}]`);
 
       // 1. سحب كافة الرسائل المجمعة في القائمة المؤقتة المعزولة برقم المطعم والزبون من Redis
