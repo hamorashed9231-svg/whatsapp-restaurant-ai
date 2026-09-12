@@ -2029,7 +2029,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                     if (!m) return false;
                     // 🛡️ تصفية حتمية: استبعاد صريح لأي رسالة لا تنتمي صراحة لهذه المحادثة الحالية
                     const mConvId = m.conversation_id || m.conversationId;
-                    if (mConvId && mConvId !== currentActiveId) return false;
+                    if (!mConvId || mConvId !== currentActiveId) return false;
 
                     const isTemp = Boolean(m.id?.startsWith('temp_'));
                     const existsInServer = msgList.some((c: any) => {
@@ -2629,7 +2629,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
             if (!m) return false;
             // 🛡️ تصفية حتمية: عدم الاحتفاظ بأي رسالة تتبع محادثة سابقة!
             const mConvId = m.conversation_id || m.conversationId;
-            if (mConvId && mConvId !== conversation.id) return false;
+            if (!mConvId || mConvId !== conversation.id) return false;
 
             const isTemp = Boolean(m.id?.startsWith('temp_'));
             const existsInServer = msgList.some((c: any) => {
@@ -2732,16 +2732,22 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
     try {
       if (imagesToSend.length > 0) {
         for (let i = 0; i < imagesToSend.length; i++) {
-          const caption = i === 0 ? textToSend : '';
+          const item = imagesToSend[i];
+          const caption = item.caption.trim() || (i === 0 ? textToSend : '');
           const res = await api.post(`/conversations/${selectedConversation.id}/messages`, {
             content: caption,
-            image_url: imagesToSend[i],
+            image_url: item.url,
             reply_to_id: replyTargetId
           });
           if (res.data?.messageObj) {
             const confirmed = res.data.messageObj;
             const targetTempId = newMsgs[i]?.id;
-            setChatMessages(prev => deduplicateMessages(prev.map(m => m.id === targetTempId ? { ...m, ...confirmed } : m)));
+            setChatMessages(prev => deduplicateMessages(prev.map(m => m.id === targetTempId ? {
+              ...m,
+              ...confirmed,
+              conversation_id: selectedConversation.id,
+              conversationId: selectedConversation.id
+            } : m)));
           }
           if (res.data?.conversation) {
             const updatedConv = res.data.conversation;
@@ -2757,7 +2763,12 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
         if (res.data?.messageObj) {
           const confirmed = res.data.messageObj;
           const targetTempId = newMsgs[0]?.id;
-          setChatMessages(prev => deduplicateMessages(prev.map(m => m.id === targetTempId ? { ...m, ...confirmed } : m)));
+          setChatMessages(prev => deduplicateMessages(prev.map(m => m.id === targetTempId ? {
+            ...m,
+            ...confirmed,
+            conversation_id: selectedConversation.id,
+            conversationId: selectedConversation.id
+          } : m)));
         }
         if (res.data?.conversation) {
           const updatedConv = res.data.conversation;
@@ -4867,14 +4878,19 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                              flexShrink: 0
                                            }}
                                          />
-                                         <span style={{
-                                           fontWeight: '600',
-                                           fontSize: '0.88rem',
-                                           color: darkMode ? '#E9EDEF' : '#111B21',
-                                           overflow: 'hidden',
-                                           textOverflow: 'ellipsis',
-                                           whiteSpace: 'nowrap'
-                                         }}>
+                                         <span
+                                           dir="ltr"
+                                           style={{
+                                             fontWeight: '600',
+                                             fontSize: '0.88rem',
+                                             color: darkMode ? '#E9EDEF' : '#111B21',
+                                             overflow: 'hidden',
+                                             textOverflow: 'ellipsis',
+                                             whiteSpace: 'nowrap',
+                                             direction: 'ltr',
+                                             unicodeBidi: 'plaintext'
+                                           }}
+                                         >
                                            {phoneStr}
                                          </span>
                                        </div>
@@ -5051,7 +5067,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                         </div>
                                         <span style={{ fontWeight: 'bold', fontSize: '0.95rem', color: darkMode ? '#FFFFFF' : '#0F1E36', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                                           <span>{isGroup ? '👥' : ''}</span>
-                                          <span>{phoneStr}</span>
+                                          <span dir="ltr" style={{ direction: 'ltr', unicodeBidi: 'plaintext' }}>{phoneStr}</span>
                                         </span>
                                       </div>
                                       <button

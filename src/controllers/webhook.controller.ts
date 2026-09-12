@@ -642,7 +642,13 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
           },
         }).catch(() => {});
 
-        const aiMsgObj = { role: 'assistant', content: responseText, timestamp: new Date().toISOString() };
+        const aiMsgObj = {
+          conversation_id: conversation.id,
+          conversationId: conversation.id,
+          role: 'assistant',
+          content: responseText,
+          timestamp: new Date().toISOString()
+        };
         const finalMessagesJson = [
           ...currentMsgs,
           aiMsgObj

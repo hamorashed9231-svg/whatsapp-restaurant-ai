@@ -1458,6 +1458,8 @@ export const sendManualMessage = async (req: AuthenticatedRequest, res: Response
     const newMsg = {
       id: uniqueMsgId,
       wamid: uniqueMsgId,
+      conversation_id: conv.id,
+      conversationId: conv.id,
       role: 'assistant',
       content: content || '',
       image_url: image_url || undefined,
@@ -1675,6 +1677,8 @@ export const sendTemplateMessageEndpoint = async (req: AuthenticatedRequest, res
     );
 
     const templateMsgObj = {
+      conversation_id: conv.id,
+      conversationId: conv.id,
       role: 'assistant',
       content: `[قالب رسمي معتمد: ${templateName}]`,
       sender_name: currentUsername,
@@ -1881,6 +1885,8 @@ export const sendCatalogMessageEndpoint = async (req: AuthenticatedRequest, res:
     );
 
     const catalogMsgObj = {
+      conversation_id: conv.id,
+      conversationId: conv.id,
       role: 'assistant',
       content: branchName 
         ? `[🛍️ تم إرسال كتالوج الواتساب الرسمي المباشر للعميل (${branchName})]`
