@@ -1055,20 +1055,52 @@ const Dashboard: React.FC<DashboardProps> = ({
   ];
 
   // إعدادات وتصنيفات المستخدمين والمحادثات
+  // إعدادات وتصنيفات المستخدمين والمحادثات
   const [userRole, setUserRole] = useState<'admin' | 'staff'>('staff');
   const [currentUsername, setCurrentUsername] = useState<string>('موظف الخدمة');
+  const [userPermissions, setUserPermissions] = useState<string[] | null>(null);
+  const [userColor, setUserColor] = useState<string | null>(null);
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<'ALL' | 'ORDER' | 'COMPLAINT' | 'INQUIRY' | 'GROUP'>('ALL');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<'ALL' | 'UNANSWERED' | 'IN_PROGRESS' | 'CLOSED'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [viewArchived, setViewArchived] = useState(false);
-  const [usersList, setUsersList] = useState<{ id: string; username: string; role: string; created_at: string }[]>([]);
+  const [usersList, setUsersList] = useState<{ id: string; username: string; role: string; permissions?: string[] | null; color?: string | null; created_at: string }[]>([]);
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState<'admin' | 'staff'>('staff');
+  const [newPermissions, setNewPermissions] = useState<string[]>(['conversations', 'orders', 'reservations', 'menu']);
+  const [newColor, setNewColor] = useState<string>('#0066FF');
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersError, setUsersError] = useState<string | null>(null);
   const [usersSuccess, setUsersSuccess] = useState<string | null>(null);
   const [menuViewMode, setMenuViewMode] = useState<'grid' | 'table'>('grid');
+
+  // حالات مودال تعديل الصلاحيات واللون للموظف
+  const [showPermissionsModal, setShowPermissionsModal] = useState<boolean>(false);
+  const [editingUser, setEditingUser] = useState<{ id: string; username: string; role: string; permissions: string[]; color: string } | null>(null);
+  const [modalSaving, setModalSaving] = useState<boolean>(false);
+  const [modalError, setModalError] = useState<string | null>(null);
+  const [modalSuccess, setModalSuccess] = useState<string | null>(null);
+
+  const ALL_SYSTEM_PERMISSIONS = [
+    { key: 'conversations', label: 'مراقبة المحادثات 💬' },
+    { key: 'orders', label: 'الطلبات الواردة 📦' },
+    { key: 'reservations', label: 'الحجوزات والطاولات 📅' },
+    { key: 'menu', label: 'إدارة المنيو 🍱' },
+    { key: 'branches', label: 'إدارة الفروع 🏢' },
+    { key: 'customers', label: 'سجل العملاء والولاء 👥' },
+    { key: 'broadcast', label: 'الحملات الجماعية 📢' },
+    { key: 'settings', label: 'إعدادات النظام ⚙️' },
+    { key: 'ai-assistant', label: 'مساعد الضبط الذكي ✨' },
+    { key: 'users', label: 'إدارة الموظفين 👤' },
+    { key: 'overview', label: 'نظرة عامة 📊' },
+  ];
+
+  const hasPermission = (permKey: string): boolean => {
+    if (userRole === 'admin') return true;
+    if (!userPermissions || !Array.isArray(userPermissions)) return false;
+    return userPermissions.includes(permKey);
+  };
 
   const getFoodImage = (item: MenuItem) => {
     if (item.image_url && item.image_url.trim()) return item.image_url;
@@ -1083,7 +1115,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     return 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=600&q=80';
   };
 
-  // لفك تشفير التوكن والحصول على الدور (Role) واسم الموظف
+  // لفك تشفير التوكن والحصول على الدور (Role) واسم الموظف والصلاحيات واللون
   useEffect(() => {
     if (token) {
       try {
@@ -1098,10 +1130,14 @@ const Dashboard: React.FC<DashboardProps> = ({
         const decoded = JSON.parse(jsonPayload);
         setUserRole(decoded.role || 'staff');
         setCurrentUsername(decoded.username || 'موظف الخدمة');
+        setUserPermissions(decoded.permissions || (decoded.role === 'admin' ? null : ['conversations', 'orders', 'reservations', 'menu']));
+        setUserColor(decoded.color || null);
         setCanAccessBroadcast(Boolean(decoded.can_access_broadcast || decoded.username === 'houda'));
       } catch (e) {
         setUserRole('staff');
         setCurrentUsername('موظف الخدمة');
+        setUserPermissions(['conversations', 'orders', 'reservations', 'menu']);
+        setUserColor(null);
         setCanAccessBroadcast(false);
       }
     }
@@ -2157,17 +2193,63 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
       const res = await api.post('/users', {
         username: cleanUser,
         password: cleanPass,
-        role: newRole
+        role: newRole,
+        permissions: newRole === 'staff' ? newPermissions : undefined,
+        color: newRole === 'staff' ? newColor : undefined
       });
       setUsersSuccess(res.data.message || 'تم إنشاء الحساب بنجاح!');
       setNewUsername('');
       setNewPassword('');
+      setNewPermissions(['conversations', 'orders', 'reservations', 'menu']);
+      setNewColor('#0066FF');
       fetchUsersList();
     } catch (err: any) {
       console.error('Error creating user:', err);
       setUsersError(err.response?.data?.message || 'فشل إنشاء حساب الموظف.');
     } finally {
       setUsersLoading(false);
+    }
+  };
+
+  // فتح مودال تعديل الصلاحيات واللون للموظف
+  const handleOpenEditUserModal = (userItem: any) => {
+    setEditingUser({
+      id: userItem.id,
+      username: userItem.username,
+      role: userItem.role,
+      permissions: Array.isArray(userItem.permissions) ? userItem.permissions : ['conversations', 'orders', 'reservations', 'menu'],
+      color: userItem.color || '#0066FF'
+    });
+    setModalError(null);
+    setModalSuccess(null);
+    setShowPermissionsModal(true);
+  };
+
+  // حفظ الصلاحيات واللون المعدلين للموظف
+  const handleSaveUserPermissionsAndColor = async () => {
+    if (!editingUser) return;
+    setModalSaving(true);
+    setModalError(null);
+    setModalSuccess(null);
+    try {
+      await api.put(`/users/${editingUser.id}/permissions`, {
+        permissions: editingUser.permissions
+      });
+      await api.put(`/users/${editingUser.id}/color`, {
+        color: editingUser.color
+      });
+
+      setModalSuccess('تم تحديث صلاحيات ولون الموظف بنجاح!');
+      fetchUsersList();
+      setTimeout(() => {
+        setShowPermissionsModal(false);
+        setEditingUser(null);
+      }, 1000);
+    } catch (err: any) {
+      console.error('Error updating permissions/color:', err);
+      setModalError(err.response?.data?.message || 'فشل تحديث الصلاحيات واللون.');
+    } finally {
+      setModalSaving(false);
     }
   };
 
@@ -2409,6 +2491,10 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
       return isDark ? '#94A3B8' : '#64748B';
     }
     const cleanName = username.trim().toLowerCase();
+    const userMatch = usersList.find(u => u.username && u.username.trim().toLowerCase() === cleanName);
+    if (userMatch && userMatch.color && userMatch.color.trim()) {
+      return userMatch.color.trim();
+    }
     let hash = 0;
     for (let i = 0; i < cleanName.length; i++) {
       hash = cleanName.charCodeAt(i) + ((hash << 5) - hash);
@@ -3149,78 +3235,92 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
         </div>
 
         <nav style={styles.sidebarNav}>
-          <button
-            onClick={() => changeTab('overview')}
-            style={{ ...styles.navItem, ...(activeTab === 'overview' ? styles.navItemActive : {}) }}
-          >
-            <LayoutDashboard size={20} />
-            <span>نظرة عامة</span>
-          </button>
+          {hasPermission('overview') && (
+            <button
+              onClick={() => changeTab('overview')}
+              style={{ ...styles.navItem, ...(activeTab === 'overview' ? styles.navItemActive : {}) }}
+            >
+              <LayoutDashboard size={20} />
+              <span>نظرة عامة</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => changeTab('menu')}
-            style={{ ...styles.navItem, ...(activeTab === 'menu' ? styles.navItemActive : {}) }}
-          >
-            <Utensils size={20} />
-            <span>إدارة المنيو</span>
-          </button>
+          {hasPermission('menu') && (
+            <button
+              onClick={() => changeTab('menu')}
+              style={{ ...styles.navItem, ...(activeTab === 'menu' ? styles.navItemActive : {}) }}
+            >
+              <Utensils size={20} />
+              <span>إدارة المنيو</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => changeTab('branches')}
-            style={{ ...styles.navItem, ...(activeTab === 'branches' ? styles.navItemActive : {}) }}
-          >
-            <Settings size={20} />
-            <span>إدارة الفروع 🏢</span>
-          </button>
+          {hasPermission('branches') && (
+            <button
+              onClick={() => changeTab('branches')}
+              style={{ ...styles.navItem, ...(activeTab === 'branches' ? styles.navItemActive : {}) }}
+            >
+              <Settings size={20} />
+              <span>إدارة الفروع 🏢</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => changeTab('orders')}
-            style={{ ...styles.navItem, ...(activeTab === 'orders' ? styles.navItemActive : {}) }}
-          >
-            <ShoppingBag size={20} />
-            <span>الطلبات الواردة</span>
-          </button>
+          {hasPermission('orders') && (
+            <button
+              onClick={() => changeTab('orders')}
+              style={{ ...styles.navItem, ...(activeTab === 'orders' ? styles.navItemActive : {}) }}
+            >
+              <ShoppingBag size={20} />
+              <span>الطلبات الواردة</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => changeTab('reservations')}
-            style={{ ...styles.navItem, ...(activeTab === 'reservations' ? styles.navItemActive : {}) }}
-          >
-            <Calendar size={20} />
-            <span>الحجوزات والطاولات</span>
-          </button>
+          {hasPermission('reservations') && (
+            <button
+              onClick={() => changeTab('reservations')}
+              style={{ ...styles.navItem, ...(activeTab === 'reservations' ? styles.navItemActive : {}) }}
+            >
+              <Calendar size={20} />
+              <span>الحجوزات والطاولات</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => changeTab('conversations')}
-            style={{ ...styles.navItem, ...(activeTab === 'conversations' ? styles.navItemActive : {}) }}
-          >
-            <MessageSquare size={20} />
-            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-              <span>مراقبة المحادثات</span>
-              {conversations.filter(c => c.category === 'COMPLAINT').length > 0 && (
-                <span style={{
-                  backgroundColor: '#EF4444',
-                  color: '#FFFFFF',
-                  fontSize: '0.7rem',
-                  fontWeight: 'bold',
-                  padding: '2px 7px',
-                  borderRadius: '10px',
-                  marginRight: '6px'
-                }}>
-                  {conversations.filter(c => c.category === 'COMPLAINT').length} شكوى
-                </span>
-              )}
-            </span>
-          </button>
+          {hasPermission('conversations') && (
+            <button
+              onClick={() => changeTab('conversations')}
+              style={{ ...styles.navItem, ...(activeTab === 'conversations' ? styles.navItemActive : {}) }}
+            >
+              <MessageSquare size={20} />
+              <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                <span>مراقبة المحادثات</span>
+                {conversations.filter(c => c.category === 'COMPLAINT').length > 0 && (
+                  <span style={{
+                    backgroundColor: '#EF4444',
+                    color: '#FFFFFF',
+                    fontSize: '0.7rem',
+                    fontWeight: 'bold',
+                    padding: '2px 7px',
+                    borderRadius: '10px',
+                    marginRight: '6px'
+                  }}>
+                    {conversations.filter(c => c.category === 'COMPLAINT').length} شكوى
+                  </span>
+                )}
+              </span>
+            </button>
+          )}
 
-          <button
-            onClick={() => changeTab('customers')}
-            style={{ ...styles.navItem, ...(activeTab === 'customers' ? styles.navItemActive : {}) }}
-          >
-            <Users size={20} />
-            <span>سجل العملاء والولاء</span>
-          </button>
+          {hasPermission('customers') && (
+            <button
+              onClick={() => changeTab('customers')}
+              style={{ ...styles.navItem, ...(activeTab === 'customers' ? styles.navItemActive : {}) }}
+            >
+              <Users size={20} />
+              <span>سجل العملاء والولاء</span>
+            </button>
+          )}
 
-          {(currentUsername === 'houda' || canAccessBroadcast) && (
+          {hasPermission('broadcast') && (currentUsername === 'houda' || canAccessBroadcast || userRole === 'admin') && (
             <button
               onClick={() => changeTab('broadcast')}
               style={{ ...styles.navItem, ...(activeTab === 'broadcast' ? styles.navItemActive : {}) }}
@@ -3230,13 +3330,15 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
             </button>
           )}
 
-          <button
-            onClick={() => changeTab('settings')}
-            style={{ ...styles.navItem, ...(activeTab === 'settings' ? styles.navItemActive : {}) }}
-          >
-            <Settings size={20} />
-            <span>إعدادات النظام</span>
-          </button>
+          {hasPermission('settings') && (
+            <button
+              onClick={() => changeTab('settings')}
+              style={{ ...styles.navItem, ...(activeTab === 'settings' ? styles.navItemActive : {}) }}
+            >
+              <Settings size={20} />
+              <span>إعدادات النظام</span>
+            </button>
+          )}
 
           <button
             onClick={onBackToLanding}
@@ -3248,21 +3350,25 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
 
           {userRole === 'admin' && (
             <>
-              <button
-                onClick={() => changeTab('ai-assistant')}
-                style={{ ...styles.navItem, ...(activeTab === 'ai-assistant' ? styles.navItemActive : {}) }}
-              >
-                <Sparkles size={20} />
-                <span>مساعد الضبط الذكي</span>
-              </button>
+              {hasPermission('ai-assistant') && (
+                <button
+                  onClick={() => changeTab('ai-assistant')}
+                  style={{ ...styles.navItem, ...(activeTab === 'ai-assistant' ? styles.navItemActive : {}) }}
+                >
+                  <Sparkles size={20} />
+                  <span>مساعد الضبط الذكي</span>
+                </button>
+              )}
 
-              <button
-                onClick={() => changeTab('users')}
-                style={{ ...styles.navItem, ...(activeTab === 'users' ? styles.navItemActive : {}) }}
-              >
-                <Users size={20} />
-                <span>إدارة الموظفين</span>
-              </button>
+              {hasPermission('users') && (
+                <button
+                  onClick={() => changeTab('users')}
+                  style={{ ...styles.navItem, ...(activeTab === 'users' ? styles.navItemActive : {}) }}
+                >
+                  <Users size={20} />
+                  <span>إدارة الموظفين</span>
+                </button>
+              )}
             </>
           )}
         </nav>
@@ -6975,7 +7081,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
             <div className="animate-fade-in" style={styles.tabContent}>
               <h3 style={{ ...styles.cardTitle, marginBottom: '8px' }}>إدارة طاقم العمل والموظفين</h3>
               <p style={{ color: '#5E6E85', fontSize: '0.9rem', marginBottom: '24px' }}>
-                قم بإنشاء حسابات جديدة للموظفين الذين يعملون معك وتحديد أدوارهم وصلاحياتهم لحماية البيانات.
+                قم بإنشاء حسابات جديدة للموظفين وتخصيص صلاحيات كل تاب ولون التعرف الخاص بكل موظف لحماية البيانات وسهولة المتابعة.
               </p>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '24px', alignItems: 'start' }}>
@@ -7019,17 +7125,83 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                       />
                     </div>
 
-                    <div style={{ ...styles.formGroup, marginBottom: '24px' }}>
+                    <div style={{ ...styles.formGroup, marginBottom: '16px' }}>
                       <label style={styles.formLabel}>دور وصلاحيات المستخدم</label>
                       <select
                         value={newRole}
                         onChange={e => setNewRole(e.target.value as 'admin' | 'staff')}
                         style={styles.formInput}
                       >
-                        <option value="staff">موظف (مشاهدة ومراقبة فقط)</option>
-                        <option value="admin">مسؤول (صلاحيات كاملة للمنيو واليوزرات)</option>
+                        <option value="staff">موظف (مع صلاحيات محددة)</option>
+                        <option value="admin">مسؤول رئيسي (صلاحيات كاملة Superuser)</option>
                       </select>
                     </div>
+
+                    {newRole === 'staff' && (
+                      <>
+                        <div style={{ marginBottom: '16px' }}>
+                          <label style={{ ...styles.formLabel, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span>اللون المخصص للموظف:</span>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ width: '16px', height: '16px', borderRadius: '50%', backgroundColor: newColor, display: 'inline-block', border: '1px solid #CBD5E1' }} />
+                              <span style={{ fontSize: '0.75rem', color: '#5E6E85' }}>{newColor}</span>
+                            </span>
+                          </label>
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '6px' }}>
+                            <input
+                              type="color"
+                              value={newColor}
+                              onChange={e => setNewColor(e.target.value)}
+                              style={{ width: '40px', height: '36px', border: 'none', borderRadius: '6px', cursor: 'pointer', backgroundColor: 'transparent' }}
+                            />
+                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                              {['#0066FF', '#0D9488', '#E11D48', '#9D174D', '#0284C7', '#92400E', '#4D7C0F', '#C026D3', '#8B5CF6', '#F59E0B'].map(c => (
+                                <button
+                                  key={c}
+                                  type="button"
+                                  onClick={() => setNewColor(c)}
+                                  style={{
+                                    width: '24px',
+                                    height: '24px',
+                                    borderRadius: '50%',
+                                    backgroundColor: c,
+                                    border: newColor === c ? '2px solid #FFFFFF' : 'none',
+                                    boxShadow: newColor === c ? '0 0 0 2px #0066FF' : 'none',
+                                    cursor: 'pointer'
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ marginBottom: '20px' }}>
+                          <label style={styles.formLabel}>تحديد التابات المسموحة للموظف:</label>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '8px', maxHeight: '180px', overflowY: 'auto', padding: '6px', border: '1px solid rgba(0,0,0,0.1)', borderRadius: '8px' }}>
+                            {ALL_SYSTEM_PERMISSIONS.map(p => {
+                              const checked = newPermissions.includes(p.key);
+                              return (
+                                <label key={p.key} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', cursor: 'pointer' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={e => {
+                                      if (e.target.checked) {
+                                        setNewPermissions([...newPermissions, p.key]);
+                                      } else {
+                                        setNewPermissions(newPermissions.filter(k => k !== p.key));
+                                      }
+                                    }}
+                                    style={{ accentColor: '#0066FF' }}
+                                  />
+                                  <span>{p.label}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </>
+                    )}
 
                     <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '12px' }} disabled={usersLoading}>
                       {usersLoading ? 'جاري الحفظ...' : 'إضافة الموظف للنظام'}
@@ -7049,46 +7221,230 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                         <thead>
                           <tr style={{ borderBottom: '1px solid rgba(0,0,0,0.05)', color: '#5E6E85', fontSize: '0.8rem' }}>
                             <th style={{ padding: '12px 8px' }}>اسم المستخدم</th>
-                            <th style={{ padding: '12px 8px' }}>الصلاحية</th>
-                            <th style={{ padding: '12px 8px' }}>تاريخ الإنشاء</th>
+                            <th style={{ padding: '12px 8px' }}>الدور واللون</th>
+                            <th style={{ padding: '12px 8px' }}>الصلاحيات المتاحة</th>
                             <th style={{ padding: '12px 8px', textAlign: 'center' }}>العمليات</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {usersList.map(user => (
-                            <tr key={user.id} style={{ borderBottom: '1px solid rgba(0,0,0,0.02)', fontSize: '0.85rem' }}>
-                              <td style={{ padding: '12px 8px', fontWeight: 'bold' }}>{user.username}</td>
-                              <td style={{ padding: '12px 8px' }}>
-                                <span className={`badge badge-${user.role === 'admin' ? 'active' : 'pending'}`}>
-                                  {user.role === 'admin' ? 'مسؤول (Admin)' : 'موظف (Staff)'}
-                                </span>
-                              </td>
-                              <td style={{ padding: '12px 8px', color: '#5E6E85' }}>
-                                {new Date(user.created_at).toLocaleDateString('ar-EG')}
-                              </td>
-                              <td style={{ padding: '12px 8px', textAlign: 'center' }}>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteUser(user.id)}
-                                  disabled={user.username === 'admin'}
-                                  style={{
-                                    background: 'none',
-                                    border: 'none',
-                                    color: user.username === 'admin' ? '#CBD5E1' : '#EF4444',
-                                    cursor: user.username === 'admin' ? 'not-allowed' : 'pointer',
-                                    padding: '4px'
-                                  }}
-                                  title={user.username === 'admin' ? 'لا يمكن حذف حساب المسؤول الرئيسي' : 'حذف الحساب'}
-                                >
-                                  <Trash size={16} />
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
+                          {usersList.map(user => {
+                            const userPerms: string[] = Array.isArray(user.permissions) ? user.permissions : (user.role === 'admin' ? ['جميع التابات'] : []);
+                            const userStaffColor = user.color || getStaffColor(user.username, darkMode);
+                            return (
+                              <tr key={user.id} style={{ borderBottom: '1px solid rgba(0,0,0,0.02)', fontSize: '0.85rem' }}>
+                                <td style={{ padding: '12px 8px', fontWeight: 'bold' }}>
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: userStaffColor, display: 'inline-block' }} />
+                                    <span>{user.username}</span>
+                                  </span>
+                                </td>
+                                <td style={{ padding: '12px 8px' }}>
+                                  <span className={`badge badge-${user.role === 'admin' ? 'active' : 'pending'}`}>
+                                    {user.role === 'admin' ? 'مسؤول (Admin)' : 'موظف (Staff)'}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '12px 8px', color: '#5E6E85', fontSize: '0.78rem' }}>
+                                  {user.role === 'admin' ? (
+                                    <span style={{ color: '#10B981', fontWeight: 'bold' }}>⚡ Superuser (جميع التابات)</span>
+                                  ) : (
+                                    <span>
+                                      {userPerms.length} تاب ({userPerms.slice(0, 3).join(', ')}{userPerms.length > 3 ? '...' : ''})
+                                    </span>
+                                  )}
+                                </td>
+                                <td style={{ padding: '12px 8px', textAlign: 'center' }}>
+                                  <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
+                                    {user.role !== 'admin' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenEditUserModal(user)}
+                                        style={{
+                                          border: 'none',
+                                          backgroundColor: 'rgba(0, 102, 255, 0.1)',
+                                          color: '#0066FF',
+                                          padding: '4px 10px',
+                                          borderRadius: '6px',
+                                          fontSize: '0.75rem',
+                                          fontWeight: 'bold',
+                                          cursor: 'pointer'
+                                        }}
+                                        title="تعديل الصلاحيات واللون الخاص بالموظف"
+                                      >
+                                        ⚙️ الصلاحيات واللون
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteUser(user.id)}
+                                      disabled={user.username === 'houda' || user.username === 'admin'}
+                                      style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        color: (user.username === 'houda' || user.username === 'admin') ? '#CBD5E1' : '#EF4444',
+                                        cursor: (user.username === 'houda' || user.username === 'admin') ? 'not-allowed' : 'pointer',
+                                        padding: '4px'
+                                      }}
+                                      title={(user.username === 'houda' || user.username === 'admin') ? 'لا يمكن حذف حساب المسؤول الرئيسي' : 'حذف الحساب'}
+                                    >
+                                      <Trash size={16} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
                   )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ⚙️ مودال تعديل الصلاحيات واللون للموظف (Admin Control Modal) */}
+          {showPermissionsModal && editingUser && (
+            <div style={styles.modalOverlay}>
+              <div className="glass-card animate-fade-in" style={{ ...styles.modal, maxWidth: '580px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <h3 style={{ fontWeight: 'bold', fontSize: '1.1rem', color: 'var(--text-main)', margin: 0 }}>
+                    ⚙️ إعداد صلاحيات ولون الموظف ({editingUser.username})
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPermissionsModal(false);
+                      setEditingUser(null);
+                    }}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.2rem' }}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {modalError && (
+                  <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.15)', padding: '10px', borderRadius: '8px', color: '#EF4444', fontSize: '0.8rem', marginBottom: '16px' }}>
+                    {modalError}
+                  </div>
+                )}
+                {modalSuccess && (
+                  <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.15)', padding: '10px', borderRadius: '8px', color: '#10B981', fontSize: '0.8rem', marginBottom: '16px' }}>
+                    {modalSuccess}
+                  </div>
+                )}
+
+                {/* 1. منتقي ألوان الموظف المخصص (Color Picker) */}
+                <div style={{ marginBottom: '20px', padding: '14px', borderRadius: '10px', border: '1px solid rgba(0,0,0,0.08)', backgroundColor: darkMode ? '#1E293B' : '#F8FAFC' }}>
+                  <label style={{ fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>🎨 اختار لون تمييز الموظف:</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '2px 10px', borderRadius: '12px', backgroundColor: editingUser.color, color: '#FFFFFF', fontSize: '0.75rem', fontWeight: 'bold' }}>
+                      {editingUser.username}
+                    </span>
+                  </label>
+                  <p style={{ fontSize: '0.78rem', color: '#5E6E85', marginBottom: '12px' }}>
+                    سيظهر هذا اللون في شارة المتابعة وقائمة المحادثات لتمييز شغل هذا الموظف عن باقي الزملاء.
+                  </p>
+                  <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                    <input
+                      type="color"
+                      value={editingUser.color}
+                      onChange={e => setEditingUser({ ...editingUser, color: e.target.value })}
+                      style={{ width: '44px', height: '40px', border: 'none', borderRadius: '6px', cursor: 'pointer', backgroundColor: 'transparent' }}
+                    />
+                    <input
+                      type="text"
+                      value={editingUser.color}
+                      onChange={e => setEditingUser({ ...editingUser, color: e.target.value })}
+                      style={{ ...styles.formInput, width: '100px', fontSize: '0.85rem', textAlign: 'center', textTransform: 'uppercase' }}
+                    />
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      {['#0066FF', '#0D9488', '#E11D48', '#9D174D', '#0284C7', '#92400E', '#4D7C0F', '#C026D3', '#8B5CF6', '#F59E0B'].map(c => (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => setEditingUser({ ...editingUser, color: c })}
+                          style={{
+                            width: '26px',
+                            height: '26px',
+                            borderRadius: '50%',
+                            backgroundColor: c,
+                            border: editingUser.color === c ? '2px solid #FFFFFF' : 'none',
+                            boxShadow: editingUser.color === c ? '0 0 0 2px #0066FF' : 'none',
+                            cursor: 'pointer'
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. قائمة الصلاحيات الـ 11 (Checkboxes) */}
+                <div style={{ marginBottom: '24px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>📋 الصلاحيات والتابات المتاحة للموظف:</label>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setEditingUser({ ...editingUser, permissions: ALL_SYSTEM_PERMISSIONS.map(p => p.key) })}
+                        style={{ background: 'none', border: 'none', color: '#0066FF', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' }}
+                      >
+                        تحديد الكل
+                      </button>
+                      <span style={{ color: '#CBD5E1' }}>|</span>
+                      <button
+                        type="button"
+                        onClick={() => setEditingUser({ ...editingUser, permissions: [] })}
+                        style={{ background: 'none', border: 'none', color: '#EF4444', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' }}
+                      >
+                        إلغاء التحديد
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', maxHeight: '220px', overflowY: 'auto', padding: '10px', border: '1px solid rgba(0,0,0,0.1)', borderRadius: '10px' }}>
+                    {ALL_SYSTEM_PERMISSIONS.map(p => {
+                      const isChecked = editingUser.permissions.includes(p.key);
+                      return (
+                        <label key={p.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer', padding: '4px', borderRadius: '6px', backgroundColor: isChecked ? (darkMode ? 'rgba(0, 102, 255, 0.15)' : 'rgba(0, 102, 255, 0.05)') : 'transparent' }}>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={e => {
+                              if (e.target.checked) {
+                                setEditingUser({ ...editingUser, permissions: [...editingUser.permissions, p.key] });
+                              } else {
+                                setEditingUser({ ...editingUser, permissions: editingUser.permissions.filter(k => k !== p.key) });
+                              }
+                            }}
+                            style={{ width: '16px', height: '16px', accentColor: '#0066FF' }}
+                          />
+                          <span>{p.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPermissionsModal(false);
+                      setEditingUser(null);
+                    }}
+                    style={{ ...styles.btnSecondary, padding: '10px 20px' }}
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveUserPermissionsAndColor}
+                    disabled={modalSaving}
+                    className="btn btn-primary"
+                    style={{ padding: '10px 24px' }}
+                  >
+                    {modalSaving ? 'جاري الحفظ...' : 'حفظ التغييرات'}
+                  </button>
                 </div>
               </div>
             </div>

@@ -76,7 +76,16 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       const hasBroadcastAccess = Boolean((user as any).can_access_broadcast || user.username === 'houda');
 
       const token = jwt.sign(
-        { username: user.username, role: user.role, can_access_broadcast: hasBroadcastAccess, restaurant_id: restId, restaurantName: restName },
+        {
+          id: user.id,
+          username: user.username,
+          role: user.role,
+          permissions: user.permissions,
+          color: user.color,
+          can_access_broadcast: hasBroadcastAccess,
+          restaurant_id: restId,
+          restaurantName: restName
+        },
         JWT_SECRET,
         { expiresIn: '24h' }
       );
@@ -84,7 +93,16 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       res.status(200).json({
         status: 'success',
         token,
+        user: {
+          id: user.id,
+          username: user.username,
+          role: user.role,
+          permissions: user.permissions,
+          color: user.color
+        },
         role: user.role,
+        permissions: user.permissions,
+        color: user.color,
         can_access_broadcast: hasBroadcastAccess,
         restaurant_id: restId,
         restaurantName: restName,
@@ -907,11 +925,17 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
     const defaultRest = await getOrCreateDefaultRestaurant();
     const restId = defaultRest ? defaultRest.id : undefined;
 
+    const defaultStaffPermissions = ['conversations', 'orders', 'reservations', 'menu'];
+    const userPermissions = Array.isArray(req.body?.permissions) ? req.body.permissions : (role === 'staff' ? defaultStaffPermissions : undefined);
+    const userColor = req.body?.color || undefined;
+
     const newUser = await prisma.user.create({
       data: {
         username: cleanUsername,
         password: hashPassword(cleanPassword),
         role,
+        permissions: userPermissions,
+        color: userColor,
         restaurant_id: restId
       }
     });
@@ -919,7 +943,14 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
     res.status(201).json({
       status: 'success',
       message: 'تم إنشاء المستخدم بنجاح!',
-      user: { id: newUser.id, username: newUser.username, role: newUser.role, restaurant_id: newUser.restaurant_id }
+      user: {
+        id: newUser.id,
+        username: newUser.username,
+        role: newUser.role,
+        permissions: newUser.permissions,
+        color: newUser.color,
+        restaurant_id: newUser.restaurant_id
+      }
     });
   } catch (error: any) {
     if (error?.code === 'P2002') {
@@ -940,6 +971,9 @@ export const listUsers = async (req: Request, res: Response): Promise<void> => {
         id: true,
         username: true,
         role: true,
+        permissions: true,
+        color: true,
+        can_access_broadcast: true,
         created_at: true
       },
       orderBy: { created_at: 'desc' }
@@ -957,7 +991,7 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
   const { id } = req.params;
   try {
     const userToDelete = await prisma.user.findUnique({ where: { id } });
-    if (userToDelete?.username === 'admin') {
+    if (userToDelete?.username === 'houda' || userToDelete?.role === 'admin') {
       res.status(400).json({ status: 'error', message: 'لا يمكن حذف حساب المسؤول الرئيسي!' });
       return;
     }
@@ -966,6 +1000,71 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
     res.status(200).json({ status: 'success', message: 'تم حذف المستخدم بنجاح!' });
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+/**
+ * تحديث صلاحيات موظف معين (للمسؤول فقط)
+ */
+export const updateUserPermissions = async (req: Request, res: Response): Promise<void> => {
+  const { userId } = req.params;
+  const { permissions } = req.body;
+
+  if (!Array.isArray(permissions)) {
+    res.status(400).json({ status: 'error', message: 'قائمة الصلاحيات يجب أن تكون مصفوفة (Array).' });
+    return;
+  }
+
+  try {
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { permissions },
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        permissions: true,
+        color: true
+      }
+    });
+
+    res.status(200).json({
+      status: 'success',
+      message: 'تم تحديث صلاحيات الموظف بنجاح!',
+      user: updatedUser
+    });
+  } catch (error: any) {
+    res.status(500).json({ status: 'error', message: error.message || 'فشل تحديث الصلاحيات.' });
+  }
+};
+
+/**
+ * تحديث اللون المخصص لموظف معين (للمسؤول فقط)
+ */
+export const updateUserColor = async (req: Request, res: Response): Promise<void> => {
+  const { userId } = req.params;
+  const { color } = req.body;
+
+  try {
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { color: color || null },
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        permissions: true,
+        color: true
+      }
+    });
+
+    res.status(200).json({
+      status: 'success',
+      message: 'تم تحديث لون الموظف بنجاح!',
+      user: updatedUser
+    });
+  } catch (error: any) {
+    res.status(500).json({ status: 'error', message: error.message || 'فشل تحديث اللون.' });
   }
 };
 

@@ -177,6 +177,8 @@ model User {
   password              String      // كلمة المرور مشفرة بـ SHA-256
   role                  String      // الدور: "admin" (مسؤول) أو "staff" (موظف)
   can_access_broadcast Boolean     @default(false) // هل يملك صلاحية الوصول للحملات الجماعية
+  permissions           Json?       // مصفوفة مفاتيح الصلاحيات المخصصة
+  color                 String?     // كود اللون المختار يدويًا (Hex)
   restaurant_id         String?
   restaurant            Restaurant? @relation(fields: [restaurant_id], references: [id], onDelete: SetNull)
   created_at            DateTime    @default(now())

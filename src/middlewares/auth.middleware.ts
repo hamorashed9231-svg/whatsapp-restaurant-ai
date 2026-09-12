@@ -39,3 +39,63 @@ export const authMiddleware = (req: AuthenticatedRequest, res: Response, next: N
     });
   }
 };
+
+/**
+ * برمجية وسيطة للتحقق من امتلاك المستخدم للصلاحية المطلوبة (Require Permission Guard)
+ */
+export const requirePermission = (permissionKey: string) => {
+  return async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    if (!req.user) {
+      res.status(401).json({ status: 'error', message: 'غير مصرح بالدخول.' });
+      return;
+    }
+
+    // 1. حساب المسؤول يملك صلاحية مطلقة (Superuser)
+    if (req.user.role === 'admin') {
+      return next();
+    }
+
+    try {
+      const username = req.user.username;
+      if (!username) {
+        res.status(403).json({
+          status: 'error',
+          error_code: 'FORBIDDEN',
+          message: 'عذراً، لا تملك الصلاحية للوصول إلى هذه الميزة.'
+        });
+        return;
+      }
+
+      // جلب أحدث الصلاحيات من قاعدة البيانات مباشرة لتطبيق التغييرات اللحظية
+      const { PrismaClient } = require('@prisma/client');
+      const prismaClient = new PrismaClient();
+      const dbUser = await prismaClient.user.findUnique({
+        where: { username },
+        select: { role: true, permissions: true }
+      });
+
+      if (!dbUser) {
+        res.status(403).json({ status: 'error', message: 'المستخدم غير موجود.' });
+        return;
+      }
+
+      if (dbUser.role === 'admin') {
+        return next();
+      }
+
+      const userPermissions = (dbUser.permissions as string[]) || [];
+      if (userPermissions.includes(permissionKey)) {
+        return next();
+      }
+
+      res.status(403).json({
+        status: 'error',
+        error_code: 'FORBIDDEN',
+        message: `عذراً، لا تملك الصلاحية للوصول إلى هذه الميزة (${permissionKey}).`
+      });
+    } catch (err) {
+      console.error('[RequirePermission Error]:', err);
+      res.status(500).json({ status: 'error', message: 'خطأ أثناء فحص الصلاحيات.' });
+    }
+  };
+};
