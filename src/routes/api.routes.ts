@@ -31,6 +31,7 @@ import {
   deleteUser,
   updateUserPermissions,
   updateUserColor,
+  updateUserPassword,
   handleAdminConfigChat,
   getAiInstructions,
   updateAiInstructions,
@@ -147,6 +148,7 @@ router.get('/users', authMiddleware, requirePermission('users'), listUsers);
 router.delete('/users/:id', authMiddleware, requirePermission('users'), deleteUser);
 router.put('/users/:userId/permissions', authMiddleware, requirePermission('users'), updateUserPermissions);
 router.put('/users/:userId/color', authMiddleware, requirePermission('users'), updateUserColor);
+router.put('/users/:userId/password', authMiddleware, updateUserPassword);
 
 // شات الضبط الذكي والتعليمات الإدارية المخصصة (للمسؤول فقط)
 router.post('/restaurants/:id/ai-config-chat', authMiddleware, requirePermission('ai-assistant'), handleAdminConfigChat);

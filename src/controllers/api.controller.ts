@@ -1069,6 +1069,64 @@ export const updateUserColor = async (req: Request, res: Response): Promise<void
 };
 
 /**
+ * تغيير كلمة المرور للمستخدم (للأدمن أو صاحب الحساب نفسه)
+ */
+export const updateUserPassword = async (req: Request, res: Response): Promise<void> => {
+  const { userId } = req.params;
+  const { newPassword, password } = req.body;
+  const passwordToSet = newPassword || password;
+
+  if (!passwordToSet || String(passwordToSet).trim().length < 4) {
+    res.status(400).json({ status: 'error', message: 'كلمة المرور الجديدة يجب ألا تقل عن 4 أحرف.' });
+    return;
+  }
+
+  const requestingUser = (req as any).user;
+  if (!requestingUser) {
+    res.status(401).json({ status: 'error', message: 'غير مصرح بالدخول.' });
+    return;
+  }
+
+  try {
+    const targetUser = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { id: userId },
+          { username: userId }
+        ]
+      }
+    });
+
+    if (!targetUser) {
+      res.status(404).json({ status: 'error', message: 'المستخدم غير موجود بالنظام.' });
+      return;
+    }
+
+    const isAdmin = requestingUser.role === 'admin' || requestingUser.username === 'houda';
+    const isSelf = requestingUser.id === targetUser.id || requestingUser.username === targetUser.username;
+
+    if (!isAdmin && !isSelf) {
+      res.status(403).json({ status: 'error', message: 'غير مصرح لك بتغيير كلمة مرور هذا الحساب!' });
+      return;
+    }
+
+    const hashedPassword = hashPassword(String(passwordToSet).trim());
+
+    await prisma.user.update({
+      where: { id: targetUser.id },
+      data: { password: hashedPassword }
+    });
+
+    res.status(200).json({
+      status: 'success',
+      message: `تم تحديث كلمة المرور للحساب (${targetUser.username}) بنجاح!`
+    });
+  } catch (error: any) {
+    res.status(500).json({ status: 'error', message: error.message || 'فشل تحديث كلمة المرور.' });
+  }
+};
+
+/**
  * تحديث تصنيف المحادثة يدوياً
  */
 export const updateConversationCategory = async (req: Request, res: Response): Promise<void> => {

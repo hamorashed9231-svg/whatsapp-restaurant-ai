@@ -1082,6 +1082,15 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [modalError, setModalError] = useState<string | null>(null);
   const [modalSuccess, setModalSuccess] = useState<string | null>(null);
 
+  // حالات مودال تغيير كلمة المرور للموظف أو الأدمن
+  const [showPasswordModal, setShowPasswordModal] = useState<boolean>(false);
+  const [passwordTargetUser, setPasswordTargetUser] = useState<{ id: string; username: string } | null>(null);
+  const [changePasswordValue, setChangePasswordValue] = useState<string>('');
+  const [confirmPasswordValue, setConfirmPasswordValue] = useState<string>('');
+  const [passwordSaving, setPasswordSaving] = useState<boolean>(false);
+  const [passwordModalError, setPasswordModalError] = useState<string | null>(null);
+  const [passwordModalSuccess, setPasswordModalSuccess] = useState<string | null>(null);
+
   const ALL_SYSTEM_PERMISSIONS = [
     { key: 'conversations', label: 'مراقبة المحادثات 💬' },
     { key: 'orders', label: 'الطلبات الواردة 📦' },
@@ -2268,6 +2277,53 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
       setUsersError(err.response?.data?.message || 'فشل حذف الحساب.');
     } finally {
       setUsersLoading(false);
+    }
+  };
+
+  // فتح مودال تغيير كلمة المرور للموظف أو للأدمن نفسه
+  const handleOpenPasswordModal = (user: { id: string; username: string }) => {
+    setPasswordTargetUser(user);
+    setChangePasswordValue('');
+    setConfirmPasswordValue('');
+    setPasswordModalError(null);
+    setPasswordModalSuccess(null);
+    setShowPasswordModal(true);
+  };
+
+  // تنفيذ طلب تغيير كلمة المرور
+  const handleChangePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!passwordTargetUser) return;
+
+    if (!changePasswordValue || changePasswordValue.trim().length < 4) {
+      setPasswordModalError('كلمة المرور الجديدة يجب ألا تقل عن 4 أحرف');
+      return;
+    }
+
+    if (changePasswordValue !== confirmPasswordValue) {
+      setPasswordModalError('كلمات المرور غير متطابقة! يرجى التأكد وإعادة الإدخال.');
+      return;
+    }
+
+    setPasswordSaving(true);
+    setPasswordModalError(null);
+    setPasswordModalSuccess(null);
+
+    try {
+      const res = await api.put(`/users/${passwordTargetUser.id}/password`, {
+        newPassword: changePasswordValue.trim()
+      });
+      setPasswordModalSuccess(res.data?.message || 'تم تحديث كلمة المرور بنجاح!');
+      setTimeout(() => {
+        setShowPasswordModal(false);
+        setPasswordTargetUser(null);
+        setChangePasswordValue('');
+        setConfirmPasswordValue('');
+      }, 1500);
+    } catch (err: any) {
+      setPasswordModalError(err.response?.data?.message || err.message || 'فشل تحديث كلمة المرور.');
+    } finally {
+      setPasswordSaving(false);
     }
   };
 
@@ -7079,10 +7135,22 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
 
           {activeTab === 'users' && userRole === 'admin' && (
             <div className="animate-fade-in" style={styles.tabContent}>
-              <h3 style={{ ...styles.cardTitle, marginBottom: '8px' }}>إدارة طاقم العمل والموظفين</h3>
-              <p style={{ color: '#5E6E85', fontSize: '0.9rem', marginBottom: '24px' }}>
-                قم بإنشاء حسابات جديدة للموظفين وتخصيص صلاحيات كل تاب ولون التعرف الخاص بكل موظف لحماية البيانات وسهولة المتابعة.
-              </p>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                <div>
+                  <h3 style={{ ...styles.cardTitle, marginBottom: '4px' }}>إدارة طاقم العمل والموظفين</h3>
+                  <p style={{ color: '#5E6E85', fontSize: '0.9rem', margin: 0 }}>
+                    قم بإنشاء حسابات جديدة للموظفين وتخصيص صلاحيات كل تاب ولون التعرف الخاص بكل موظف لحماية البيانات وسهولة المتابعة.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleOpenPasswordModal({ id: currentUsername || 'admin', username: currentUsername || 'admin' })}
+                  className="btn btn-secondary"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 16px', fontSize: '0.85rem', fontWeight: 'bold', border: '1px solid rgba(16, 185, 129, 0.3)', color: '#10B981' }}
+                >
+                  🔑 تغيير باسوردي الشخصي ({currentUsername || 'الأدمن'})
+                </button>
+              </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '24px', alignItems: 'start' }}>
                 {/* نموذج إضافة مستخدم جديد */}
@@ -7275,6 +7343,23 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                     )}
                                     <button
                                       type="button"
+                                      onClick={() => handleOpenPasswordModal(user)}
+                                      style={{
+                                        border: 'none',
+                                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                                        color: '#10B981',
+                                        padding: '4px 10px',
+                                        borderRadius: '6px',
+                                        fontSize: '0.75rem',
+                                        fontWeight: 'bold',
+                                        cursor: 'pointer'
+                                      }}
+                                      title="تغيير كلمة المرور لهذا الحساب"
+                                    >
+                                      🔑 الباسورد
+                                    </button>
+                                    <button
+                                      type="button"
                                       onClick={() => handleDeleteUser(user.id)}
                                       disabled={user.username === 'houda' || user.username === 'admin'}
                                       style={{
@@ -7446,6 +7531,89 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                     {modalSaving ? 'جاري الحفظ...' : 'حفظ التغييرات'}
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* 🔑 مودال تغيير كلمة المرور للموظف أو الأدمن */}
+          {showPasswordModal && passwordTargetUser && (
+            <div style={styles.modalOverlay}>
+              <div className="glass-card animate-fade-in" style={{ ...styles.modal, maxWidth: '440px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <h3 style={{ fontWeight: 'bold', fontSize: '1.1rem', color: 'var(--text-main)', margin: 0 }}>
+                    🔑 تغيير كلمة المرور للمستخدم ({passwordTargetUser.username})
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPasswordModal(false);
+                      setPasswordTargetUser(null);
+                    }}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.2rem' }}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {passwordModalError && (
+                  <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.15)', padding: '10px', borderRadius: '8px', color: '#EF4444', fontSize: '0.8rem', marginBottom: '16px' }}>
+                    {passwordModalError}
+                  </div>
+                )}
+                {passwordModalSuccess && (
+                  <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.15)', padding: '10px', borderRadius: '8px', color: '#10B981', fontSize: '0.8rem', marginBottom: '16px' }}>
+                    {passwordModalSuccess}
+                  </div>
+                )}
+
+                <form onSubmit={handleChangePasswordSubmit}>
+                  <div style={{ ...styles.formGroup, marginBottom: '16px' }}>
+                    <label style={styles.formLabel}>كلمة المرور الجديدة</label>
+                    <input
+                      type="password"
+                      value={changePasswordValue}
+                      onChange={e => setChangePasswordValue(e.target.value)}
+                      placeholder="أدخل كلمة المرور الجديدة"
+                      required
+                      minLength={4}
+                      style={styles.formInput}
+                    />
+                  </div>
+
+                  <div style={{ ...styles.formGroup, marginBottom: '20px' }}>
+                    <label style={styles.formLabel}>تأكيد كلمة المرور الجديدة</label>
+                    <input
+                      type="password"
+                      value={confirmPasswordValue}
+                      onChange={e => setConfirmPasswordValue(e.target.value)}
+                      placeholder="أعد كتابة كلمة المرور الجديدة للتأكيد"
+                      required
+                      minLength={4}
+                      style={styles.formInput}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowPasswordModal(false);
+                        setPasswordTargetUser(null);
+                      }}
+                      style={{ ...styles.btnSecondary, padding: '10px 20px' }}
+                    >
+                      إلغاء
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={passwordSaving}
+                      className="btn btn-primary"
+                      style={{ padding: '10px 24px' }}
+                    >
+                      {passwordSaving ? 'جاري التحديث...' : 'حفظ كلمة المرور'}
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
           )}
