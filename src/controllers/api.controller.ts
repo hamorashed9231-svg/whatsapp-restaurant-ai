@@ -41,9 +41,17 @@ export const login = async (req: Request, res: Response): Promise<void> => {
   }
 
   try {
-    let user;
+    let user: any = null;
     try {
-      user = await prisma.user.findUnique({ where: { username: cleanUsername } });
+      user = await prisma.user.findUnique({
+        where: { username: cleanUsername },
+        include: {
+          members: {
+            select: { id: true, name: true, color: true, created_at: true },
+            orderBy: { created_at: 'asc' }
+          }
+        }
+      });
     } catch (dbErr) {
       console.warn('تنبيه: قاعدة البيانات غير متاحة، يتم التراجع للمصادقة المباشرة.');
     }
@@ -61,6 +69,8 @@ export const login = async (req: Request, res: Response): Promise<void> => {
           status: 'success',
           token,
           role: 'admin',
+          is_group_account: false,
+          members: [],
           can_access_broadcast: false,
           expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
           message: 'تم تسجيل الدخول بنجاح!'
@@ -82,6 +92,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
           role: user.role,
           permissions: user.permissions,
           color: user.color,
+          is_group_account: Boolean(user.is_group_account),
           can_access_broadcast: hasBroadcastAccess,
           restaurant_id: restId,
           restaurantName: restName
@@ -98,11 +109,15 @@ export const login = async (req: Request, res: Response): Promise<void> => {
           username: user.username,
           role: user.role,
           permissions: user.permissions,
-          color: user.color
+          color: user.color,
+          is_group_account: Boolean(user.is_group_account),
+          members: user.members || []
         },
         role: user.role,
         permissions: user.permissions,
         color: user.color,
+        is_group_account: Boolean(user.is_group_account),
+        members: user.members || [],
         can_access_broadcast: hasBroadcastAccess,
         restaurant_id: restId,
         restaurantName: restName,
@@ -903,12 +918,14 @@ export const updateRestaurant = async (req: Request, res: Response): Promise<voi
 };
 
 /**
- * إنشاء مستخدم (موظف) جديد في لوحة التحكم (للمسؤول فقط)
+ * إنشاء مستخدم (موظف أو مجموعة) جديد في لوحة التحكم (للمسؤول فقط)
  */
 export const createUser = async (req: Request, res: Response): Promise<void> => {
   const cleanUsername = String(req.body?.username || '').trim().toLowerCase();
   const cleanPassword = String(req.body?.password || '').trim();
   const role = req.body?.role || 'staff';
+  const isGroupAccount = Boolean(req.body?.is_group_account);
+  const rawMembers = Array.isArray(req.body?.members) ? req.body.members : [];
 
   if (!cleanUsername || !cleanPassword) {
     res.status(400).json({ status: 'error', message: 'يرجى إدخال اسم المستخدم وكلمة المرور!' });
@@ -936,19 +953,34 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
         role,
         permissions: userPermissions,
         color: userColor,
-        restaurant_id: restId
+        is_group_account: isGroupAccount,
+        restaurant_id: restId,
+        members: rawMembers.length > 0 ? {
+          create: rawMembers.map((m: any) => ({
+            name: String(m.name || '').trim(),
+            color: String(m.color || '#0066FF').trim()
+          }))
+        } : undefined
+      },
+      include: {
+        members: {
+          select: { id: true, name: true, color: true, created_at: true },
+          orderBy: { created_at: 'asc' }
+        }
       }
     });
 
     res.status(201).json({
       status: 'success',
-      message: 'تم إنشاء المستخدم بنجاح!',
+      message: isGroupAccount ? 'تم إنشاء حساب المجموعة بنجاح!' : 'تم إنشاء المستخدم بنجاح!',
       user: {
         id: newUser.id,
         username: newUser.username,
         role: newUser.role,
         permissions: newUser.permissions,
         color: newUser.color,
+        is_group_account: newUser.is_group_account,
+        members: newUser.members,
         restaurant_id: newUser.restaurant_id
       }
     });
@@ -962,7 +994,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
 };
 
 /**
- * جلب جميع مستخدمي النظام (للمسؤول فقط)
+ * جلب جميع مستخدمي النظام مع مصفوفة أعضاء المجموعات (للمسؤول فقط)
  */
 export const listUsers = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -973,12 +1005,115 @@ export const listUsers = async (req: Request, res: Response): Promise<void> => {
         role: true,
         permissions: true,
         color: true,
+        is_group_account: true,
         can_access_broadcast: true,
+        members: {
+          select: { id: true, name: true, color: true, created_at: true },
+          orderBy: { created_at: 'asc' }
+        },
         created_at: true
       },
       orderBy: { created_at: 'desc' }
     });
     res.status(200).json(users);
+  } catch (error: any) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+/**
+ * جلب أعضاء مجموعة محددة
+ */
+export const getGroupMembers = async (req: Request, res: Response): Promise<void> => {
+  const { userId } = req.params;
+  try {
+    const members = await prisma.groupMember.findMany({
+      where: { user_id: userId },
+      orderBy: { created_at: 'asc' }
+    });
+    res.status(200).json({ status: 'success', members });
+  } catch (error: any) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+/**
+ * إضافة عضو جديد لمجموعة
+ */
+export const addGroupMember = async (req: Request, res: Response): Promise<void> => {
+  const { userId } = req.params;
+  const { name, color } = req.body;
+  const cleanName = String(name || '').trim();
+  const cleanColor = String(color || '#0066FF').trim();
+
+  if (!cleanName) {
+    res.status(400).json({ status: 'error', message: 'يرجى كتابة اسم العضو!' });
+    return;
+  }
+
+  try {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      res.status(404).json({ status: 'error', message: 'حساب المجموعة غير موجود!' });
+      return;
+    }
+
+    if (!user.is_group_account) {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { is_group_account: true }
+      });
+    }
+
+    const newMember = await prisma.groupMember.create({
+      data: {
+        user_id: userId,
+        name: cleanName,
+        color: cleanColor
+      }
+    });
+
+    res.status(201).json({ status: 'success', message: 'تم إضافة العضو بنجاح!', member: newMember });
+  } catch (error: any) {
+    if (error?.code === 'P2002') {
+      res.status(400).json({ status: 'error', message: 'اسم العضو موجود بالفعل داخل هذه المجموعة!' });
+      return;
+    }
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+/**
+ * تعديل اسم أو لون عضو في مجموعة
+ */
+export const updateGroupMember = async (req: Request, res: Response): Promise<void> => {
+  const { memberId } = req.params;
+  const { name, color } = req.body;
+
+  try {
+    const updateData: any = {};
+    if (name) updateData.name = String(name).trim();
+    if (color) updateData.color = String(color).trim();
+
+    const updated = await prisma.groupMember.update({
+      where: { id: memberId },
+      data: updateData
+    });
+
+    res.status(200).json({ status: 'success', message: 'تم تعديل بيانات العضو بنجاح!', member: updated });
+  } catch (error: any) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+/**
+ * حذف عضو من مجموعة
+ */
+export const deleteGroupMember = async (req: Request, res: Response): Promise<void> => {
+  const { memberId } = req.params;
+  try {
+    await prisma.groupMember.delete({ where: { id: memberId } });
+    res.status(200).json({ status: 'success', message: 'تم حذف العضو من المجموعة بنجاح!' });
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message });
   }

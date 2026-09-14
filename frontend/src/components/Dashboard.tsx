@@ -986,7 +986,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             role: 'assistant',
             content: '[🎙️ تسجيل صوتي]',
             audio_url: audioDataUrl,
-            sender_name: currentUsername,
+            sender_name: effectiveOperatorName,
             reply_to_id: replyToMessage?.id || undefined,
             timestamp: new Date().toISOString()
           };
@@ -1091,6 +1091,33 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [passwordModalError, setPasswordModalError] = useState<string | null>(null);
   const [passwordModalSuccess, setPasswordModalSuccess] = useState<string | null>(null);
 
+  // 👥 حالات حسابات المجموعات المشتركة والهوية النشطة على الجهاز
+  const [isGroupAccount, setIsGroupAccount] = useState<boolean>(false);
+  const [groupMembersList, setGroupMembersList] = useState<{ id?: string; name: string; color: string }[]>([]);
+  const [activeGroupMemberName, setActiveGroupMemberName] = useState<string | null>(() => {
+    return localStorage.getItem('active_group_member_name') || null;
+  });
+  const [activeGroupMemberColor, setActiveGroupMemberColor] = useState<string | null>(() => {
+    return localStorage.getItem('active_group_member_color') || null;
+  });
+
+  const [showInitialMemberModal, setShowInitialMemberModal] = useState<boolean>(false);
+  const [showQuickSwitchDropdown, setShowQuickSwitchDropdown] = useState<boolean>(false);
+
+  // حالات نموذج إنشاء/تعديل مجموعة في تاب إدارة الموظفين
+  const [isGroupAccountForm, setIsGroupAccountForm] = useState<boolean>(false);
+  const [formMembersList, setFormMembersList] = useState<{ name: string; color: string }[]>([]);
+  const [newMemberName, setNewMemberName] = useState<string>('');
+  const [newMemberColor, setNewMemberColor] = useState<string>('#0066FF');
+
+  // حالات مودال إدارة أعضاء المجموعة للأدمن
+  const [showManageMembersModal, setShowManageMembersModal] = useState<boolean>(false);
+  const [groupTargetUser, setGroupTargetUser] = useState<any>(null);
+  const [manageMemberInputName, setManageMemberInputName] = useState<string>('');
+  const [manageMemberInputColor, setManageMemberInputColor] = useState<string>('#0066FF');
+  const [manageMembersList, setManageMembersList] = useState<{ id?: string; name: string; color: string }[]>([]);
+  const effectiveOperatorName = (isGroupAccount && activeGroupMemberName) ? activeGroupMemberName : currentUsername;
+
   const ALL_SYSTEM_PERMISSIONS = [
     { key: 'conversations', label: 'مراقبة المحادثات 💬' },
     { key: 'orders', label: 'الطلبات الواردة 📦' },
@@ -1142,6 +1169,27 @@ const Dashboard: React.FC<DashboardProps> = ({
         setUserPermissions(decoded.permissions || (decoded.role === 'admin' ? null : ['conversations', 'orders', 'reservations', 'menu']));
         setUserColor(decoded.color || null);
         setCanAccessBroadcast(Boolean(decoded.can_access_broadcast || decoded.username === 'houda'));
+
+        const isGroup = Boolean(decoded.is_group_account);
+        setIsGroupAccount(isGroup);
+
+        if (isGroup && decoded.id) {
+          const storedMember = localStorage.getItem('active_group_member_name');
+          const storedColor = localStorage.getItem('active_group_member_color');
+          if (storedMember) {
+            setActiveGroupMemberName(storedMember);
+            setActiveGroupMemberColor(storedColor);
+          }
+
+          api.get(`/users/${decoded.id}/members`).then(res => {
+            if (res.data && Array.isArray(res.data.members)) {
+              setGroupMembersList(res.data.members);
+              if (!storedMember && res.data.members.length > 0) {
+                setShowInitialMemberModal(true);
+              }
+            }
+          }).catch(() => {});
+        }
       } catch (e) {
         setUserRole('staff');
         setCurrentUsername('موظف الخدمة');
@@ -1623,7 +1671,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       content: branchName 
         ? `[🛍️ تم إرسال كتالوج الواتساب الرسمي المباشر للعميل (${branchName})]`
         : '[🛍️ تم إرسال كتالوج الواتساب الرسمي المباشر للعميل]',
-      sender_name: currentUsername,
+      sender_name: effectiveOperatorName,
       timestamp: new Date().toISOString()
     };
     setChatMessages(prev => [...prev, newCatMsg]);
@@ -2327,6 +2375,69 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
     }
   };
 
+  // 👥 دالة اختيار هويّة العضو النشط للجهاز
+  const handleSelectGroupMember = (name: string, color: string) => {
+    setActiveGroupMemberName(name);
+    setActiveGroupMemberColor(color);
+    localStorage.setItem('active_group_member_name', name);
+    localStorage.setItem('active_group_member_color', color);
+    setShowQuickSwitchDropdown(false);
+    setShowInitialMemberModal(false);
+  };
+
+  // إضافة عضو محلياً لنموذج إنشاء مجموعة جديدة
+  const handleAddMemberToForm = () => {
+    const cleanName = newMemberName.trim();
+    if (!cleanName) return;
+    if (formMembersList.some(m => m.name.toLowerCase() === cleanName.toLowerCase())) return;
+    setFormMembersList([...formMembersList, { name: cleanName, color: newMemberColor }]);
+    setNewMemberName('');
+  };
+
+  // حذف عضو محلياً من نموذج إنشاء مجموعة جديدة
+  const handleRemoveMemberFromForm = (index: number) => {
+    setFormMembersList(formMembersList.filter((_, i) => i !== index));
+  };
+
+  // فتح مودال إدارة أعضاء المجموعة للأدمن
+  const handleOpenManageMembersModal = (user: any) => {
+    setGroupTargetUser(user);
+    setManageMembersList(Array.isArray(user.members) ? user.members : []);
+    setManageMemberInputName('');
+    setManageMemberInputColor('#0066FF');
+    setShowManageMembersModal(true);
+  };
+
+  // إضافة عضو جديد للمجموعة عبر API
+  const handleManageAddMember = async () => {
+    if (!groupTargetUser || !manageMemberInputName.trim()) return;
+    try {
+      const res = await api.post(`/users/${groupTargetUser.id}/members`, {
+        name: manageMemberInputName.trim(),
+        color: manageMemberInputColor
+      });
+      if (res.data && res.data.member) {
+        setManageMembersList([...manageMembersList, res.data.member]);
+        setManageMemberInputName('');
+        fetchUsersList();
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'فشل إضافة العضو للمجموعة.');
+    }
+  };
+
+  // حذف عضو من المجموعة عبر API
+  const handleManageDeleteMember = async (memberId: string) => {
+    if (!window.confirm('هل أنت متأكد من حذف هذا العضو من المجموعة؟')) return;
+    try {
+      await api.delete(`/members/${memberId}`);
+      setManageMembersList(manageMembersList.filter(m => m.id !== memberId));
+      fetchUsersList();
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'فشل حذف العضو.');
+    }
+  };
+
   // تحديث تصنيف المحادثة يدوياً
   const handleUpdateCategory = async (conversationId: string, category: 'INQUIRY' | 'ORDER' | 'COMPLAINT' | 'GROUP') => {
     try {
@@ -2727,7 +2838,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
     if (conversation.status === 'UNANSWERED' || !conversation.assigned_to) {
       api.put(`/conversations/${conversation.id}/status`, {
         status: 'IN_PROGRESS',
-        assigned_to: currentUsername
+        assigned_to: effectiveOperatorName
       }).catch(() => {});
     }
 
@@ -2840,7 +2951,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
           content: finalCaption,
           image_url: item.url,
           reply_to_id: replyTargetId,
-          sender_name: currentUsername,
+          sender_name: effectiveOperatorName,
           timestamp: new Date().toISOString()
         });
       });
@@ -2853,7 +2964,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
         role: 'assistant',
         content: textToSend,
         reply_to_id: replyTargetId,
-        sender_name: currentUsername,
+        sender_name: effectiveOperatorName,
         timestamp: new Date().toISOString()
       });
     }
@@ -2951,7 +3062,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
       conversationId: selectedConversation.id,
       role: 'assistant',
       content: `[قالب موثّق من Meta: ${selTempObj?.name || selectedTemplateName}]\n${selTempObj?.preview || ''}`,
-      sender_name: currentUsername,
+      sender_name: effectiveOperatorName,
       timestamp: new Date().toISOString(),
       is_template: true
     };
@@ -8295,6 +8406,179 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
 
         </div>
       </main>
+      {/* 👥 مودال الاختيار الأولي لهوية الموظف بحساب المجموعة */}
+      {showInitialMemberModal && isGroupAccount && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+          backdropFilter: 'blur(4px)',
+          zIndex: 99999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: darkMode ? '#1E293B' : '#FFFFFF',
+            borderRadius: '16px',
+            padding: '28px',
+            maxWidth: '440px',
+            width: '100%',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.3)',
+            border: darkMode ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>👥</div>
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: darkMode ? '#FFFFFF' : '#0F1E36', marginBottom: '8px' }}>
+              مرحباً بك! مين شغال على الجهاز دلوقتي؟
+            </h3>
+            <p style={{ fontSize: '0.85rem', color: '#64748B', marginBottom: '20px', lineHeight: '1.5' }}>
+              تم تسجيل الدخول بحساب مجموعة مشتركة. يرجى اختيار اسمك الشخصي لتسجيل كافة ردودك وإسناد المحادثات باسمك بدقة.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
+              {groupMembersList.map(m => (
+                <button
+                  key={m.id || m.name}
+                  onClick={() => handleSelectGroupMember(m.name, m.color)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '12px 16px',
+                    borderRadius: '10px',
+                    border: `1.5px solid ${m.color}`,
+                    backgroundColor: darkMode ? '#0F172A' : '#F8FAFC',
+                    color: darkMode ? '#F8FAFC' : '#0F172A',
+                    fontSize: '1rem',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  <span style={{ width: '14px', height: '14px', borderRadius: '50%', backgroundColor: m.color }} />
+                  <span>{m.name}</span>
+                  <span style={{ marginRight: 'auto', fontSize: '0.8rem', opacity: 0.7 }}>اختيار ←</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 👥 مودال إدارة أعضاء المجموعة للأدمن */}
+      {showManageMembersModal && groupTargetUser && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.7)',
+          zIndex: 99999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: darkMode ? '#1E293B' : '#FFFFFF',
+            borderRadius: '16px',
+            padding: '28px',
+            maxWidth: '480px',
+            width: '100%',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.3)',
+            color: darkMode ? '#FFFFFF' : '#0F1E36'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '1.15rem', fontWeight: 'bold', margin: 0 }}>
+                👥 إدارة أعضاء مجموعة ({groupTargetUser.username})
+              </h3>
+              <button onClick={() => setShowManageMembersModal(false)} style={{ background: 'none', border: 'none', color: darkMode ? '#FFF' : '#000', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ marginBottom: '20px', padding: '14px', borderRadius: '10px', backgroundColor: darkMode ? '#0F172A' : '#F8FAFC', border: '1px solid rgba(148, 163, 184, 0.2)' }}>
+              <label style={{ fontSize: '0.85rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>إضافة عضو جديد للمجموعة:</label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="text"
+                  placeholder="اسم العضو"
+                  value={manageMemberInputName}
+                  onChange={e => setManageMemberInputName(e.target.value)}
+                  style={{ ...styles.formInput, flex: 1, padding: '8px 12px', fontSize: '0.85rem' }}
+                />
+                <input
+                  type="color"
+                  value={manageMemberInputColor}
+                  onChange={e => setManageMemberInputColor(e.target.value)}
+                  style={{ width: '40px', height: '38px', border: 'none', borderRadius: '6px', cursor: 'pointer', backgroundColor: 'transparent' }}
+                />
+                <button
+                  type="button"
+                  onClick={handleManageAddMember}
+                  style={{ backgroundColor: '#0066FF', color: '#FFF', border: 'none', borderRadius: '6px', padding: '8px 16px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer' }}
+                >
+                  ➕ إضافة
+                </button>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ fontSize: '0.85rem', fontWeight: 'bold', display: 'block', marginBottom: '10px' }}>الأعضاء الحاليون ({manageMembersList.length}):</label>
+              
+              {manageMembersList.length === 0 ? (
+                <div style={{ fontSize: '0.85rem', color: '#64748B', padding: '12px', textAlign: 'center' }}>
+                  لا يوجد أعضاء في هذه المجموعة بعد.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px', overflowY: 'auto' }}>
+                  {manageMembersList.map((m: any) => (
+                    <div
+                      key={m.id || m.name}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '10px 14px',
+                        borderRadius: '8px',
+                        backgroundColor: darkMode ? '#334155' : '#F1F5F9'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: m.color }} />
+                        <span style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{m.name}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleManageDeleteMember(m.id)}
+                        style={{ border: 'none', background: 'none', color: '#EF4444', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
+                      >
+                        🗑️ حذف
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setShowManageMembersModal(false)}
+                style={{ ...styles.btnSecondary, padding: '8px 20px' }}
+              >
+                إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* مودال إدارة الفروع */}
       {showBranchManagerModal && (

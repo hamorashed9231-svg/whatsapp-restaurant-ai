@@ -173,18 +173,35 @@ model Reservation {
 
 // نموذج المستخدمين لإدارة الموظفين والمسؤولين
 model User {
-  id                    String      @id @default(uuid())
-  username              String      @unique
-  password              String      // كلمة المرور مشفرة بـ SHA-256
-  role                  String      // الدور: "admin" (مسؤول) أو "staff" (موظف)
-  can_access_broadcast Boolean     @default(false) // هل يملك صلاحية الوصول للحملات الجماعية
-  permissions           Json?       // مصفوفة مفاتيح الصلاحيات المخصصة
-  color                 String?     // كود اللون المختار يدويًا (Hex)
-  restaurant_id         String?
-  restaurant            Restaurant? @relation(fields: [restaurant_id], references: [id], onDelete: SetNull)
-  created_at            DateTime    @default(now())
+  id                   String        @id @default(uuid())
+  username             String        @unique
+  password             String        // كلمة المرور مشفرة بـ SHA-256
+  role                 String        // الدور: "admin" (مسؤول) أو "staff" (موظف)
+  can_access_broadcast Boolean       @default(false) // هل يملك صلاحية الوصول للحملات الجماعية
+  permissions          Json?         // مصفوفة مفاتيح الصلاحيات المخصصة
+  color                String?       // كود اللون المختار يدويًا (Hex)
+  restaurant_id        String?
+  is_group_account     Boolean       @default(false) // تحديد هل الحساب عادي أم مجموعة مشتركة
+  created_at           DateTime      @default(now())
+
+  restaurant           Restaurant?   @relation(fields: [restaurant_id], references: [id], onDelete: SetNull)
+  members              GroupMember[] // علاقة أعضاء المجموعة المشتركة
 
   @@map("users")
+}
+
+// نموذج أعضاء المجموعة المشتركة (GroupMember)
+model GroupMember {
+  id         String   @id @default(uuid())
+  user_id    String   // معرف حساب المجموعة الأب
+  name       String   // اسم العضو الشخصي (مثل: أحمد، سارة، محمد)
+  color      String   // اللون المخصص المميز للعضو
+  created_at DateTime @default(now())
+
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, name], name: "user_id_name")
+  @@map("group_members")
 }
 
 // نموذج التخزين الدائم للوسائط (Vercel Blob Storage Cache)
