@@ -94,7 +94,7 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
 
           // 2. استخراج بيانات الزبون والمعرف الفريد والاسم من Meta Payload
           const contacts = value?.contacts || [];
-          const matchingContact = contacts.find((c: any) => c.wa_id === message.from);
+          const matchingContact = (message.from ? contacts.find((c: any) => c.wa_id === message.from) : null) || contacts[0] || null;
           const profileName = matchingContact?.profile?.name?.trim() || null;
           const waId = matchingContact?.wa_id || null;
 
@@ -320,6 +320,7 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
     const { geminiService } = await import('../services/gemini.service');
     const { whatsappService } = await import('../services/whatsapp.service');
     const { resolveCustomerIdentifier } = await import('../utils/phone');
+    const { getOrCreateConversation } = await import('../services/customer.service');
     const { memoryConversations } = await import('./api.controller');
 
     const customerPhone = resolveCustomerIdentifier(rawCustomerPhone, null, rawMessage?.id);
@@ -365,54 +366,22 @@ async function processDirectly(whatsappNumberId: string, rawCustomerPhone: strin
       };
     }
 
-    // 2. جلب المحادثة النشطة للعميل
+    // 2. جلب المحادثة النشطة للعميل أو إنشاؤها بشكل ذري (Atomic Upsert)
     let conversation: any = null;
     try {
-      conversation = await prisma.conversation.findFirst({
-        where: {
-          restaurant_id: restaurant.id,
-          customer_phone: customerPhone,
-        },
-        orderBy: { updated_at: 'desc' },
-      });
-    } catch (e) {}
-
-    const convId = conversation?.id || `conv_${customerPhone.replace(/\+/g, '')}`;
-
-    if (!conversation) {
-      try {
-        conversation = await prisma.conversation.create({
-          data: {
-            id: convId,
-            restaurant_id: restaurant.id,
-            customer_phone: customerPhone,
-            customer_name: profileName || null,
-            messages_json: [],
-            status: 'UNANSWERED',
-          },
-        }).catch(() => null);
-      } catch (e) {}
-
-      if (!conversation) {
-        conversation = {
-          id: convId,
-          restaurant_id: restaurant.id,
-          customer_phone: customerPhone,
-          customer_name: profileName || null,
-          messages_json: [],
-          status: 'UNANSWERED',
-          created_at: new Date(),
-          updated_at: new Date()
-        };
-      }
-    } else if (profileName && !conversation.customer_name) {
-      try {
-        await prisma.conversation.update({
-          where: { id: conversation.id },
-          data: { customer_name: profileName }
-        }).catch(() => {});
-        conversation.customer_name = profileName;
-      } catch (e) {}
+      conversation = await getOrCreateConversation(restaurant.id, customerPhone, profileName || null);
+    } catch (e) {
+      const convId = `conv_${customerPhone.replace(/\+/g, '')}`;
+      conversation = {
+        id: convId,
+        restaurant_id: restaurant.id,
+        customer_phone: customerPhone,
+        customer_name: profileName || null,
+        messages_json: [],
+        status: 'UNANSWERED',
+        created_at: new Date(),
+        updated_at: new Date()
+      };
     }
 
     // 3. حفظ رسالة العميل في DB وفي الذاكرة الاحتياطية

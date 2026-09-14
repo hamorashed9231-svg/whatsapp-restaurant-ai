@@ -6,6 +6,7 @@ import { geminiService } from '../services/gemini.service';
 import { whatsappService } from '../services/whatsapp.service';
 import { ChatMessage } from '../models/types';
 import { resolveCustomerIdentifier } from '../utils/phone';
+import { getOrCreateConversation } from '../services/customer.service';
 
 export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
   WHATSAPP_QUEUE_NAME,
@@ -95,33 +96,12 @@ export const whatsappWorker = new Worker<WhatsAppMessageJob, any, string>(
         return;
       }
 
-      // 4. جلب المحادثة النشطة أو الأخيرة للعميل مع المطعم
-      let conversation = await prisma.conversation.findFirst({
-        where: {
-          restaurant_id: restaurant.id,
-          customer_phone: customerPhone,
-        },
-        orderBy: { updated_at: 'desc' },
-      });
-
-      if (!conversation) {
-        conversation = await prisma.conversation.create({
-          data: {
-            restaurant_id: restaurant.id,
-            customer_phone: customerPhone,
-            customer_name: rawCustomerName || null,
-            messages_json: [],
-            status: 'UNANSWERED',
-          },
-        });
-        console.log(`[BullMQ Worker] تم إنشاء سجل محادثة جديد للزبون [${customerPhone}] (${rawCustomerName || 'بدون اسم'}) في مطعم [${restaurant.name}]`);
-      } else if (rawCustomerName && !conversation.customer_name) {
-        await prisma.conversation.update({
-          where: { id: conversation.id },
-          data: { customer_name: rawCustomerName }
-        }).catch(() => {});
-        conversation.customer_name = rawCustomerName;
-      }
+      // 4. جلب المحادثة النشطة أو إنشاؤها بشكل ذري لمنع التكرار نهائياً
+      const conversation = await getOrCreateConversation(
+        restaurant.id,
+        customerPhone,
+        rawCustomerName || null
+      );
 
       // 5. بناء كائنات الرسائل المدعومة بالوسائط (مع استرجاع روابط الصور والتسجيلات من Meta API)
       const mediaToken = restaurant?.whatsapp_access_token || process.env.WHATSAPP_TOKEN;

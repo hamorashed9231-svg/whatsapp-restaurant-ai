@@ -118,6 +118,7 @@ model Conversation {
   restaurant     Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
   messages       Message[]
 
+  @@unique([restaurant_id, customer_phone], name: "restaurant_id_customer_phone")
   @@map("conversations")
 }
 

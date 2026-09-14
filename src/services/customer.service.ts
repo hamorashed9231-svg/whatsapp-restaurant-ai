@@ -53,6 +53,45 @@ export async function upsertCustomerOnMessage(
 }
 
 /**
+ * الحصول على محادثة قائمة أو إنشاؤها بشكل ذري (Atomic Upsert) لمنع Race Condition مكررات المحادثات
+ */
+export async function getOrCreateConversation(
+  restaurantId: string,
+  customerPhone: string,
+  customerName?: string | null
+) {
+  try {
+    return await prisma.conversation.upsert({
+      where: {
+        restaurant_id_customer_phone: {
+          restaurant_id: restaurantId,
+          customer_phone: customerPhone,
+        },
+      },
+      update: customerName ? { customer_name: customerName } : {},
+      create: {
+        restaurant_id: restaurantId,
+        customer_phone: customerPhone,
+        customer_name: customerName || null,
+        messages_json: [],
+        status: 'UNANSWERED',
+      },
+    });
+  } catch (error: any) {
+    console.warn(`[getOrCreateConversation Warning] Fallback catch triggered for customer (${customerPhone}):`, error.message || error);
+    const existing = await prisma.conversation.findFirst({
+      where: {
+        restaurant_id: restaurantId,
+        customer_phone: customerPhone,
+      },
+      orderBy: { updated_at: 'desc' },
+    });
+    if (existing) return existing;
+    throw error;
+  }
+}
+
+/**
  * توثيق سجل المحادثة عند التحديث إلى حالة CLOSED
  */
 export async function logConversationOnClose(conversationId: string) {
