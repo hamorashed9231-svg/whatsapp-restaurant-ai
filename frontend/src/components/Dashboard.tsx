@@ -2458,8 +2458,8 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
     // 1. تحديث تفاؤلي فوري في الواجهة بدقة 0 ملي ثانية
     const optimisticData = {
       status: newStatus,
-      assigned_to: newStatus === 'UNANSWERED' ? null : (newStatus === 'IN_PROGRESS' ? currentUsername : selectedConversation?.assigned_to || currentUsername),
-      closed_by: newStatus === 'CLOSED' ? currentUsername : null,
+      assigned_to: newStatus === 'UNANSWERED' ? null : (newStatus === 'IN_PROGRESS' ? effectiveOperatorName : selectedConversation?.assigned_to || effectiveOperatorName),
+      closed_by: newStatus === 'CLOSED' ? effectiveOperatorName : null,
       updated_at: new Date().toISOString()
     };
     setConversations(prev => prev.map(c => c.id === conversationId ? { ...c, ...optimisticData } : c));
@@ -2470,8 +2470,8 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
     try {
       const res = await api.put(`/conversations/${conversationId}/status`, {
         status: newStatus,
-        assigned_to: newStatus === 'IN_PROGRESS' ? currentUsername : undefined,
-        closed_by: newStatus === 'CLOSED' ? currentUsername : undefined
+        assigned_to: newStatus === 'IN_PROGRESS' ? effectiveOperatorName : undefined,
+        closed_by: newStatus === 'CLOSED' ? effectiveOperatorName : undefined
       });
       const updatedConv = res.data.conversation;
       if (updatedConv) {
@@ -2825,7 +2825,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
     selectedConversationIdRef.current = conversation.id;
 
     // ✅ إسناد تفاؤلي فوري بـ 0 ملي ثانية للموظف الحالي عند فتح أي شات معلّق
-    const currentAssigned = conversation.assigned_to || currentUsername;
+    const currentAssigned = conversation.assigned_to || effectiveOperatorName;
     const assignedConv = {
       ...conversation,
       status: conversation.status === 'UNANSWERED' ? 'IN_PROGRESS' : conversation.status,
@@ -2975,7 +2975,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
     // ✅ تحديث تفاؤلي فوري بـ 0 ملي ثانية لإسناد المحادثة للموظف وحالتها لقيد الرد
     const updatedData = {
       status: 'IN_PROGRESS',
-      assigned_to: selectedConversation.assigned_to || currentUsername,
+      assigned_to: selectedConversation.assigned_to || effectiveOperatorName,
       updated_at: new Date().toISOString(),
       isWindowOpen: true
     };
@@ -3552,10 +3552,10 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                 marginBottom: '8px',
                 border: '1px solid rgba(0, 102, 255, 0.3)'
               }}
-              title="اختيار الموظف النشط على الجهاز"
+              title="اختيار الـ Agent النشط على الجهاز"
             >
               <Users size={18} />
-              <span>👤 {activeGroupMemberName ? `الموظف: ${activeGroupMemberName}` : 'اختر الموظف النشط'}</span>
+              <span>👤 {activeGroupMemberName ? `Agent: ${activeGroupMemberName}` : 'اختر الـ Agent'}</span>
             </button>
           )}
           <button onClick={onLogout} style={styles.logoutButton}>
@@ -3629,7 +3629,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                       fontSize: '0.85rem',
                       boxShadow: '0 2px 6px rgba(0,0,0,0.08)'
                     }}
-                    title="اضغط لتغيير أو اختيار الموظف الذي يباشر العمل حالياً"
+                    title="اضغط لتغيير أو اختيار الـ Agent الذي يباشر العمل حالياً"
                   >
                     <span
                       style={{
@@ -3640,7 +3640,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                         display: 'inline-block'
                       }}
                     />
-                    <span>👤 الموظف النشط: {activeGroupMemberName || 'اختر اسمك'}</span>
+                    <span>👤 Agent: {activeGroupMemberName || 'اختر اسمك'}</span>
                     <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>▼</span>
                   </button>
 
@@ -3660,7 +3660,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                       }}
                     >
                       <div style={{ padding: '8px 12px', fontSize: '0.75rem', fontWeight: 'bold', color: '#64748B', borderBottom: '1px solid rgba(148, 163, 184, 0.2)' }}>
-                        اختر الموظف الحالي للجهاز:
+                        اختر الـ Agent الحالي للجهاز:
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
                         {groupMembersList.map(m => {
@@ -5571,7 +5571,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                   }}
                                   title="استلام متابعة الدردشة باسمك الحالي"
                                 >
-                                  🔵 استلام الدردشة ({currentUsername})
+                                  🔵 استلام الدردشة ({effectiveOperatorName})
                                 </button>
                               )}
 
