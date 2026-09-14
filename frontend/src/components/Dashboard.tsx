@@ -1064,7 +1064,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<'ALL' | 'UNANSWERED' | 'IN_PROGRESS' | 'CLOSED'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [viewArchived, setViewArchived] = useState(false);
-  const [usersList, setUsersList] = useState<{ id: string; username: string; role: string; permissions?: string[] | null; color?: string | null; created_at: string }[]>([]);
+  const [usersList, setUsersList] = useState<{ id: string; username: string; role: string; permissions?: string[] | null; color?: string | null; is_group_account?: boolean; members?: { id: string; name: string; color: string }[]; created_at: string }[]>([]);
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState<'admin' | 'staff'>('staff');
@@ -7434,23 +7434,42 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
                                 <td style={{ padding: '12px 8px', textAlign: 'center' }}>
                                   <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
                                     {user.role !== 'admin' && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleOpenEditUserModal(user)}
-                                        style={{
-                                          border: 'none',
-                                          backgroundColor: 'rgba(0, 102, 255, 0.1)',
-                                          color: '#0066FF',
-                                          padding: '4px 10px',
-                                          borderRadius: '6px',
-                                          fontSize: '0.75rem',
-                                          fontWeight: 'bold',
-                                          cursor: 'pointer'
-                                        }}
-                                        title="تعديل الصلاحيات واللون الخاص بالموظف"
-                                      >
-                                        ⚙️ الصلاحيات واللون
-                                      </button>
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenManageMembersModal(user)}
+                                          style={{
+                                            border: 'none',
+                                            backgroundColor: 'rgba(168, 85, 247, 0.1)',
+                                            color: '#A855F7',
+                                            padding: '4px 10px',
+                                            borderRadius: '6px',
+                                            fontSize: '0.75rem',
+                                            fontWeight: 'bold',
+                                            cursor: 'pointer'
+                                          }}
+                                          title="إدارة الموظفين والأعضاء التابعين لهذا الحساب"
+                                        >
+                                          👥 الموظفون ({Array.isArray(user.members) ? user.members.length : 0})
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenEditUserModal(user)}
+                                          style={{
+                                            border: 'none',
+                                            backgroundColor: 'rgba(0, 102, 255, 0.1)',
+                                            color: '#0066FF',
+                                            padding: '4px 10px',
+                                            borderRadius: '6px',
+                                            fontSize: '0.75rem',
+                                            fontWeight: 'bold',
+                                            cursor: 'pointer'
+                                          }}
+                                          title="تعديل الصلاحيات واللون الخاص بالموظف"
+                                        >
+                                          ⚙️ الصلاحيات واللون
+                                        </button>
+                                      </>
                                     )}
                                     <button
                                       type="button"
