@@ -1173,7 +1173,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         const isGroup = Boolean(decoded.is_group_account);
         setIsGroupAccount(isGroup);
 
-        if (isGroup && decoded.id) {
+        if (decoded.id) {
           const storedMember = localStorage.getItem('active_group_member_name');
           const storedColor = localStorage.getItem('active_group_member_color');
           if (storedMember) {
@@ -1182,9 +1182,10 @@ const Dashboard: React.FC<DashboardProps> = ({
           }
 
           api.get(`/users/${decoded.id}/members`).then(res => {
-            if (res.data && Array.isArray(res.data.members)) {
+            if (res.data && Array.isArray(res.data.members) && res.data.members.length > 0) {
               setGroupMembersList(res.data.members);
-              if (!storedMember && res.data.members.length > 0) {
+              setIsGroupAccount(true);
+              if (!storedMember) {
                 setShowInitialMemberModal(true);
               }
             }
@@ -3541,6 +3542,22 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
         </nav>
 
         <div style={styles.sidebarFooter}>
+          {(isGroupAccount || groupMembersList.length > 0) && (
+            <button
+              onClick={() => setShowInitialMemberModal(true)}
+              style={{
+                ...styles.logoutButton,
+                backgroundColor: 'rgba(0, 102, 255, 0.12)',
+                color: '#0066FF',
+                marginBottom: '8px',
+                border: '1px solid rgba(0, 102, 255, 0.3)'
+              }}
+              title="اختيار الموظف النشط على الجهاز"
+            >
+              <Users size={18} />
+              <span>👤 {activeGroupMemberName ? `الموظف: ${activeGroupMemberName}` : 'اختر الموظف النشط'}</span>
+            </button>
+          )}
           <button onClick={onLogout} style={styles.logoutButton}>
             <LogOut size={20} />
             <span>تسجيل الخروج</span>
@@ -3586,10 +3603,101 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
               )}
             </button>
 
-            <div>
-              <h2 style={{ fontSize: '1.2rem', fontWeight: '800', margin: 0, color: darkMode ? '#FFFFFF' : '#0F1E36' }}>
-                {t[lang]?.welcome || 'مرحباً،'} {currentUsername}
-              </h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+              <div>
+                <h2 style={{ fontSize: '1.2rem', fontWeight: '800', margin: 0, color: darkMode ? '#FFFFFF' : '#0F1E36' }}>
+                  {t[lang]?.welcome || 'مرحباً،'} {currentUsername}
+                </h2>
+              </div>
+
+              {(isGroupAccount || groupMembersList.length > 0) && (
+                <div style={{ position: 'relative' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowQuickSwitchDropdown(prev => !prev)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '6px 14px',
+                      borderRadius: '20px',
+                      border: `1.5px solid ${activeGroupMemberColor || '#0066FF'}`,
+                      backgroundColor: darkMode ? 'rgba(30, 41, 59, 0.8)' : 'rgba(241, 245, 249, 0.9)',
+                      color: darkMode ? '#FFFFFF' : '#0F1E36',
+                      cursor: 'pointer',
+                      fontWeight: 'bold',
+                      fontSize: '0.85rem',
+                      boxShadow: '0 2px 6px rgba(0,0,0,0.08)'
+                    }}
+                    title="اضغط لتغيير أو اختيار الموظف الذي يباشر العمل حالياً"
+                  >
+                    <span
+                      style={{
+                        width: '10px',
+                        height: '10px',
+                        borderRadius: '50%',
+                        backgroundColor: activeGroupMemberColor || '#0066FF',
+                        display: 'inline-block'
+                      }}
+                    />
+                    <span>👤 الموظف النشط: {activeGroupMemberName || 'اختر اسمك'}</span>
+                    <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>▼</span>
+                  </button>
+
+                  {showQuickSwitchDropdown && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: 'calc(100% + 8px)',
+                        right: 0,
+                        zIndex: 9999,
+                        backgroundColor: darkMode ? '#1E293B' : '#FFFFFF',
+                        borderRadius: '12px',
+                        boxShadow: '0 10px 25px rgba(0,0,0,0.25)',
+                        border: darkMode ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
+                        minWidth: '220px',
+                        padding: '8px'
+                      }}
+                    >
+                      <div style={{ padding: '8px 12px', fontSize: '0.75rem', fontWeight: 'bold', color: '#64748B', borderBottom: '1px solid rgba(148, 163, 184, 0.2)' }}>
+                        اختر الموظف الحالي للجهاز:
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
+                        {groupMembersList.map(m => {
+                          const isSelected = activeGroupMemberName === m.name;
+                          return (
+                            <button
+                              key={m.id || m.name}
+                              type="button"
+                              onClick={() => handleSelectGroupMember(m.name, m.color)}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '8px 12px',
+                                borderRadius: '8px',
+                                border: 'none',
+                                backgroundColor: isSelected ? (darkMode ? 'rgba(0, 102, 255, 0.2)' : 'rgba(0, 102, 255, 0.1)') : 'transparent',
+                                color: isSelected ? '#0066FF' : (darkMode ? '#F8FAFC' : '#0F172A'),
+                                fontWeight: isSelected ? 'bold' : 'normal',
+                                fontSize: '0.85rem',
+                                cursor: 'pointer',
+                                textAlign: 'right'
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: m.color }} />
+                                <span>{m.name}</span>
+                              </div>
+                              {isSelected && <span style={{ color: '#0066FF', fontSize: '0.85rem' }}>✓</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </header>
