@@ -1844,6 +1844,7 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
     (response) => response,
     (err) => {
       if (err.response && err.response.status === 401) {
+        localStorage.removeItem('token');
         onRedirectToLogin();
       }
       return Promise.reject(err);
@@ -1860,11 +1861,17 @@ const compressImageDataUrl = (dataUrl: string, maxWidth = 800, quality = 0.55): 
         // جلب بيانات المطعم أولاً للحصول على الـ ID الفعلي ثم جلب المحادثات
         const resRest = await api.get(`/restaurants/${restaurantId}`).catch((e) => {
           console.error('فشل جلب بيانات المطعم:', e);
-          return { data: { id: restaurantId, name: 'مطعم عم عيسى' } };
+          return null;
         });
 
-        const restData = resRest.data || { id: restaurantId, name: 'مطعم عم عيسى' };
-        const actualRestId = restData.id || restaurantId;
+        if (!resRest || !resRest.data || !resRest.data.id || resRest.data.id === 'default') {
+          setError('تعذر تحميل بيانات المطعم، يرجى إعادة تسجيل الدخول.');
+          setLoading(false);
+          return;
+        }
+
+        const restData = resRest.data;
+        const actualRestId = restData.id;
 
         const resConvers = await api.get(`/restaurants/${actualRestId}/conversations`).catch((e) => {
           console.error('فشل جلب المحادثات:', e);

@@ -79,11 +79,14 @@ export const CustomerLoyalty: React.FC<CustomerLoyaltyProps> = ({
   const [timelineLoading, setTimelineLoading] = useState<boolean>(false);
 
   // إعداد Axios API instance مع Bearer token
-  const getAuthHeaders = () => ({
-    headers: {
-      Authorization: token ? `Bearer ${token}` : ''
-    }
-  });
+  const getAuthHeaders = () => {
+    const activeToken = token || localStorage.getItem('token');
+    return {
+      headers: {
+        Authorization: activeToken ? `Bearer ${activeToken}` : ''
+      }
+    };
+  };
 
   // جلب قائمة العملاء
   const fetchCustomers = async (searchQuery = search) => {

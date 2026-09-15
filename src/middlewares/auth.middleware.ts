@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { prisma } from '../services/prisma.service';
 
 // تعريف نوع مخصص لتوسيع واجهة الطلب لتشمل بيانات المستخدم المصدّق
 export interface AuthenticatedRequest extends Request {
@@ -66,10 +67,8 @@ export const requirePermission = (permissionKey: string) => {
         return;
       }
 
-      // جلب أحدث الصلاحيات من قاعدة البيانات مباشرة لتطبيق التغييرات اللحظية
-      const { PrismaClient } = require('@prisma/client');
-      const prismaClient = new PrismaClient();
-      const dbUser = await prismaClient.user.findUnique({
+      // جلب أحدث الصلاحيات من قاعدة البيانات بواسطة كائن Prisma Singleton الموحد
+      const dbUser = await prisma.user.findUnique({
         where: { username },
         select: { role: true, permissions: true }
       });
