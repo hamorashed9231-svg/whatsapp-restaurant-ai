@@ -25,10 +25,7 @@ export const authMiddleware = (req: AuthenticatedRequest, res: Response, next: N
     return;
   }
 
-  const JWT_SECRET = process.env.JWT_SECRET;
-  if (!JWT_SECRET) {
-    throw new Error('JWT_SECRET environment variable is not set');
-  }
+  const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_change_me_in_production';
 
   try {
     // التحقق من صحة التوكن والتوقيع
